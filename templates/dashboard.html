@@ -1,0 +1,749 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Shappe Guide</title>
+    <style>
+      /* ---------------------------------------------------------------- themes */
+      :root, [data-theme="midnight"] {
+        --bg: #0a0e17; --bg2: #0f1522; --card: #131a29; --card2: #182135;
+        --fg: #e8edf6; --muted: #8a96ad; --line: #222c42;
+        --teal: #2dd4bf; --amber: #fbbf24; --red: #fb7185; --green: #4ade80;
+        --blue: #60a5fa; --shadow: 0 8px 28px rgba(0,0,0,.35);
+        color-scheme: dark;
+      }
+      [data-theme="day"] {
+        --bg: #eef2f7; --bg2: #e3e9f1; --card: #ffffff; --card2: #f6f8fb;
+        --fg: #0c1220; --muted: #4f5b70; --line: #d5dce7;
+        --teal: #0d9488; --amber: #b45309; --red: #be123c; --green: #15803d;
+        --blue: #1d4ed8; --shadow: 0 6px 20px rgba(15,23,42,.08);
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: light) {
+        [data-theme="auto"] {
+          --bg: #eef2f7; --bg2: #e3e9f1; --card: #ffffff; --card2: #f6f8fb;
+          --fg: #0c1220; --muted: #4f5b70; --line: #d5dce7;
+          --teal: #0d9488; --amber: #b45309; --red: #be123c; --green: #15803d;
+          --blue: #1d4ed8; --shadow: 0 6px 20px rgba(15,23,42,.08);
+          color-scheme: light;
+        }
+      }
+
+      /* ---------------------------------------------------------------- base */
+      * { box-sizing: border-box; }
+      /* `hidden` must win over any display rule below (.cam .off is a grid). */
+      [hidden] { display: none !important; }
+      html, body { margin: 0; background: var(--bg); color: var(--fg); }
+      body {
+        font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        min-height: 100vh;
+        background: radial-gradient(1200px 600px at 10% -10%, var(--bg2), transparent 60%), var(--bg);
+      }
+      a { color: var(--teal); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      .wrap { max-width: 1440px; margin: 0 auto; padding: 0 max(14px, env(safe-area-inset-left)) 48px; }
+      .mono { font-variant-numeric: tabular-nums; }
+      .muted { color: var(--muted); }
+      .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+      /* ---------------------------------------------------------------- header */
+      header {
+        position: sticky; top: 0; z-index: 10;
+        backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+        background: color-mix(in srgb, var(--bg) 82%, transparent);
+        border-bottom: 1px solid var(--line);
+      }
+      .head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 0; }
+      .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 17px; letter-spacing: .01em; }
+      .logo {
+        width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+        background: linear-gradient(135deg, var(--teal), var(--blue)); color: #06111a; font-weight: 900;
+      }
+      .spacer { flex: 1; }
+      .chip {
+        display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px;
+        border-radius: 999px; border: 1px solid var(--line); background: var(--card);
+        font-size: 13px; white-space: nowrap;
+      }
+      .chip b { font-weight: 800; }
+      .chip.ok { border-color: color-mix(in srgb, var(--green) 55%, var(--line)); color: var(--green); }
+      .chip.warn { border-color: color-mix(in srgb, var(--amber) 55%, var(--line)); color: var(--amber); }
+      .chip.bad { border-color: color-mix(in srgb, var(--red) 60%, var(--line)); color: var(--red); }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 25%, transparent); }
+      @media (max-width: 560px) {
+        #h-clock, .head a[href="/classic"] { display: none; }
+        .brand { font-size: 16px; }
+      }
+      button.ghost {
+        font: inherit; font-size: 13px; padding: 5px 11px; border-radius: 999px;
+        border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer;
+      }
+
+      /* ---------------------------------------------------------------- grid */
+      .grid { display: grid; gap: 14px; margin-top: 14px; grid-template-columns: repeat(12, 1fr); }
+      .span-12 { grid-column: span 12; } .span-7 { grid-column: span 7; } .span-5 { grid-column: span 5; }
+      .span-4 { grid-column: span 4; } .span-3 { grid-column: span 3; } .span-8 { grid-column: span 8; }
+      @media (max-width: 1100px) {
+        .span-7, .span-5, .span-4, .span-3, .span-8 { grid-column: span 12; }
+        .md-6 { grid-column: span 6 !important; }
+      }
+      @media (max-width: 700px) { .md-6 { grid-column: span 12 !important; } }
+      .card {
+        background: var(--card); border: 1px solid var(--line); border-radius: 18px;
+        padding: 16px; box-shadow: var(--shadow); min-width: 0;
+      }
+      .card h2 {
+        margin: 0 0 12px; font-size: 12px; font-weight: 800; letter-spacing: .1em;
+        text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px;
+      }
+      .card h2 .right { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 600; }
+
+      /* ---------------------------------------------------------------- NOW */
+      #now { position: relative; overflow: hidden; }
+      #now::before {
+        content: ""; position: absolute; inset: 0 auto 0 0; width: 7px; background: var(--line);
+        transition: background .25s;
+      }
+      #now[data-rule="blocked"]::before, #now[data-rule="offline"]::before,
+      #now[data-rule="vehicle_approaching"]::before { background: var(--red); }
+      #now[data-rule="approaching"]::before, #now[data-rule="drifting"]::before,
+      #now[data-rule="near_wall"]::before, #now[data-rule="vehicle_ahead"]::before,
+      #now[data-rule="steering"]::before { background: var(--amber); }
+      #now[data-rule="clear"]::before { background: var(--green); }
+      #now.pulse { animation: pulse .9s ease-out; }
+      @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--teal) 55%, transparent); } 100% { box-shadow: 0 0 0 22px transparent; } }
+      .rule { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); font-size: 11px; letter-spacing: .08em; color: var(--fg); }
+      #now-text { font-size: clamp(30px, 5.2vw, 56px); font-weight: 900; line-height: 1.06; letter-spacing: -.015em; margin: 4px 0 8px; }
+      #now-why { color: var(--muted); font-size: 16px; }
+      .ev { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+      .ev span {
+        padding: 6px 11px; border-radius: 10px; border: 1px solid var(--line); background: var(--card2);
+        font-size: 13px; color: var(--muted);
+      }
+      .ev span.on { color: var(--fg); border-color: var(--teal); }
+      #now-voice { margin-top: 14px; font-size: 14px; color: var(--muted); }
+      #now-voice.said { color: var(--teal); font-weight: 800; }
+
+      /* ---------------------------------------------------------------- verdict */
+      .marks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+      .marks button {
+        font: inherit; font-weight: 800; font-size: 16px; padding: 18px 6px; border-radius: 14px; cursor: pointer;
+        background: var(--card2); color: var(--fg); border: 2px solid var(--line); display: grid; gap: 4px; place-items: center;
+      }
+      .marks button .k { font-size: 11px; color: var(--muted); font-weight: 600; }
+      .marks button:active { transform: scale(.97); }
+      .marks [data-kind="right"] { border-color: color-mix(in srgb, var(--green) 70%, var(--line)); }
+      .marks [data-kind="wrong"] { border-color: color-mix(in srgb, var(--red) 70%, var(--line)); }
+      .marks [data-kind="missed"] { border-color: color-mix(in srgb, var(--amber) 70%, var(--line)); }
+      .marks .big { font-size: 22px; line-height: 1; }
+      #mark-ack { min-height: 1.4em; margin-top: 10px; font-size: 13px; }
+      .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+      .stat { background: var(--card2); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+      .stat b { display: block; font-size: 24px; font-weight: 900; }
+      .stat span { font-size: 12px; color: var(--muted); }
+
+      /* ---------------------------------------------------------------- laser */
+      #scan { width: 100%; aspect-ratio: 1 / 1; display: block; border-radius: 14px; background: var(--bg2); }
+      .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+      .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+      .dirs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
+      .dir { text-align: center; border: 1px solid var(--line); background: var(--card2); border-radius: 12px; padding: 8px 2px; }
+      .dir small { display: block; font-size: 11px; color: var(--muted); }
+      .dir b { display: block; font-size: 22px; font-weight: 900; }
+
+      /* ---------------------------------------------------------------- camera */
+      .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+      .tabs button {
+        font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 999px; cursor: pointer;
+        border: 1px solid var(--line); background: var(--card2); color: var(--fg);
+      }
+      .tabs button[aria-pressed="true"] { background: var(--teal); color: #04121a; border-color: var(--teal); font-weight: 800; }
+      .cam { position: relative; border-radius: 14px; overflow: hidden; background: #000; aspect-ratio: 16 / 9; }
+      .cam img { width: 100%; height: 100%; object-fit: fill; display: block; }
+      .cam svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+      .cam .off { position: absolute; inset: 0; display: grid; place-items: center; color: #9aa4b5; font-size: 14px; }
+      .cam-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .dets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+      .dets span { font-size: 12px; padding: 4px 9px; border-radius: 8px; background: var(--card2); border: 1px solid var(--line); }
+      .dets span.named { border-color: var(--teal); color: var(--teal); font-weight: 800; }
+      .dets span.ignored { opacity: .5; text-decoration: line-through; }
+
+      /* ---------------------------------------------------------------- log */
+      #log { max-height: 480px; overflow-y: auto; }
+      .row { display: grid; grid-template-columns: 5.4em 1fr; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+      .row .t { color: var(--muted); font-size: 13px; }
+      .row b { font-weight: 800; }
+      .row .why { display: block; font-size: 12px; color: var(--muted); }
+      .row.urgent b { color: var(--red); }
+      .row.mark b { color: var(--blue); }
+
+      /* ---------------------------------------------------------------- sensors / around */
+      .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 14px; }
+      .kv dt { color: var(--muted); }
+      .kv dd { margin: 0; }
+      .ok-t { color: var(--green); } .bad-t { color: var(--red); } .warn-t { color: var(--amber); }
+      .boards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+      .board { border: 1px solid var(--line); background: var(--card2); border-radius: 10px; padding: 7px 9px; font-size: 13px; }
+      .board b { display: block; font-size: 12px; color: var(--muted); }
+      .board.off { border-color: var(--red); color: var(--red); }
+      .board.lag { border-color: var(--amber); }
+      .list { display: grid; gap: 6px; }
+      .item { display: flex; justify-content: space-between; gap: 10px; padding: 7px 10px; border-radius: 10px; background: var(--card2); border: 1px solid var(--line); font-size: 14px; }
+      .toggle { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-size: 13px; color: var(--muted); }
+      footer { margin-top: 18px; font-size: 12px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="wrap head">
+        <div class="brand"><div class="logo">S</div>Shappe Guide</div>
+        <span id="h-status" class="chip"><span class="dot"></span><b>connecting</b></span>
+        <span id="h-voice" class="chip">voice …</span>
+        <span id="h-rate" class="chip mono">— /min</span>
+        <div class="spacer"></div>
+        <span id="h-clock" class="chip mono">--:--:--</span>
+        <a class="chip" href="/guidance/log/text?limit=400" download="speech-log.txt" title="Download this run's speech log">⬇ log</a>
+        <button class="ghost" id="theme" title="Switch theme">◐ theme</button>
+        <a class="chip" href="/classic" title="The previous dashboard">classic</a>
+      </div>
+    </header>
+
+    <!-- The one place a screen reader is told anything. -->
+    <div id="announce" class="sr" role="status" aria-live="assertive" aria-atomic="true"></div>
+
+    <main class="wrap">
+      <div class="grid">
+        <!-- NOW -->
+        <section class="card span-7" id="now" data-rule="">
+          <h2>Now <span id="now-rule" class="rule">—</span>
+            <span class="right muted mono" id="now-front"></span></h2>
+          <div id="now-text">Connecting…</div>
+          <div id="now-why">—</div>
+          <div class="ev" id="now-ev"></div>
+          <div id="now-voice">—</div>
+        </section>
+
+        <!-- VERDICT -->
+        <section class="card span-5">
+          <h2>Was that right? <span class="right muted" style="font-size:12px">keys 1 – 4</span></h2>
+          <div class="marks">
+            <button data-kind="right"><span class="big">✓</span>Right<span class="k">1</span></button>
+            <button data-kind="wrong"><span class="big">✗</span>Wrong<span class="k">2</span></button>
+            <button data-kind="missed"><span class="big">⚠</span>Missed<span class="k">3</span></button>
+            <button data-kind="note"><span class="big">✎</span>Note<span class="k">4</span></button>
+          </div>
+          <div id="mark-ack" class="muted"></div>
+          <div class="stats">
+            <div class="stat"><b id="st-min" class="mono">0</b><span>said in the last minute</span></div>
+            <div class="stat"><b id="st-total" class="mono">0</b><span>said this run</span></div>
+            <div class="stat"><b id="st-marks" class="mono">0</b><span>your marks</span></div>
+          </div>
+        </section>
+
+        <!-- LASER -->
+        <section class="card span-5">
+          <h2>What the laser sees <span class="right muted mono" id="scan-rate"></span></h2>
+          <canvas id="scan" aria-label="Top-down view of the LiDAR scan"></canvas>
+          <div class="legend">
+            <span><i style="background:var(--fg)"></i>laser return</span>
+            <span><i style="background:var(--red)"></i>on your path, inside the block radius</span>
+            <span><i style="background:var(--teal)"></i>body corridor &amp; front beam</span>
+          </div>
+          <div class="dirs" id="dirs"></div>
+        </section>
+
+        <!-- CAMERA -->
+        <section class="card span-7">
+          <h2>What the camera sees
+            <span class="right tabs" id="cam-tabs">
+              <button data-cam="front" aria-pressed="true">Front</button>
+              <button data-cam="left" aria-pressed="false">Left</button>
+              <button data-cam="right" aria-pressed="false">Right</button>
+              <button data-cam="back" aria-pressed="false">Back</button>
+              <button data-cam="all" aria-pressed="false">All 4</button>
+            </span></h2>
+          <div id="cam-single" class="cam">
+            <img id="cam-img" alt="Camera feed" />
+            <svg id="cam-svg" viewBox="0 0 960 540" preserveAspectRatio="none"></svg>
+            <div class="off" id="cam-off" hidden>camera stream unavailable</div>
+          </div>
+          <div id="cam-all" class="cam-grid" hidden></div>
+          <div class="dets" id="cam-dets"></div>
+          <div class="muted" style="font-size:12px;margin-top:8px" id="cam-note">
+            Front camera: only things that can hurt the user are named — vehicles, people,
+            animals, poles, hydrants, benches (trees and bollards need the custom model).
+            Crossed-out classes, like chairs and laptops, are ignored: the laser still steers
+            round them, unnamed. A named object must overlap the shaded middle band, be tall
+            enough to be near — and the laser or radar must already have something on the path.
+            A vehicle in the band that is getting bigger is <b>approaching</b> (red): the user is
+            told to move away from the half it is in. A stopped vehicle while the user stands
+            still is <b>be careful</b> (amber). The <b>green line</b> is where the guide is
+            steering the user past things in the way — round one side, or through a gap.
+          </div>
+        </section>
+
+        <!-- LOG -->
+        <section class="card span-5">
+          <h2>Spoken this run <span class="right muted" id="log-path" style="font-size:11px"></span></h2>
+          <div id="log"><div class="muted">Nothing said yet this run</div></div>
+        </section>
+
+        <!-- SENSORS -->
+        <section class="card span-4 md-6">
+          <h2>Sensors</h2>
+          <dl class="kv">
+            <dt>LiDAR</dt><dd id="s-lidar">—</dd>
+            <dt>Radar</dt><dd id="s-radar">—</dd>
+            <dt>Camera</dt><dd><span id="s-camera">—</span> <span id="s-camfps" class="muted"></span></dd>
+            <dt>NPU</dt><dd id="s-npu">—</dd>
+            <dt>Startup</dt><dd id="s-start">—</dd>
+            <dt>Voice</dt><dd id="s-voice">—</dd>
+          </dl>
+          <div class="boards" id="boards"></div>
+          <div id="s-warn" class="warn-t" style="font-size:13px;margin-top:10px"></div>
+          <label class="toggle"><input type="checkbox" id="tts-on" /> Also speak in this browser (laptop testing without a screen reader)</label>
+        </section>
+
+        <!-- AROUND -->
+        <section class="card span-3 md-6">
+          <h2>Around you</h2>
+          <div class="list" id="around"><div class="muted">Nothing close</div></div>
+          <h2 style="margin-top:16px">Walking</h2>
+          <dl class="kv">
+            <dt>Motion</dt><dd id="m-motion">—</dd>
+            <dt>Crossing</dt><dd id="m-cross">—</dd>
+          </dl>
+        </section>
+      </div>
+      <footer>
+        <span>Shappe Guide · the guide speaks only through simple_guidance's closed vocabulary</span>
+        <a href="/guidance/log/text">speech log</a>
+        <a href="/docs">API</a>
+        <a href="/classic">previous dashboard</a>
+      </footer>
+    </main>
+
+    <script>
+      "use strict";
+      const $ = (id) => document.getElementById(id);
+      const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+      const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      const MM_PER_FT = 304.8;
+      const store = {
+        get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } },
+        set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+      };
+
+      // Geometry the guide decides on; replaced by /guidance/test's copy.
+      let geom = { block_ft: 4, approach_ft: 12, corridor_half_mm: 300, corridor_max_mm: 2500, cone_deg: 10 };
+
+      // ------------------------------------------------------------ theme + clock
+      const themes = ["auto", "midnight", "day"];
+      function applyTheme(t) { document.documentElement.dataset.theme = t; $("theme").textContent = `◐ ${t}`; }
+      applyTheme(store.get("sg-theme", "auto"));
+      $("theme").addEventListener("click", () => {
+        const next = themes[(themes.indexOf(document.documentElement.dataset.theme) + 1) % themes.length];
+        store.set("sg-theme", next); applyTheme(next);
+      });
+      setInterval(() => { $("h-clock").textContent = new Date().toLocaleTimeString([], { hour12: false }); }, 500);
+
+      // ------------------------------------------------------------ browser voice
+      const tts = $("tts-on");
+      tts.checked = store.get("sg-tts", "0") === "1";
+      tts.addEventListener("change", () => store.set("sg-tts", tts.checked ? "1" : "0"));
+      function browserSay(text, urgent) {
+        if (!tts.checked || !("speechSynthesis" in window) || !text) return;
+        if (urgent) speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; speechSynthesis.speak(u);
+      }
+
+      // ------------------------------------------------------------ NOW (400 ms)
+      let seenSeq = null, lastSaidAt = 0, lastSaidText = "", busyWalk = false, lastObject = null, lastVehicle = null, lastSteer = null;
+      async function pollWalk() {
+        if (busyWalk) return; busyWalk = true;
+        try {
+          const d = await (await fetch("/guidance/walk", { cache: "no-store" })).json();
+          const p = d.path || {}, n = d.notify || {}, raw = p.raw || {};
+          const rule = p.rule || (p.instruction ? "clear" : "");
+          $("now").dataset.rule = rule;
+          $("now-rule").textContent = rule ? rule.toUpperCase() : "—";
+          $("now-text").textContent = p.instruction || "…";
+          $("now-why").textContent = p.reason || "—";
+          const ft = raw.front_ft;
+          $("now-front").textContent = ft != null ? `front ${Number(ft).toFixed(1)} ft` : "front open";
+          const chip = (label, on) => `<span class="${on ? "on" : ""}">${esc(label)}</span>`;
+          $("now-ev").innerHTML = [
+            chip(raw.wall ? "wall on path ✓" : "wall ✗", raw.wall),
+            chip(raw.glass ? "glass ahead ✓" : "glass ✗", raw.glass),
+            chip(raw.object ? `camera: ${raw.object}` : "camera: —", !!raw.object),
+            chip(raw.drift ? `drifting toward ${raw.drift} wall` : "no drift", !!raw.drift),
+            chip(raw.close ? `near ${raw.close} wall` : "not near a wall (this scan)", !!raw.close),
+            (() => {
+              const s = raw.steer;
+              if (!s) return chip("way past: —", false);
+              const how = s.kind === "between" ? (s.turn ? `between them, slightly ${s.turn}` : "straight between them")
+                : `turn slightly ${s.turn} past ${String(s.word || "").toLowerCase()} (${s.where})`;
+              return chip(`way past: ${how}`, true);
+            })(),
+            (() => {
+              const v = raw.vehicles || {};
+              if (!v.class) return chip("vehicle: —", false);
+              if (v.approaching) return chip(`${v.class} approaching from ${v.side}` +
+                (v.ttc_s != null ? ` · ~${Number(v.ttc_s).toFixed(1)} s` : ""), true);
+              // `moving` outranks `stopped`: both flags are kept on the pick.
+              if (v.moving) return chip(`${v.class} moving ahead`, true);
+              return chip(`${v.class} stopped` + (raw.user_still ? " · you still" : " · you moving"), !!raw.user_still);
+            })(),
+            ...["left", "right"].map((s) => {
+              const ft = (raw.beside || {})[s], rate = (raw.closing || {})[s];
+              if (ft == null) return chip(`${s} wall: not fitted this scan`, false);
+              const moving = rate != null && rate > 0.05 ? ` · closing ${Number(rate).toFixed(1)} ft/s` : "";
+              return chip(`${s} wall ${Number(ft).toFixed(1)} ft${moving}`, !!moving);
+            }),
+            chip(d.at_crossing ? "at a crossing" : "no crossing", !!d.at_crossing),
+          ].join("");
+          lastObject = raw.object || null;
+          lastVehicle = raw.vehicles || null;
+          lastSteer = raw.steer || null;
+
+          // Announce once per sequence step; the first poll only learns it.
+          const seq = n.cue_seq, pv = n.pi_voice || {};
+          if (typeof seq === "number") {
+            if (seenSeq !== null && seq > seenSeq) {
+              lastSaidAt = Date.now(); lastSaidText = n.instruction || "";
+              if (pv.audio_enabled !== false && !piHasCue(pv, seq)) { announce(lastSaidText); browserSay(lastSaidText, n.level === "urgent"); }  // audio off: shown, not spoken
+              const now = $("now"); now.classList.remove("pulse"); void now.offsetWidth; now.classList.add("pulse");
+            }
+            seenSeq = seq;
+          }
+          const ago = lastSaidAt ? Math.round((Date.now() - lastSaidAt) / 1000) : null;
+          const fresh = ago !== null && ago < 3;
+          const v = $("now-voice");
+          v.className = fresh ? "said" : "";
+          v.textContent = fresh ? `🔊 just said “${lastSaidText}”`
+            : `🔇 quiet — ${n.quiet_reason || "nothing new to say"}` +
+              (lastSaidText ? ` · last said “${lastSaidText}” ${ago}s ago` : "");
+
+          const rd = p.readings || {};
+          const f1 = (x) => (x == null ? "—" : Number(x).toFixed(1));
+          $("dirs").innerHTML = ["left", "front", "right", "back"].map((k) => {
+            const r = rd[k] || {};
+            return `<div class="dir"><small>${k}</small><b class="mono">${r.fused_ft == null ? "—" : f1(r.fused_ft)}</b>` +
+              `<small class="mono">L ${f1(r.lidar_ft)} · R ${f1(r.radar_ft)}${r.glass ? " · glass" : ""}</small></div>`;
+          }).join("");
+
+          const items = ((d.obstacles || {}).items || []).slice(0, 6);
+          $("around").innerHTML = items.length ? items.map((o) =>
+            `<div class="item"><span>${esc(o.object || "obstacle")} <span class="muted">· ${esc(o.clock ? o.clock + " o'clock" : o.sector || "")}</span></span>` +
+            `<b class="mono">${o.distance_ft == null ? "—" : Number(o.distance_ft).toFixed(1) + " ft"}</b></div>`).join("")
+            : '<div class="muted">Nothing close</div>';
+          $("m-cross").innerHTML = d.at_crossing
+            ? '<span class="warn-t">at a crossing — “Walk straight” withheld</span>'
+            : "none detected";
+        } catch (e) {
+          $("now-text").textContent = "No connection to the device";
+          $("now").dataset.rule = "offline";
+          setStatus("bad", "no connection");
+        } finally { busyWalk = false; }
+      }
+
+      function piHasCue(pv, seq) {
+        return !!(pv && pv.usable && pv.accepted_seq === seq);
+      }
+
+      function announce(text) {
+        const el = $("announce");
+        el.textContent = "";
+        setTimeout(() => { el.textContent = text; }, 50);
+      }
+
+      function setStatus(level, text) {
+        const el = $("h-status");
+        el.className = `chip ${level}`;
+        el.innerHTML = `<span class="dot"></span><b>${esc(text)}</b>`;
+      }
+
+      // ------------------------------------------------------------ health + log (1 s)
+      async function pollTest() {
+        try {
+          const d = await (await fetch("/guidance/test?limit=50", { cache: "no-store" })).json();
+          if (d.geometry) geom = d.geometry;
+          const h = d.health || {}, v = d.voice || {}, st = d.startup || {};
+          if (!h.lidar_ok) setStatus("bad", "LiDAR down");
+          else if (!st.ready) setStatus("warn", "scanning");
+          else if (!h.all_ok) setStatus("warn", "degraded");
+          else setStatus("ok", "live");
+          $("h-voice").className = `chip ${v.usable ? "ok" : ""}`;
+          $("h-voice").textContent = v.usable ? `🎧 Pi · ${v.output}` : "📱 phone voice";
+          $("h-rate").textContent = `${d.said_last_minute || 0} /min`;
+          $("st-min").textContent = d.said_last_minute || 0;
+          $("st-total").textContent = d.said_total || 0;
+          $("st-marks").textContent = d.marks_total || 0;
+          const ok = (b) => (b ? '<span class="ok-t">✓ up</span>' : '<span class="bad-t">✗ down</span>');
+          $("s-camera").innerHTML = ok(h.camera_ok);
+          $("s-npu").innerHTML = ok(h.hailo_ok);
+          const down = (h.radar_down || []).join(", ");
+          const half = (h.radar_partial || []).join(", "), lag = (h.radar_lagging || []).join(", ");
+          const radarIssues = [down && `${down} down`, half && `${half} half-covered`, lag && `${lag} lagging`]
+            .filter(Boolean).join(" · ");
+          $("s-radar").innerHTML = !h.radar_ok ? '<span class="bad-t">✗ down</span>'
+            : radarIssues ? `<span class="warn-t">partial — ${esc(radarIssues)}</span>`
+            : '<span class="ok-t">✓ all cardinals</span>';
+          $("s-start").innerHTML = st.ready ? '<span class="ok-t">ready</span>' : '<span class="warn-t">scanning — not speaking yet</span>';
+          $("s-voice").textContent = v.usable ? `Pi → ${v.output}; the phone stays quiet`
+            : v.running ? `phone screen reader (the Pi has ${v.output || "no output"}${v.error ? ` — ${v.error}` : ""})`
+            : "phone screen reader (Pi voice off)";
+          $("s-warn").textContent = (h.warnings || []).join(" · ");
+          $("log-path").textContent = d.log_path ? d.log_path.split("/").slice(-1)[0] : "";
+          const lines = (d.lines || []).slice().reverse();
+          $("log").innerHTML = lines.length ? lines.map((r) => {
+            const cls = r.source === "tester" ? "mark" : r.level === "urgent" ? "urgent" : "";
+            return `<div class="row ${cls}"><span class="t mono">${esc(r.time)}</span><span><b>${esc(r.text)}</b>` +
+              (r.detail ? `<span class="why">${esc(r.detail)}</span>` : "") + `</span></div>`;
+          }).join("") : '<div class="muted">Nothing said yet this run</div>';
+        } catch (e) { /* pollWalk reports the lost connection */ }
+      }
+
+      // ------------------------------------------------------------ radar boards (1 s)
+      async function pollRadar() {
+        try {
+          const d = await (await fetch("/radar/state", { cache: "no-store" })).json();
+          const secs = d.sectors || {};
+          const keys = Object.keys(secs).filter((k) => /^deg\d+$/.test(k)).sort();
+          $("boards").innerHTML = keys.map((k) => {
+            const r = secs[k] || {};
+            const cls = !r.online ? "off" : r.degraded ? "lag" : "";
+            const val = !r.online ? "offline" : r.min_dist ? `${(r.min_dist / MM_PER_FT).toFixed(1)} ft` : "no echo";
+            return `<div class="board ${cls}"><b>${esc(k.replace("deg", ""))}°${r.degraded ? " · lag" : ""}</b><span class="mono">${esc(val)}</span></div>`;
+          }).join("");
+        } catch (e) {}
+      }
+
+      // ------------------------------------------------------------ motion (1 s)
+      async function pollMotion() {
+        try {
+          const h = await (await fetch("/guidance/heading", { cache: "no-store" })).json();
+          const kmh = (mps) => (mps * 3.6).toFixed(1);
+          $("m-motion").textContent = h.confidently_still ? "standing still"
+            : h.speed_source === "odometry" ? `walking ${kmh(h.speed_measured_mps || 0)} km/h (measured)`
+            : h.speed_source === "cadence" ? `walking ${kmh(h.speed_mps || 0)} km/h (from footfalls)`
+            : "moving — speed not measured";
+        } catch (e) {}
+      }
+
+      // ------------------------------------------------------------ camera
+      let camView = store.get("sg-cam", "front"), camDets = {};
+      function setCam(view) {
+        camView = view; store.set("sg-cam", view);
+        document.querySelectorAll("#cam-tabs button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.cam === view)));
+        const all = view === "all";
+        $("cam-single").hidden = all; $("cam-all").hidden = !all;
+        $("cam-note").hidden = view !== "front";
+        if (all) {
+          $("cam-img").removeAttribute("src");
+          $("cam-all").innerHTML = ["front", "right", "left", "back"].map((c) =>
+            `<div class="cam"><img src="/camera/stream/${c}" alt="${c} camera" /><div class="chip" style="position:absolute;left:8px;top:8px">${c}</div></div>`).join("");
+        } else {
+          $("cam-all").innerHTML = "";
+          $("cam-off").hidden = true;
+          $("cam-img").src = `/camera/stream/${view}?t=${Date.now()}`;
+        }
+        drawCamOverlay();
+      }
+      const camCheck = () => { $("cam-off").hidden = $("cam-img").naturalWidth > 0 || camView === "all"; };
+      $("cam-img").addEventListener("error", () => setTimeout(camCheck, 2500));
+      document.querySelectorAll("#cam-tabs button").forEach((b) => b.addEventListener("click", () => setCam(b.dataset.cam)));
+
+      function drawCamOverlay() {
+        const svg = $("cam-svg");
+        if (camView === "all") { svg.innerHTML = ""; return; }
+        const W = 960, H = 540;
+        let out = "";
+        if (camView === "front") {
+          const band = geom.camera_band || 0.5, x0 = W * (0.5 - band / 2);
+          out += `<rect x="${x0}" y="0" width="${W * band}" height="${H}" fill="rgba(45,212,191,.14)" stroke="rgba(45,212,191,.8)" stroke-dasharray="10 8" stroke-width="3"/>`;
+          // The two halves a vehicle is placed in: left half -> "move right".
+          out += `<line x1="${W / 2}" y1="0" x2="${W / 2}" y2="${H}" stroke="rgba(255,255,255,.7)" stroke-dasharray="4 10" stroke-width="2"/>` +
+            `<text x="${W / 2 - 14}" y="${H - 14}" text-anchor="end" font-size="22" font-weight="700" fill="rgba(255,255,255,.85)">L</text>` +
+            `<text x="${W / 2 + 14}" y="${H - 14}" font-size="22" font-weight="700" fill="rgba(255,255,255,.85)">R</text>`;
+        }
+        const dets = ((camDets[camView] || {}).detections || []);
+        for (const det of dets) {
+          // Coerced: these land in SVG attributes, and a box is only numbers.
+          const [x1, y1, x2, y2] = Array.from(det.bbox || [0, 0, 0, 0], Number);
+          const named = camView === "front" && lastObject &&
+            lastObject.toLowerCase() === String(spoken(det.class_name) || "").toLowerCase();
+          const ignored = !spoken(det.class_name);
+          const colour = named ? "#2dd4bf" : ignored ? "#94a3b8" : "#fbbf24";
+          out += `<rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" fill="none" stroke="${colour}" stroke-width="${named ? 5 : ignored ? 2 : 3}"${ignored ? ' stroke-dasharray="8 6"' : ""}/>` +
+            `<rect x="${x1}" y="${Math.max(0, y1 - 30)}" width="${Math.min(W - x1, 18 + 14 * String(det.class_name).length)}" height="28" fill="${colour}"/>` +
+            `<text x="${x1 + 8}" y="${Math.max(0, y1 - 30) + 20}" font-size="20" font-weight="700" fill="#04121a">${esc(det.class_name)} ${Math.round((det.confidence || 0) * 100)}%</text>`;
+        }
+        // Where the guide is steering the user past what is in the way.
+        const st = lastSteer;
+        if (camView === "front" && st && typeof st.target === "number") {
+          const x = Math.max(8, Math.min(W - 8, st.target * W));
+          const label = st.kind === "between" ? (st.turn ? `GAP · slightly ${st.turn}` : "GAP · straight")
+            : `GO · slightly ${st.turn}`;
+          out += `<line x1="${x}" y1="${H * 0.15}" x2="${x}" y2="${H}" stroke="#22c55e" stroke-width="6" stroke-dasharray="14 8"/>` +
+            `<polygon points="${x - 16},${H * 0.15 + 22} ${x + 16},${H * 0.15 + 22} ${x},${H * 0.15}" fill="#22c55e"/>` +
+            `<rect x="${Math.min(W - 230, Math.max(0, x - 115))}" y="${H * 0.15 - 44}" width="230" height="34" rx="6" fill="#22c55e"/>` +
+            `<text x="${Math.min(W - 230, Math.max(0, x - 115)) + 115}" y="${H * 0.15 - 20}" text-anchor="middle" font-size="22" font-weight="800" fill="#04121a">${esc(label)}</text>`;
+        }
+        // The vehicle the guide is tracking, over its detector box.
+        const v = lastVehicle || {};
+        if (camView === "front" && v.box && (v.approaching || v.moving || v.stopped)) {
+          const [x1, y1, x2, y2] = Array.from(v.box, Number), red = v.approaching;
+          const label = red ? `APPROACHING${v.ttc_s != null ? ` · ~${Number(v.ttc_s).toFixed(1)} s` : ""}`
+            : v.moving ? "MOVING" : "STOPPED";
+          const c = red ? "#f43f5e" : "#f59e0b";
+          out += `<rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" fill="none" stroke="${c}" stroke-width="7"/>` +
+            `<rect x="${x1}" y="${Math.min(H - 30, y2 + 2)}" width="${Math.min(W - x1, 18 + 13 * label.length)}" height="28" fill="${c}"/>` +
+            `<text x="${x1 + 8}" y="${Math.min(H - 30, y2 + 2) + 20}" font-size="20" font-weight="800" fill="#fff">${esc(label)}</text>`;
+        }
+        svg.innerHTML = out;
+        const list = (camView === "all" ? ["front", "right", "left", "back"] : [camView])
+          .flatMap((c) => ((camDets[c] || {}).detections || []).map((dt) => ({ c, dt })));
+        $("cam-dets").innerHTML = list.length ? list.map(({ c, dt }) => {
+          const named = c === "front" && lastObject &&
+            lastObject.toLowerCase() === String(spoken(dt.class_name) || "").toLowerCase();
+          const ignored = !spoken(dt.class_name);
+          return `<span class="${named ? "named" : ignored ? "ignored" : ""}" title="${ignored ? "not a hazard class — never named" : "can be named: " + esc(spoken(dt.class_name))}">${camView === "all" ? esc(c) + ": " : ""}${esc(dt.class_name)} ${Math.round((dt.confidence || 0) * 100)}%${named ? " · named" : ""}</span>`;
+        }).join("") : '<span>no detections</span>';
+      }
+      const spoken = (c) => (geom.named_objects || {})[String(c || "").toLowerCase()] || null;
+
+      let busyCam = false;
+      async function pollCam() {
+        if (busyCam) return; busyCam = true;
+        try {
+          camDets = await (await fetch("/camera/stats", { cache: "no-store" })).json();
+          $("s-camfps").textContent = camDets.capture_fps != null
+            ? `· ${Number(camDets.capture_fps).toFixed(1)} fps · ${camDets.total_objects || 0} objects` : "";
+          drawCamOverlay();
+          camCheck();
+        } catch (e) {} finally { busyCam = false; }
+      }
+
+      // ------------------------------------------------------------ laser view
+      let scan = null, scanTimes = [], lastScanAt = 0;
+      function connectScan() {
+        const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/lidar/ws`);
+        ws.onmessage = (ev) => {
+          try {
+            const m = JSON.parse(ev.data);
+            if (m.points) { scan = m; const t = Date.now(); lastScanAt = t; scanTimes.push(t); scanTimes = scanTimes.filter((x) => t - x < 2000); }
+          } catch (e) {}
+        };
+        ws.onclose = () => setTimeout(connectScan, 1500);
+        ws.onerror = () => ws.close();
+      }
+      const canvas = $("scan"), ctx = canvas.getContext("2d");
+      function drawScan() {
+        const rect = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+        const W = Math.max(220, Math.round(rect.width)), H = W;
+        if (canvas.width !== Math.round(W * dpr)) { canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); }
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const cx = W / 2, cy = H * 0.64;
+        const viewMm = (geom.approach_ft + 2) * MM_PER_FT, k = (H * 0.6) / viewMm;
+        const fg = css("--fg"), red = css("--red"), teal = css("--teal"), amber = css("--amber"),
+              line = css("--line"), card = css("--card"), muted = css("--muted");
+        ctx.clearRect(0, 0, W, H);
+
+        // Soft grid: a ring every 3 ft.
+        ctx.strokeStyle = line; ctx.lineWidth = 1;
+        for (let ft = 3; ft <= geom.approach_ft + 2; ft += 3) { ctx.beginPath(); ctx.arc(cx, cy, ft * MM_PER_FT * k, 0, Math.PI * 2); ctx.stroke(); }
+
+        const labels = [];
+        const ring = (ft, colour, text) => {
+          const r = ft * MM_PER_FT * k;
+          ctx.beginPath(); ctx.strokeStyle = colour; ctx.lineWidth = 2; ctx.setLineDash([7, 6]);
+          ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+          labels.push([text, colour, cx - r * 0.707, cy - r * 0.707]);
+        };
+        ring(geom.approach_ft, amber, `${geom.approach_ft} ft · “… ahead”`);
+        ring(geom.block_ft, red, `${geom.block_ft} ft · blocked`);
+
+        const half = geom.corridor_half_mm * k, len = geom.corridor_max_mm * k;
+        ctx.fillStyle = teal + "22"; ctx.fillRect(cx - half, cy - len, half * 2, len);
+        ctx.strokeStyle = teal; ctx.lineWidth = 1.5; ctx.strokeRect(cx - half, cy - len, half * 2, len);
+        const cone = (geom.cone_deg / 2) * Math.PI / 180, reach = viewMm * k;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy); ctx.lineTo(cx - Math.sin(cone) * reach, cy - Math.cos(cone) * reach);
+        ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.sin(cone) * reach, cy - Math.cos(cone) * reach);
+        ctx.stroke();
+
+        if (scan && scan.points) {
+          const a = scan.points.angles || [], d = scan.points.distances || [], blockMm = geom.block_ft * MM_PER_FT;
+          for (let i = 0; i < a.length; i++) {
+            const dist = d[i];
+            if (!dist || dist <= 0 || dist > viewMm * 1.25) continue;
+            const rad = a[i] * Math.PI / 180, x = Math.sin(rad) * dist, fwd = Math.cos(rad) * dist;
+            const onPath = fwd > 0 && dist < blockMm &&
+              ((Math.abs(x) <= geom.corridor_half_mm && dist <= geom.corridor_max_mm) || Math.abs(Math.atan2(x, fwd)) <= cone);
+            ctx.fillStyle = onPath ? red : fg;
+            ctx.beginPath(); ctx.arc(cx + x * k, cy - fwd * k, onPath ? 4.2 : 2.5, 0, Math.PI * 2); ctx.fill();
+          }
+        } else {
+          ctx.fillStyle = muted; ctx.font = "15px system-ui"; ctx.fillText("waiting for the LiDAR stream…", 16, 28);
+        }
+
+        ctx.font = "700 12px system-ui";
+        for (const [text, colour, x, y] of labels) {
+          const w = ctx.measureText(text).width + 12;
+          const x0 = Math.min(Math.max(4, x - w), W - w - 4), y0 = Math.min(Math.max(14, y), H - 14);
+          ctx.fillStyle = card; ctx.fillRect(x0, y0 - 10, w, 20);
+          ctx.fillStyle = colour; ctx.fillText(text, x0 + 6, y0 + 4);
+        }
+        // The user, facing up.
+        ctx.fillStyle = teal;
+        ctx.beginPath(); ctx.moveTo(cx, cy - 15); ctx.lineTo(cx - 11, cy + 11); ctx.lineTo(cx + 11, cy + 11); ctx.closePath(); ctx.fill();
+
+        const nowMs = Date.now();
+        scanTimes = scanTimes.filter((x) => nowMs - x < 2000);
+        const stale = scan && nowMs - lastScanAt > 1500;
+        const hz = scanTimes.length / 2, pts = scan ? (scan.points.angles || []).length : 0;
+        if (stale) {
+          const ago = Math.round((nowMs - lastScanAt) / 1000);
+          ctx.fillStyle = red; ctx.font = "700 15px system-ui";
+          ctx.fillText(`STALE — no scan for ${ago} s`, 16, 28);
+        }
+        $("scan-rate").textContent = !scan ? "" : stale ? "stale" : `${hz.toFixed(1)} scans/s · ${pts} pts`;
+        $("s-lidar").innerHTML = !scan ? '<span class="bad-t">no stream</span>'
+          : stale ? `<span class="bad-t">✗ no scan for ${Math.round((nowMs - lastScanAt) / 1000)} s</span>`
+          : `<span class="ok-t">✓</span> ${hz.toFixed(1)} scans/s · ${esc(pts)} points`;
+      }
+
+      // ------------------------------------------------------------ verdict marks
+      async function mark(kind) {
+        let note = "";
+        if (kind === "note") { note = prompt("Note for the log:") || ""; if (!note) return; }
+        try {
+          const r = await (await fetch("/guidance/mark", { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ kind, note }) })).json();
+          $("mark-ack").textContent = `✔ marked ${kind} — after “${r.last_said}”`;
+          if (navigator.vibrate) navigator.vibrate(40);
+        } catch (e) { $("mark-ack").textContent = "⚠ mark not saved — no connection"; }
+        pollTest();
+      }
+      document.querySelectorAll(".marks button").forEach((b) => b.addEventListener("click", () => mark(b.dataset.kind)));
+      document.addEventListener("keydown", (e) => {
+        if (e.target.matches("input, textarea") || e.metaKey || e.ctrlKey || e.altKey) return;
+        const kind = { 1: "right", 2: "wrong", 3: "missed", 4: "note" }[e.key];
+        if (kind) { e.preventDefault(); mark(kind); }
+      });
+
+      // ------------------------------------------------------------ go
+      setCam(camView);
+      pollWalk(); pollTest(); pollRadar(); pollMotion(); pollCam(); connectScan();
+      setInterval(pollWalk, 400);
+      setInterval(pollTest, 1000);
+      setInterval(pollRadar, 1000);
+      setInterval(pollMotion, 1000);
+      setInterval(pollCam, 700);
+      setInterval(drawScan, 200);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,31 @@
+
+[Unit]
+Description=Shappe Guide — blind-navigation aid (LiDAR, radar, cameras, voice)
+Documentation=file://@APP_DIR@/README.md
+Wants=pipewire.service wireplumber.service
+After=pipewire.service wireplumber.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=notify
+NotifyAccess=main
+WorkingDirectory=@APP_DIR@
+# SHAPPE_ADMIN_TOKEN, and anything else set per device (see config.py).
+EnvironmentFile=-%h/.config/shappe-guide.env
+# start_lidar.sh runs the pre-flight checks, then execs uvicorn in its own PID.
+ExecStart=@APP_DIR@/start_lidar.sh
+Restart=always
+RestartSec=3
+# The pre-flight probes every radar board and the NPU before the server starts.
+TimeoutStartSec=180
+WatchdogSec=30
+LimitCORE=0
+TimeoutAbortSec=10
+TimeoutStopSec=60
+# Log to the journal: journalctl --user -u shappe-guide -f
+StandardOutput=journal
+StandardError=journal
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

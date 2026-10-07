@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Radar Map — 6 × A121</title>
+    <script>
+      (function () {
+        var q = new URLSearchParams(location.search).get("theme");
+        var t = q === "night" || q === "sun"
+          ? q
+          : localStorage.getItem("blindTheme") || "sun";
+        document.documentElement.setAttribute("data-theme", t);
+      })();
+    </script>
+    <style>
+      :root {
+        --bg: #0a0e14;
+        --fg: #e5e9f0;
+        --muted: #8892a0;
+        --card: #141921;
+        --alert: #e53e3e;
+        --warning: #ed8936;
+        --success: #48bb78;
+        --info: #4299e1;
+        --border: #1e2633;
+        --accent: #667eea;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      header {
+        display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline;
+        padding: 14px 18px; border-bottom: 1px solid var(--border);
+      }
+      h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+      .pill {
+        font-size: 12px; padding: 2px 9px; border-radius: 999px;
+        border: 1px solid var(--border); color: var(--muted); background: var(--card);
+      }
+      .pill.ok { color: var(--success); border-color: #2c5b40; }
+      .pill.bad { color: var(--alert); border-color: #5b2c2c; }
+      .pill.warn { color: var(--warning); border-color: #5b452c; }
+      main {
+        display: grid; grid-template-columns: minmax(320px, 1fr) 300px;
+        gap: 18px; padding: 18px; align-items: start;
+      }
+      @media (max-width: 820px) { main { grid-template-columns: 1fr; } }
+      .panel {
+        background: var(--card); border: 1px solid var(--border);
+        border-radius: 12px; padding: 14px;
+      }
+      .panel h2 {
+        font-size: 12px; text-transform: uppercase; letter-spacing: .8px;
+        color: var(--muted); margin: 0 0 10px;
+      }
+      svg { width: 100%; height: auto; display: block; }
+      .row {
+        display: flex; justify-content: space-between; gap: 8px;
+        padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+      }
+      .row:last-child { border-bottom: 0; }
+      .row .k { color: var(--muted); }
+      .row .v { font-variant-numeric: tabular-nums; font-weight: 600; }
+      .note {
+        font-size: 12px; color: var(--muted); margin-top: 10px;
+        padding-top: 10px; border-top: 1px solid var(--border);
+      }
+      .banner {
+        margin: 0 18px; padding: 10px 14px; border-radius: 10px; font-size: 13px;
+        background: #2a1a1a; border: 1px solid #5b2c2c; color: #ffb4b4;
+      }
+      .banner.hidden { display: none; }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+      .cal-row {
+        display: grid; grid-template-columns: 1fr 78px 96px; gap: 8px;
+        align-items: center; padding: 7px 0; border-bottom: 1px solid var(--border);
+      }
+      .cal-row:last-of-type { border-bottom: 0; }
+      .cal-serial { font-size: 12px; }
+      .cal-serial small { color: var(--muted); }
+      .cal-live {
+        text-align: right; font-variant-numeric: tabular-nums;
+        font-weight: 700; font-size: 15px;
+      }
+      select, button {
+        font: inherit; font-size: 12px; padding: 5px 7px; border-radius: 7px;
+        background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+      }
+      button.primary {
+        background: var(--accent); border-color: var(--accent); color: #fff;
+        font-weight: 600; width: 100%; padding: 9px; margin-top: 10px; cursor: pointer;
+      }
+      button.primary:disabled { opacity: .45; cursor: not-allowed; }
+      .cal-msg { font-size: 12px; margin-top: 8px; }
+      .cal-msg.err { color: var(--alert); }
+      .cal-msg.ok { color: var(--success); }
+      #staging { margin-top: 14px; }
+      #staging h3 {
+        font-size: 12px; text-transform: uppercase; letter-spacing: .8px;
+        color: var(--muted); margin: 0 0 4px;
+      }
+      #staging p { font-size: 12px; color: var(--muted); margin: 0 0 10px; }
+      .gauge { display: grid; grid-template-columns: 132px 1fr 64px;
+               gap: 10px; align-items: center; margin-bottom: 7px; }
+      .gauge .who { font-size: 11px; }
+      .gauge .who small { color: var(--muted); }
+      .gauge .track {
+        position: relative; height: 16px; border-radius: 8px;
+        background: var(--bg); border: 1px solid var(--border); overflow: hidden;
+      }
+      .gauge .blind { position: absolute; left: 0; top: 0; bottom: 0;
+                      background: rgba(229,62,62,.20); }
+      .gauge .pip { position: absolute; top: -1px; bottom: -1px; width: 5px;
+                    border-radius: 3px; transform: translateX(-2px); }
+      .gauge .val { text-align: right; font-size: 13px; font-weight: 700;
+                    font-variant-numeric: tabular-nums; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Radar Map</h1>
+      <span class="pill" id="p-boards">— boards</span>
+      <span class="pill" id="p-measured">— measured</span>
+      <span class="pill" id="p-geom">—</span>
+      <span class="pill" id="p-conn">connecting…</span>
+    </header>
+
+    <div class="banner hidden" id="banner"></div>
+
+    <main>
+      <div class="panel">
+        <svg id="map" viewBox="0 0 620 620" role="img"
+             aria-label="Live radar map showing each board's beam and detected range"></svg>
+        <div id="staging" hidden>
+          <h3>Uncalibrated boards — live range</h3>
+          <p>
+            These are streaming right now, but they have no measured bearing, so
+            there is no honest place to draw them on the ring above. Each bar is
+            distance only. Wave a hand at one and watch which bar jumps — that
+            tells you which board it is.
+          </p>
+          <div id="gauges"></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel" style="margin-bottom: 14px">
+          <h2>Cardinals (what guidance uses)</h2>
+          <div id="cardinals"></div>
+          <div class="note">
+            Six boards reduce to four cardinals, nearest-wins.
+            <strong>Front</strong> and <strong>back</strong> each take the nearer
+            of the two boards straddling them; <strong>right</strong> and
+            <strong>left</strong> have one board apiece, sitting on their axis.
+          </div>
+        </div>
+
+        <div class="panel" style="margin-bottom: 14px">
+          <h2>Calibrate</h2>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px">
+            Put a hand ~1.5 ft in front of <strong>one</strong> board. The row whose
+            distance drops is that board — set its bearing, then Save.
+            <br /><br />
+            The options are the six bearings the mount actually has
+            (30/90/150/210/270/330). There is deliberately no <strong>0°</strong>:
+            no board points straight ahead — <strong>30°</strong> and
+            <strong>330°</strong> straddle it, and together they are
+            <em>front</em>.
+          </div>
+          <div id="cal-rows"></div>
+          <button class="primary" id="cal-save">Save bearings</button>
+          <div class="cal-msg" id="cal-msg"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Boards</h2>
+          <div id="boards"></div>
+          <div class="note" id="why-arc">
+            The A121 measures <strong>range only</strong> — it has no angle
+            resolution inside its beam. Each return is drawn as an arc across
+            the whole wedge because the object could be anywhere along it. A dot
+            would imply a bearing the sensor cannot measure.
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      async function adminFetch(url, opts = {}) {
+        const KEY = "shappe-admin-token";
+        let token = "";
+        try { token = localStorage.getItem(KEY) || ""; } catch (e) {}
+        const send = () => fetch(url, { ...opts,
+          headers: { ...(opts.headers || {}), "X-Admin-Token": token } });
+        let r = await send();
+        if (r.status === 401) {
+          token = (prompt("Admin token for this device (SHAPPE_ADMIN_TOKEN):") || "").trim();
+          if (!token) return r;
+          r = await send();
+          if (r.status !== 401) { try { localStorage.setItem(KEY, token); } catch (e) {} }
+        }
+        return r;
+      }
+
+      const SVG = "http://www.w3.org/2000/svg";
+      const CX = 310, CY = 310;      // canvas centre
+      const R_HUB = 40;              // hexagon hub radius
+      const R_IN = 46;               // wedge inner edge
+      const R_OUT = 272;             // wedge outer edge == geometry.end_ft
+
+      const el = (n, a = {}) => {
+        const e = document.createElementNS(SVG, n);
+        for (const k in a) e.setAttribute(k, a[k]);
+        return e;
+      };
+      // Bearing is degrees CLOCKWISE FROM STRAIGHT AHEAD, and ahead is up.
+      const pt = (bearingDeg, r) => {
+        const t = (bearingDeg - 90) * Math.PI / 180;
+        return [CX + r * Math.cos(t), CY + r * Math.sin(t)];
+      };
+      const fmt = (v, d = 1) => (v == null ? "—" : Number(v).toFixed(d));
+      const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+      let geom = null;
+
+      function rOf(ft) {
+        const end = geom ? geom.end_ft : 9.84;
+        return R_IN + (R_OUT - R_IN) * Math.max(0, Math.min(1, ft / end));
+      }
+
+      function zoneColor(ft, zones) {
+        if (ft == null) return "var(--muted)";
+        if (ft <= zones.danger) return "var(--alert)";
+        if (ft <= zones.warning) return "var(--warning)";
+        return "var(--success)";
+      }
+
+      function sectorPath(bearing, halfBeam, r0, r1) {
+        const a0 = bearing - halfBeam, a1 = bearing + halfBeam;
+        const [x0, y0] = pt(a0, r0), [x1, y1] = pt(a1, r0);
+        const [x2, y2] = pt(a1, r1), [x3, y3] = pt(a0, r1);
+        const big = 2 * halfBeam > 180 ? 1 : 0;
+        return `M ${x0} ${y0} A ${r0} ${r0} 0 ${big} 1 ${x1} ${y1}`
+             + ` L ${x2} ${y2} A ${r1} ${r1} 0 ${big} 0 ${x3} ${y3} Z`;
+      }
+      function arcPath(bearing, halfBeam, r) {
+        const [x0, y0] = pt(bearing - halfBeam, r);
+        const [x1, y1] = pt(bearing + halfBeam, r);
+        return `M ${x0} ${y0} A ${r} ${r} 0 0 1 ${x1} ${y1}`;
+      }
+
+      function draw(d) {
+        geom = d.geometry;
+        const half = geom.beam_deg / 2;
+        const svg = document.getElementById("map");
+        svg.textContent = "";
+
+        // ---- range rings, every 2 ft ----
+        for (let ft = 2; ft <= geom.end_ft + 0.01; ft += 2) {
+          const r = rOf(ft);
+          svg.appendChild(el("circle", {
+            cx: CX, cy: CY, r, fill: "none",
+            stroke: "var(--border)", "stroke-width": 1,
+          }));
+          const slit = ((geom.offset_deg ?? 0) + geom.step_deg / 2) % geom.step_deg;
+          const [lx0, ly0] = pt(slit, r);
+          const t = el("text", {
+            x: lx0, y: ly0, fill: "var(--muted)", "font-size": 10,
+            "text-anchor": "middle", "dominant-baseline": "middle",
+          });
+          t.textContent = ft + " ft";
+          svg.appendChild(t);
+        }
+
+        // ---- one wedge per slot ----
+        for (const slot of d.slots) {
+          const b = slot.board;
+          const live = b && b.online && !b.stale;
+          const g = el("g");
+
+          g.appendChild(el("path", {
+            d: sectorPath(slot.bearing, half, R_IN, R_OUT),
+            fill: live ? "rgba(102,126,234,.07)" : "rgba(136,146,160,.04)",
+            stroke: live ? "var(--accent)" : "var(--muted)",
+            "stroke-width": live ? 1.4 : 1,
+            "stroke-dasharray": b ? (live ? "" : "5 4") : "6 5",
+            opacity: b ? 1 : 0.85,
+          }));
+
+          // Blind zone nearer than start_ft — the board genuinely cannot see here.
+          if (live) {
+            g.appendChild(el("path", {
+              d: sectorPath(slot.bearing, half, R_IN, rOf(geom.start_ft)),
+              fill: "rgba(229,62,62,.16)", stroke: "none",
+            }));
+          }
+
+          // ---- the detection itself: an ARC across the full beam ----
+          if (live && b.ft != null) {
+            const r = rOf(b.ft);
+            const col = zoneColor(b.ft, d.zones_ft);
+            g.appendChild(el("path", {
+              d: arcPath(slot.bearing, half, r),
+              fill: "none", stroke: col, "stroke-width": 7,
+              "stroke-linecap": "round", opacity: b.degraded ? 0.45 : 1,
+            }));
+            const [lx, ly] = pt(slot.bearing, r + 20);
+            const lab = el("text", {
+              x: lx, y: ly, fill: col, "font-size": 15, "font-weight": 700,
+              "text-anchor": "middle", "dominant-baseline": "middle",
+            });
+            lab.textContent = fmt(b.ft) + " ft";
+            g.appendChild(lab);
+          }
+
+          // ---- wedge caption ----
+          const [tx, ty] = pt(slot.bearing, R_OUT + 26);
+          const cap = el("text", {
+            x: tx, y: ty, "text-anchor": "middle", "dominant-baseline": "middle",
+            "font-size": 11, "font-weight": 600,
+            fill: !b ? "var(--muted)" : live ? "var(--fg)" : "var(--alert)",
+          });
+          let status;
+          if (!b) status = "no board";
+          else if (!b.online) status = "offline";
+          else if (b.stale) status = "stale";
+          else if (b.ft == null) status = "clear";
+          else status = null;            // a distance is already drawn in-wedge
+          cap.textContent = slot.bearing + "°" + (status ? " · " + status : "");
+          if (!b) {
+            // Say WHY the wedge is empty, right where the eye already is.
+            const [ux, uy] = pt(slot.bearing, R_OUT + 40);
+            const hint = el("text", {
+              x: ux, y: uy, "text-anchor": "middle", "dominant-baseline": "middle",
+              "font-size": 9.5, fill: "var(--warning)",
+            });
+            hint.textContent = "not calibrated";
+            g.appendChild(hint);
+          }
+          g.appendChild(cap);
+
+          svg.appendChild(g);
+        }
+
+        // ---- hexagon hub ----
+        const hex = [];
+        for (let i = 0; i < 6; i++) hex.push(pt(i * 60 + 30, R_HUB).join(","));
+        svg.appendChild(el("polygon", {
+          points: hex.join(" "), fill: "var(--card)",
+          stroke: "var(--fg)", "stroke-width": 1.5,
+        }));
+        const ahead = el("text", {
+          x: CX, y: CY - R_HUB - 12, "text-anchor": "middle",
+          "font-size": 10, fill: "var(--muted)", "letter-spacing": "1px",
+        });
+        ahead.textContent = "AHEAD";
+        svg.appendChild(ahead);
+
+        // ---- side panels ----
+        document.getElementById("cardinals").innerHTML = Object.entries(d.cardinals)
+          .map(([k, v]) => `<div class="row"><span class="k">${esc(k)}${
+            v.degraded ? " · lagging" : ""}</span><span class="v" style="color:${
+            v.online ? zoneColor(v.ft, d.zones_ft) : "var(--muted)"}">${
+            v.online ? fmt(v.ft) + " ft" : "no data"}</span></div>`).join("");
+
+        const rows = d.slots.filter(s => s.board).map(s => {
+          const b = s.board;
+          return `<div class="row"><span class="k">${esc(b.serial)}<br>
+            <span style="font-size:11px">port ${esc(b.hub_port)} · ${esc(s.bearing)}°</span></span>
+            <span class="v" style="color:${b.online ? zoneColor(b.ft, d.zones_ft) : "var(--muted)"}">${
+            b.online ? (b.ft == null ? "clear" : fmt(b.ft) + " ft") : "offline"}</span></div>`;
+        }).join("");
+        const un = d.unplaced.map(b =>
+          `<div class="row"><span class="k">${esc(b.serial)}<br>
+            <span style="font-size:11px">port ${esc(b.hub_port)} · unmeasured</span></span>
+            <span class="v" style="color:var(--warning)">not placed</span></div>`).join("");
+        document.getElementById("boards").innerHTML =
+          (rows + un) || '<div class="row"><span class="k">no boards running</span></div>';
+
+        // ---- header pills ----
+        const s = d.summary;
+        const pb = document.getElementById("p-boards");
+        pb.textContent = `${s.live}/${s.configured} live`;
+        pb.className = "pill " + (s.live === s.configured ? "ok" : s.live ? "warn" : "bad");
+        const pm = document.getElementById("p-measured");
+        pm.textContent = `${s.measured}/${s.configured} bearings measured`;
+        pm.className = "pill " + (s.measured === s.configured ? "ok" : "warn");
+        document.getElementById("p-geom").textContent =
+          `${geom.beam_deg}° beam · ${geom.step_deg}° spacing · ` +
+          (geom.gap_deg > 0 ? `${geom.gap_deg}° blind slits` : `${-geom.gap_deg}° overlap`);
+
+        const banner = document.getElementById("banner");
+        const unplacedNow = d.unplaced.length || (s.configured - s.measured);
+        if (unplacedNow > 0) {
+          banner.textContent = `${unplacedNow} board(s) have no measured bearing. `
+            + `They are streaming so you can identify them, but they feed no direction `
+            + `and cannot affect guidance. Use the CALIBRATE panel on this page to set `
+            + `them — no restart needed.`;
+          banner.classList.remove("hidden");
+        } else {
+          banner.classList.add("hidden");
+        }
+      }
+
+      let ringOpts = [], calDirty = false;
+
+      function renderCalibrate(d) {
+        ringOpts = d.ring || [];
+        const all = d.slots.filter(s => s.board).map(s => s.board).concat(d.unplaced);
+        const box = document.getElementById("cal-rows");
+        if (!all.length) {
+          box.innerHTML = '<div style="font-size:12px;color:var(--muted)">'
+            + "No boards streaming. Check the USB hub.</div>";
+          document.getElementById("cal-save").disabled = true;
+          delete box.dataset.sig;
+          return;
+        }
+        document.getElementById("cal-save").disabled = false;
+
+        const sig = all.map(b => b.serial).sort().join(",");
+        if (box.dataset.sig !== sig) {
+          box.dataset.sig = sig;
+          box.innerHTML = all.map(b => {
+            const extra = b.bearing != null && !ringOpts.includes(b.bearing)
+              ? [`<option value="${esc(b.bearing)}">${esc(b.bearing)}° (off-ring)</option>`] : [];
+            const opts = ['<option value="">— unset —</option>'].concat(
+              ringOpts.map(v => `<option value="${esc(v)}">${esc(v)}°</option>`), extra).join("");
+            return `<div class="cal-row">
+              <span class="cal-serial">${esc(b.serial)}<br><small>port ${esc(b.hub_port)}</small></span>
+              <select data-serial="${esc(b.serial)}">${opts}</select>
+              <span class="cal-live" id="live-${esc(b.serial)}">—</span>
+            </div>`;
+          }).join("");
+          box.querySelectorAll("select").forEach(s => {
+            s.value = "";
+            s.addEventListener("change", () => { calDirty = true; s.dataset.touched = "1"; });
+          });
+          calDirty = false;
+        }
+
+        for (const b of all) {
+          const cell = document.getElementById("live-" + b.serial);
+          if (!cell) continue;
+          const on = b.online && !b.stale;
+          cell.textContent = !on ? "offline" : (b.ft == null ? "clear" : fmt(b.ft) + " ft");
+          cell.style.color = on ? zoneColor(b.ft, d.zones_ft) : "var(--muted)";
+        }
+        if (!calDirty) {
+          box.querySelectorAll("select").forEach(sel => {
+            const b = all.find(x => x.serial === sel.dataset.serial);
+            if (b && b.bearing != null) sel.value = String(b.bearing);
+          });
+        }
+      }
+
+      document.getElementById("cal-save").addEventListener("click", async () => {
+        const msg = document.getElementById("cal-msg");
+        const bearings = {};
+        document.querySelectorAll("#cal-rows select[data-touched]").forEach(s => {
+          bearings[s.dataset.serial] = s.value === "" ? null : Number(s.value);
+        });
+        if (!Object.keys(bearings).length) {
+          msg.className = "cal-msg err";
+          msg.textContent = "Nothing changed — pick a bearing first.";
+          return;
+        }
+        msg.className = "cal-msg";
+        msg.textContent = "Saving…";
+        try {
+          const r = await adminFetch("/radar/calibrate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bearings }),
+          });
+          const out = await r.json();
+          if (!out.ok) {
+            msg.className = "cal-msg err";
+            msg.textContent = out.error || out.detail || "save failed";
+            return;
+          }
+          calDirty = false;
+          document.querySelectorAll("#cal-rows select").forEach(s => { delete s.dataset.touched; });
+          msg.className = "cal-msg ok";
+          msg.textContent = out.restarting
+            ? `Saved ${out.measured} bearing(s). Radar restarting — `
+              + "boards recalibrate for ~20 s each, so the map fills in gradually."
+            : `Saved ${out.measured} bearing(s) — applied live, no restart.`;
+        } catch (e) {
+          msg.className = "cal-msg err";
+          msg.textContent = "save failed: " + e.message;
+        }
+      });
+
+      function renderStaging(d) {
+        const wrap = document.getElementById("staging");
+        const box = document.getElementById("gauges");
+        if (!d.unplaced.length) { wrap.hidden = true; return; }
+        wrap.hidden = false;
+        const end = d.geometry.end_ft, blind = d.geometry.start_ft;
+        box.innerHTML = d.unplaced.map(b => {
+          const on = b.online && !b.stale;
+          const pct = (on && b.ft != null)
+            ? Math.max(0, Math.min(100, (b.ft / end) * 100)) : null;
+          const col = on ? zoneColor(b.ft, d.zones_ft) : "var(--muted)";
+          return `<div class="gauge">
+            <span class="who">${esc(b.serial)}<br><small>port ${esc(b.hub_port)}</small></span>
+            <span class="track">
+              <span class="blind" style="width:${(blind / end) * 100}%"></span>
+              ${pct == null ? "" : `<span class="pip" style="left:${pct}%;background:${col}"></span>`}
+            </span>
+            <span class="val" style="color:${col}">${
+              !on ? "offline" : (b.ft == null ? "clear" : fmt(b.ft) + " ft")}</span>
+          </div>`;
+        }).join("");
+      }
+
+      async function tick() {
+        const p = document.getElementById("p-conn");
+        try {
+          const r = await fetch("/radar/map", { cache: "no-store" });
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          const data = await r.json();
+          draw(data);
+          renderStaging(data);
+          renderCalibrate(data);
+          p.textContent = "live";
+          p.className = "pill ok";
+        } catch (e) {
+          p.textContent = "disconnected — " + e.message;
+          p.className = "pill bad";
+        }
+      }
+      tick();
+      setInterval(tick, 250);
+    </script>
+  </body>
+</html>

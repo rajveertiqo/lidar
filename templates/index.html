@@ -1,0 +1,2577 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Blind Assistance System - Road Crossing</title>
+    <script>
+      (function () {
+        var q = new URLSearchParams(location.search).get("theme");
+        var t = q === "night" || q === "sun"
+          ? q
+          : localStorage.getItem("blindTheme") || "sun";
+        document.documentElement.setAttribute("data-theme", t);
+      })();
+    </script>
+    <script src="https://cdn.plot.ly/plotly-2.33.0.min.js"></script>
+    <style>
+      :root {
+        --bg: #0a0e14;
+        --fg: #e5e9f0;
+        --muted: #8892a0;
+        --card: #141921;
+        --alert: #e53e3e;
+        --warning: #ed8936;
+        --success: #48bb78;
+        --info: #4299e1;
+        --border: #1e2633;
+        --accent: #667eea;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: Inter, system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      /* Custom scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: var(--card);
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #2a3142;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #3a4152;
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 20px;
+        border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        backdrop-filter: blur(12px);
+        background: rgba(10, 14, 20, 0.95);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      }
+      header b {
+        font-size: 1.05rem;
+        letter-spacing: 0.3px;
+      }
+      .pill {
+        padding: 7px 14px;
+        border: 1px solid #2a3142;
+        border-radius: 999px;
+        color: #a8b8d8;
+        background: #0d1421;
+        font-size: 0.88rem;
+        font-weight: 500;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+      }
+      .main-grid {
+        display: grid;
+        grid-template-columns: 380px 1fr 360px;
+        gap: 16px;
+        padding: 16px;
+        min-height: calc(100vh - 54px);
+      }
+      @media (max-width: 1300px) {
+        .main-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+      @media (max-width: 540px) {
+        .pill { display: none; }
+        header b { font-size: 0.9rem; }
+      }
+      @media (max-width: 760px) {
+        header {
+          padding: 10px 12px;
+          gap: 8px;
+          flex-wrap: wrap;
+          row-gap: 8px;
+        }
+        header b { font-size: 0.95rem; }
+        .pill {
+          border-radius: 8px;
+          padding: 6px 10px;
+          font-size: 0.78rem;
+          white-space: nowrap;
+        }
+        .header-right { gap: 8px; flex-wrap: wrap; }
+        .main-grid {
+          grid-template-columns: 1fr;
+          gap: 10px;
+          padding: 10px;
+        }
+        .card { padding: 12px; }
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 16px;
+        overflow-y: auto;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      }
+      .card-title {
+        font-weight: 700;
+        margin-bottom: 12px;
+        font-size: 0.95rem;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        letter-spacing: 0.3px;
+      }
+
+      /* Traffic Light Display */
+      .traffic-light-panel {
+        background: linear-gradient(145deg, #161c27 0%, #1a2332 100%);
+        border: 2px solid var(--info);
+        border-radius: 16px;
+        padding: 18px;
+        margin-bottom: 16px;
+        transition: all 0.3s ease;
+      }
+      .traffic-light-panel.safe {
+        border-color: var(--success);
+        background: linear-gradient(145deg, #1a2e1f 0%, #0f1a10 100%);
+      }
+      .traffic-light-panel.danger {
+        border-color: var(--alert);
+        background: linear-gradient(145deg, #2d1b1f 0%, #1a0f10 100%);
+      }
+      .traffic-light-panel.warning {
+        border-color: var(--warning);
+        background: linear-gradient(145deg, #2d2617 0%, #1a1505 100%);
+      }
+
+      .traffic-status {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 12px;
+      }
+      .traffic-light-visual {
+        width: 60px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 8px;
+        background: #111;
+        border-radius: 8px;
+      }
+      .light-bulb {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: #222;
+        border: 2px solid #333;
+        transition: all 0.3s;
+      }
+      .light-bulb.red.active {
+        background: radial-gradient(circle, #ff4444 0%, #cc0000 70%);
+        box-shadow: 0 0 20px #ff4444;
+      }
+      .light-bulb.yellow.active {
+        background: radial-gradient(circle, #ffdd44 0%, #ccaa00 70%);
+        box-shadow: 0 0 20px #ffdd44;
+      }
+      .light-bulb.green.active {
+        background: radial-gradient(circle, #44ff44 0%, #00cc00 70%);
+        box-shadow: 0 0 20px #44ff44;
+      }
+
+      .crossing-status {
+        flex: 1;
+      }
+      .crossing-action {
+        font-size: 28px;
+        font-weight: bold;
+        margin-bottom: 4px;
+      }
+      .crossing-action.cross {
+        color: var(--success);
+      }
+      .crossing-action.stop {
+        color: var(--alert);
+      }
+      .crossing-action.wait {
+        color: var(--warning);
+      }
+      .traffic-light-panel.idle {
+        border-color: var(--border);
+      }
+      .crossing-action.idle {
+        color: var(--muted);
+      }
+      .crossing-message {
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      .crossing-btn {
+        width: 100%;
+        padding: 18px;
+        font-size: 17px;
+        font-weight: 700;
+        border: none;
+        border-radius: 12px;
+        cursor: pointer;
+        margin-top: 14px;
+        transition: all 0.25s ease;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        font-size: 15px;
+      }
+      .crossing-btn.ready {
+        background: linear-gradient(135deg, var(--success) 0%, #38a169 100%);
+        color: #fff;
+        box-shadow: 0 4px 12px rgba(72, 187, 120, 0.3);
+      }
+      .crossing-btn.ready:hover {
+        background: linear-gradient(135deg, #38a169 0%, var(--success) 100%);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(72, 187, 120, 0.4);
+      }
+      .crossing-btn.waiting {
+        background: #2a2e38;
+        color: #6b7280;
+        cursor: not-allowed;
+      }
+      .crossing-btn.crossing {
+        background: linear-gradient(135deg, var(--warning) 0%, #d97706 100%);
+        color: #fff;
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+      .crossing-btn.danger {
+        background: linear-gradient(135deg, var(--alert) 0%, #c53030 100%);
+        color: #fff;
+        box-shadow: 0 4px 12px rgba(229, 62, 62, 0.3);
+      }
+
+      @keyframes pulse {
+        0%, 100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.85;
+          transform: scale(0.98);
+        }
+      }
+
+      /* Intersection View */
+      .intersection-view {
+        position: relative;
+        width: 200px;
+        height: 200px;
+        margin: 16px auto;
+        background: #222;
+        border-radius: 12px;
+      }
+      .intersection-road {
+        position: absolute;
+        background: #333;
+      }
+      .road-h {
+        width: 100%;
+        height: 60px;
+        top: 70px;
+        left: 0;
+      }
+      .road-v {
+        width: 60px;
+        height: 100%;
+        top: 0;
+        left: 70px;
+      }
+      .road-marking {
+        position: absolute;
+        background: #fff;
+        opacity: 0.3;
+      }
+      .marking-h {
+        width: 8px;
+        height: 2px;
+      }
+      .marking-v {
+        width: 2px;
+        height: 8px;
+      }
+      .intersection-light {
+        position: absolute;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        border: 2px solid #444;
+      }
+      .light-top {
+        top: 40px;
+        left: 88px;
+      }
+      .light-right {
+        top: 88px;
+        right: 40px;
+      }
+      .light-bottom {
+        bottom: 40px;
+        left: 88px;
+      }
+      .light-left {
+        top: 88px;
+        left: 40px;
+      }
+      .you-marker {
+        position: absolute;
+        bottom: 20px;
+        left: 88px;
+        font-size: 24px;
+      }
+
+      /* Direction Lights Grid */
+      .lights-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+        margin-top: 14px;
+      }
+      .light-card {
+        background: #0d1421;
+        border: 1px solid #1e2633;
+        border-radius: 10px;
+        padding: 10px 8px;
+        text-align: center;
+        transition: all 0.2s ease;
+      }
+      .light-card .direction {
+        font-size: 9px;
+        color: var(--muted);
+        text-transform: uppercase;
+        margin-bottom: 5px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+      }
+      .light-card .icon {
+        font-size: 26px;
+        margin: 2px 0;
+      }
+      .light-card .state {
+        font-size: 10px;
+        font-weight: 600;
+        margin-top: 5px;
+        opacity: 0.8;
+      }
+
+      /* Path Guidance */
+      .path-box {
+        background: linear-gradient(145deg, #0d1421 0%, #12182a 100%);
+        border: 1.5px solid #1e2633;
+        border-radius: 14px;
+        padding: 16px;
+        margin-bottom: 16px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      }
+      .path-direction {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .path-arrow {
+        font-size: 46px;
+        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+      }
+      .path-action {
+        font-size: 19px;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+      }
+      .path-detail {
+        font-size: 13px;
+        color: var(--muted);
+        margin-top: 5px;
+      }
+
+      /* Sectors */
+      .sector-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+      }
+      .sector {
+        background: #0d1421;
+        border: 1.5px solid #1e2633;
+        border-radius: 10px;
+        padding: 12px 10px;
+        text-align: center;
+        transition: all 0.2s ease;
+      }
+      .sector.danger {
+        background: #2a1618;
+        border-color: #991b1b;
+        box-shadow: 0 0 12px rgba(229, 62, 62, 0.2);
+      }
+      .sector.warning {
+        background: #2a2214;
+        border-color: #b45309;
+        box-shadow: 0 0 12px rgba(237, 137, 54, 0.2);
+      }
+      .sector.safe {
+        background: #182a1c;
+        border-color: #15803d;
+        box-shadow: 0 0 12px rgba(72, 187, 120, 0.2);
+      }
+      .sector-name {
+        font-size: 10px;
+        color: var(--muted);
+        text-transform: uppercase;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+      }
+      .sector-dist {
+        font-size: 16px;
+        font-weight: 700;
+        margin: 4px 0 0;
+      }
+
+      /* Small control button (segmentation view controls) */
+      .ctl-btn {
+        background: linear-gradient(135deg, var(--info) 0%, #3182ce 100%);
+        border: none;
+        border-radius: 8px;
+        color: #fff;
+        padding: 9px 18px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 6px rgba(66, 153, 225, 0.25);
+      }
+      .ctl-btn:hover {
+        background: linear-gradient(135deg, #3182ce 0%, var(--info) 100%);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 10px rgba(66, 153, 225, 0.35);
+      }
+
+      /* Chart */
+      #chart {
+        height: 280px;
+        width: 100%;
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      /* Camera */
+      .camera-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }
+      .video-container {
+        position: relative;
+        width: 100%;
+        background: #000;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+        border: 1px solid #1e2633;
+      }
+      .video-container .sector-label {
+        position: absolute;
+        top: 4px;
+        left: 6px;
+        background: rgba(0, 0, 0, 0.75);
+        color: var(--success);
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        z-index: 1;
+        backdrop-filter: blur(4px);
+      }
+      .camera-feed-img {
+        width: 100%;
+        height: auto;
+        min-height: 100px;
+        max-height: 140px;
+        object-fit: contain;
+        display: block;
+      }
+      .fps-badge {
+        background: rgba(0, 0, 0, 0.85);
+        color: var(--success);
+        padding: 4px 10px;
+        border-radius: 8px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+      }
+
+      .det-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .det-box {
+        background: #0d1421;
+        border: 1px solid #1e2633;
+        border-radius: 10px;
+        padding: 10px;
+      }
+      .det-box h4 {
+        color: var(--success);
+        font-size: 0.75em;
+        margin: 0 0 6px;
+        display: flex;
+        justify-content: space-between;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+      }
+      .det-count {
+        background: var(--success);
+        color: #000;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 0.7em;
+        font-weight: 700;
+      }
+      .det-list {
+        max-height: 50px;
+        overflow-y: auto;
+        font-size: 0.7em;
+      }
+      .radar-list {
+        max-height: none;
+        overflow-y: visible;
+      }
+      .det-item {
+        background: rgba(255, 255, 255, 0.04);
+        padding: 4px 6px;
+        border-radius: 6px;
+        margin-bottom: 3px;
+        display: flex;
+        justify-content: space-between;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .stat {
+        display: flex;
+        justify-content: space-between;
+        padding: 6px 0;
+        font-size: 0.85rem;
+        color: var(--muted);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+      }
+      .stat:last-child {
+        border-bottom: none;
+      }
+      .stat b {
+        color: var(--fg);
+        font-weight: 600;
+      }
+      #radar-scope {
+        display: block;
+        width: 100%;
+        max-width: 440px;
+        height: auto;
+        margin: 0 auto;
+      }
+      @media (max-width: 900px) {
+        #radar-scope { max-width: none; }
+      }
+
+      .sc-wedge { fill: rgba(102, 126, 234, 0.1); stroke: none; }
+      .sc-wedge.off { fill: rgba(136, 146, 160, 0.04); stroke: none; }
+      .sc-edge { fill: none; stroke: var(--accent); }
+      .sc-edge.off { fill: none; stroke: var(--muted); }
+      .sc-overlap { fill: rgba(102, 126, 234, 0.3); stroke: none; }
+      :root[data-theme="sun"] .sc-overlap { fill: rgba(59, 30, 158, 0.28); }
+      .sc-blind { fill: rgba(229, 62, 62, 0.16); stroke: none; }
+      .sc-ring { fill: none; stroke: var(--border); stroke-width: 1; }
+
+      :root[data-theme="sun"] .sc-wedge {
+        fill: rgba(59, 30, 158, 0.1);
+      }
+      :root[data-theme="sun"] .sc-wedge.off {
+        fill: rgba(0, 0, 0, 0.06);
+      }
+      :root[data-theme="sun"] .sc-blind {
+        fill: rgba(179, 0, 0, 0.28);
+      }
+      /* Pure black rings would out-shout the detections they exist to scale. */
+      :root[data-theme="sun"] .sc-ring {
+        stroke: rgba(0, 0, 0, 0.35);
+      }
+
+      :root[data-theme="sun"] {
+        --bg: #ffffff;
+        --fg: #000000;
+        --muted: #2b2b2b;
+        --card: #ffffff;
+        --alert: #b30000;
+        --warning: #8a4700;
+        --success: #0a5c0a;
+        --info: #00408f;
+        --border: #000000;
+        --accent: #3b1e9e;
+      }
+
+      :root[data-theme="sun"] body {
+        background: #fff;
+        color: #000;
+        -webkit-font-smoothing: auto;
+        -moz-osx-font-smoothing: auto;
+        font-weight: 500;
+      }
+
+      :root[data-theme="sun"] header {
+        background: #fff;
+        backdrop-filter: none;
+        box-shadow: none;
+        border-bottom: 3px solid #000;
+      }
+      :root[data-theme="sun"] header b { font-size: 1.15rem; }
+
+      :root[data-theme="sun"] .pill {
+        background: #fff;
+        color: #000;
+        border: 2px solid #000;
+        box-shadow: none;
+        font-weight: 700;
+      }
+
+      :root[data-theme="sun"] .card {
+        background: #fff;
+        border: 3px solid #000;
+        box-shadow: none;
+      }
+      :root[data-theme="sun"] .card-title {
+        color: #000;
+        font-weight: 800;
+        font-size: 1.05rem;
+        border-bottom: 2px solid #000;
+      }
+
+      /* ---- Crossing panel ---- */
+      :root[data-theme="sun"] .traffic-light-panel {
+        background: #fff;
+        border: 3px solid #000;
+      }
+      :root[data-theme="sun"] .traffic-light-panel.safe {
+        background: #e8f7e8;
+        border-color: var(--success);
+      }
+      :root[data-theme="sun"] .traffic-light-panel.danger {
+        background: #fde8e8;
+        border-color: var(--alert);
+      }
+      :root[data-theme="sun"] .traffic-light-panel.warning {
+        background: #fdf1e0;
+        border-color: var(--warning);
+      }
+      :root[data-theme="sun"] .traffic-light-visual {
+        background: #000;
+        border-radius: 8px;
+      }
+      :root[data-theme="sun"] .light-bulb {
+        background: #d9d9d9;
+        border: 2px solid #000;
+      }
+      :root[data-theme="sun"] .light-bulb.red.active {
+        background: #e00000; box-shadow: none;
+      }
+      :root[data-theme="sun"] .light-bulb.yellow.active {
+        background: #f0b000; box-shadow: none;
+      }
+      :root[data-theme="sun"] .light-bulb.green.active {
+        background: #00a000; box-shadow: none;
+      }
+
+      :root[data-theme="sun"] .crossing-action {
+        font-size: 32px;
+        font-weight: 900;
+      }
+      :root[data-theme="sun"] .crossing-action.cross { color: var(--success); }
+      :root[data-theme="sun"] .crossing-action.stop { color: var(--alert); }
+      :root[data-theme="sun"] .crossing-action.wait { color: var(--warning); }
+      :root[data-theme="sun"] .crossing-message {
+        color: #000;
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      /* Buttons: solid fill + white text, no gradient. */
+      :root[data-theme="sun"] .crossing-btn {
+        box-shadow: none;
+        border: 3px solid #000;
+        font-weight: 800;
+        font-size: 17px;
+      }
+      :root[data-theme="sun"] .crossing-btn.ready {
+        background: var(--success); color: #fff;
+      }
+      :root[data-theme="sun"] .crossing-btn.ready:hover {
+        background: #084a08; transform: none; box-shadow: none;
+      }
+      :root[data-theme="sun"] .crossing-btn.waiting {
+        background: #e0e0e0; color: #000;
+      }
+      :root[data-theme="sun"] .crossing-btn.crossing {
+        background: var(--warning); color: #fff;
+      }
+      :root[data-theme="sun"] .crossing-btn.danger {
+        background: var(--alert); color: #fff;
+      }
+
+      :root[data-theme="sun"] .lights-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+      }
+      :root[data-theme="sun"] .light-card {
+        background: #fff;
+        border: 2px solid #000;
+        padding: 10px 6px;
+        overflow: hidden;
+      }
+      :root[data-theme="sun"] .light-card .direction {
+        color: #000; font-weight: 800; font-size: 10px;
+      }
+      :root[data-theme="sun"] .light-card .state {
+        color: #000; font-weight: 800; opacity: 1; font-size: 11px;
+      }
+
+      /* ---- Guidance / obstacle / radar boxes ---- */
+      :root[data-theme="sun"] .path-box {
+        background: #fff;
+        border: 3px solid #000;
+        box-shadow: none;
+      }
+      :root[data-theme="sun"] .path-action {
+        font-size: 22px; font-weight: 800; color: #000;
+      }
+      :root[data-theme="sun"] .path-detail {
+        color: #1a1a1a; font-size: 14px; font-weight: 600;
+      }
+      :root[data-theme="sun"] .path-arrow {
+        filter: none; font-size: 50px;
+      }
+
+      /* ---- Sector tiles: solid block of colour, white bold text ---- */
+      :root[data-theme="sun"] .sector {
+        background: #fff;
+        border: 2px solid #000;
+        box-shadow: none;
+      }
+      :root[data-theme="sun"] .sector-name {
+        color: #000; font-weight: 800; font-size: 11px;
+      }
+      :root[data-theme="sun"] .sector-dist {
+        font-size: 18px; font-weight: 800;
+      }
+      :root[data-theme="sun"] .sector.danger {
+        background: var(--alert); border-color: #000; box-shadow: none;
+      }
+      :root[data-theme="sun"] .sector.warning {
+        background: var(--warning); border-color: #000; box-shadow: none;
+      }
+      :root[data-theme="sun"] .sector.safe {
+        background: var(--success); border-color: #000; box-shadow: none;
+      }
+      :root[data-theme="sun"] .sector.danger .sector-name,
+      :root[data-theme="sun"] .sector.danger .sector-dist,
+      :root[data-theme="sun"] .sector.warning .sector-name,
+      :root[data-theme="sun"] .sector.warning .sector-dist,
+      :root[data-theme="sun"] .sector.safe .sector-name,
+      :root[data-theme="sun"] .sector.safe .sector-dist {
+        color: #fff;
+      }
+
+      /* ---- Control buttons ---- */
+      :root[data-theme="sun"] .ctl-btn {
+        background: var(--info); color: #fff; border: 2px solid #000;
+        box-shadow: none; font-weight: 800; font-size: 14px;
+      }
+      :root[data-theme="sun"] .ctl-btn:hover {
+        background: #002d63; transform: none; box-shadow: none;
+      }
+
+      /* ---- Detections / stats ---- */
+      :root[data-theme="sun"] .det-box {
+        background: #fff; border: 2px solid #000;
+      }
+      :root[data-theme="sun"] .det-box h4 { color: #000; font-weight: 800; }
+      :root[data-theme="sun"] .det-count {
+        background: #000; color: #fff; font-weight: 800;
+      }
+      :root[data-theme="sun"] .det-list { font-size: 0.8em; }
+      :root[data-theme="sun"] .det-item {
+        background: #fff; border: 1px solid #000; color: #000;
+        font-weight: 600;
+      }
+      :root[data-theme="sun"] .stat {
+        color: #000; font-weight: 600; font-size: 0.95rem;
+        border-bottom: 1px solid #000;
+      }
+      :root[data-theme="sun"] .stat b { color: #000; font-weight: 800; }
+
+      /* ---- Camera tiles ---- */
+      :root[data-theme="sun"] .video-container {
+        border: 2px solid #000; box-shadow: none;
+      }
+      :root[data-theme="sun"] .video-container .sector-label {
+        background: #000; color: #fff; backdrop-filter: none;
+        font-weight: 800;
+      }
+      :root[data-theme="sun"] .fps-badge {
+        background: #000; color: #fff; font-weight: 800;
+      }
+
+      :root[data-theme="sun"] ::-webkit-scrollbar-track { background: #e0e0e0; }
+      :root[data-theme="sun"] ::-webkit-scrollbar-thumb { background: #000; }
+
+      #theme-btn {
+        border: 2px solid currentColor;
+        border-radius: 999px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-weight: 700;
+        padding: 7px 14px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      header .header-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .guide-banner {
+        position: sticky;
+        top: 54px;
+        z-index: 99;
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 18px;
+        margin: 16px 16px 0;
+        padding: 18px 22px;
+        border-radius: 16px;
+        border: 2px solid var(--border);
+        border-left: 10px solid var(--gb-accent, var(--accent));
+        background: var(--card);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+      }
+      .guide-banner[data-level="clear"]   { --gb-accent: #22c55e; }
+      .guide-banner[data-level="caution"] { --gb-accent: #f59e0b; }
+      .guide-banner[data-level="danger"]  { --gb-accent: #ef4444; }
+      .guide-banner[data-level="idle"]    { --gb-accent: #475569; }
+
+      .gb-arrow {
+        font-size: 56px;
+        line-height: 1;
+        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
+      }
+      .gb-main { min-width: 0; }
+      .gb-instruction {
+        font-size: 40px;
+        font-weight: 800;
+        line-height: 1.1;
+        letter-spacing: -0.5px;
+        color: var(--gb-accent, var(--fg));
+        overflow-wrap: anywhere;
+      }
+      .gb-reason {
+        margin-top: 6px;
+        font-size: 15px;
+        color: var(--muted);
+        line-height: 1.35;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .gb-voice {
+        margin-top: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      /* The numbers worth having beside the instruction, and no others. */
+      .gb-stats {
+        display: flex;
+        gap: 10px;
+        flex-shrink: 0;
+      }
+      .gb-stat {
+        min-width: 92px;
+        padding: 10px 14px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--border);
+        text-align: center;
+      }
+      .gb-stat b {
+        display: block;
+        font-size: 26px;
+        font-weight: 800;
+        line-height: 1.15;
+        font-variant-numeric: tabular-nums;
+      }
+      .gb-stat span {
+        display: block;
+        margin-top: 2px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--muted);
+      }
+
+      .guide-banner.said { animation: gb-pulse 0.7s ease-out; }
+      @keyframes gb-pulse {
+        0%   { box-shadow: 0 0 0 0 var(--gb-accent); }
+        100% { box-shadow: 0 0 0 18px rgba(0, 0, 0, 0); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .guide-banner.said { animation: none; }
+      }
+
+      :root[data-theme="sun"] .guide-banner {
+        background: #fff;
+        border: 3px solid #000;
+        border-left: 14px solid var(--gb-accent, #000);
+        box-shadow: none;
+      }
+      :root[data-theme="sun"] .guide-banner[data-level="clear"]   { --gb-accent: #0a5c0a; }
+      :root[data-theme="sun"] .guide-banner[data-level="caution"] { --gb-accent: #8a4700; }
+      :root[data-theme="sun"] .guide-banner[data-level="danger"]  { --gb-accent: #b30000; }
+      :root[data-theme="sun"] .guide-banner[data-level="idle"]    { --gb-accent: #333; }
+      :root[data-theme="sun"] .gb-instruction { font-size: 44px; }
+      :root[data-theme="sun"] .gb-reason {
+        color: #1a1a1a; font-size: 16px; font-weight: 600;
+      }
+      :root[data-theme="sun"] .gb-arrow { filter: none; }
+      :root[data-theme="sun"] .gb-stat {
+        background: #fff; border: 2px solid #000;
+      }
+      :root[data-theme="sun"] .gb-stat b { color: #000; }
+      :root[data-theme="sun"] .gb-stat span { color: #1a1a1a; font-weight: 700; }
+
+      @media (max-width: 760px) {
+        .guide-banner {
+          grid-template-columns: auto 1fr;
+          gap: 12px;
+          margin: 10px 10px 0;
+          padding: 14px;
+        }
+        .gb-arrow { font-size: 40px; }
+        .gb-instruction { font-size: 30px; }
+        :root[data-theme="sun"] .gb-instruction { font-size: 32px; }
+        .gb-stats { grid-column: 1 / -1; }
+        .gb-stat { flex: 1; min-width: 0; }
+      }
+      .tp-mark {
+        font: inherit;
+        font-size: 15px;
+        padding: 10px 14px;
+        min-width: 96px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--fg);
+        cursor: pointer;
+      }
+      .tp-mark:active { transform: scale(0.97); }
+      .tp-mark[data-kind="right"] { border-color: var(--success); }
+      .tp-mark[data-kind="wrong"] { border-color: var(--alert); }
+      .tp-mark[data-kind="missed"] { border-color: var(--warning); }
+      .tp-row { display: grid; grid-template-columns: 5.5em 1fr; gap: 8px;
+                padding: 4px 0; border-bottom: 1px solid var(--border); }
+      .tp-row .tp-t { color: var(--muted); font-variant-numeric: tabular-nums; }
+      .tp-row .tp-why { color: var(--muted); font-size: 12px; }
+      .tp-row.urgent b { color: var(--alert); }
+      .tp-row.mark b { color: var(--info); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div><b>Blind Assistance — Road Crossing</b></div>
+      <div class="header-right">
+        <div class="pill">
+          <span id="hz">--Hz</span> • <span id="scan">#--</span> •
+          <span id="total-obj">0 objects</span>
+        </div>
+        <a href="/test" style="margin-right:10px;font-weight:700" title="The page to hold during a walk">🧪 Field test</a>
+        <button id="theme-btn" onclick="toggleTheme()" title="Switch between the outdoor high-contrast theme and the night theme">
+          ☀ Sunlight
+        </button>
+      </div>
+    </header>
+
+    <!-- THE ANSWER. Everything below this is diagnostics. -->
+    <section class="guide-banner" id="guide-banner" data-level="idle">
+      <div class="gb-arrow" id="gb-arrow" aria-hidden="true">•</div>
+      <div class="gb-main">
+        <div class="gb-instruction" id="gb-instruction">Waiting for sensors…</div>
+        <div class="gb-reason" id="gb-reason">—</div>
+        <div class="gb-voice" id="gb-voice">—</div>
+      </div>
+      <div
+        id="gb-announce"
+        role="status"
+        aria-live="assertive"
+        aria-atomic="true"
+        style="
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          margin: -1px;
+          padding: 0;
+          overflow: hidden;
+          clip: rect(0 0 0 0);
+          white-space: nowrap;
+          border: 0;
+        "
+      ></div>
+      <div class="gb-stats">
+        <div class="gb-stat" title="Fused clearance straight ahead, in feet">
+          <b id="gb-ahead">—</b><span>ft ahead</span>
+        </div>
+        <div class="gb-stat" title="What the guide has identified ahead: wall, glass, a named object, a wall it is drifting toward, or offline">
+          <b id="gb-seen">—</b><span>detected</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="test-panel" style="margin: 12px 0">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <span>Field test</span>
+        <span id="tp-stats" style="font-size:12px;color:var(--muted)">—</span>
+      </div>
+      <div id="tp-health" class="path-detail" style="margin:4px 0 8px">Waiting for status…</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <button class="tp-mark" data-kind="right" title="The last sentence was right">✓ Right</button>
+        <button class="tp-mark" data-kind="wrong" title="The last sentence was wrong">✗ Wrong</button>
+        <button class="tp-mark" data-kind="missed" title="It should have said something and did not">⚠ Missed</button>
+        <button class="tp-mark" data-kind="note" title="Add a note to the log">📝 Note</button>
+        <span id="tp-mark-ack" class="path-detail" style="align-self:center"></span>
+      </div>
+      <div id="tp-log" class="det-list" style="max-height:260px;overflow-y:auto">—</div>
+    </section>
+
+    <div class="main-grid">
+      <!-- LEFT: Navigation & Crossing -->
+      <aside class="card">
+        <!-- TRAFFIC LIGHT PANEL -->
+        <div id="traffic-panel" class="traffic-light-panel">
+          <div
+            class="card-title"
+            style="border: none; padding: 0; margin-bottom: 10px"
+          >
+            <span>Road Crossing Assistant</span>
+            <span
+              id="intersection-type"
+              style="font-size: 11px; color: var(--muted)"
+              >--</span
+            >
+          </div>
+          <div class="path-detail" style="margin: -4px 0 8px">
+            Display only — none of this is spoken. At a crossing the guide
+            just withholds "Walk straight".
+          </div>
+
+          <div class="traffic-status">
+            <div class="traffic-light-visual">
+              <div class="light-bulb red" id="bulb-red"></div>
+              <div class="light-bulb yellow" id="bulb-yellow"></div>
+              <div class="light-bulb green" id="bulb-green"></div>
+            </div>
+            <div class="crossing-status">
+              <div id="crossing-action" class="crossing-action wait">
+                SCANNING...
+              </div>
+              <div id="crossing-message" class="crossing-message">
+                Analyzing traffic signals
+              </div>
+            </div>
+          </div>
+
+          <button
+            id="crossing-btn"
+            class="crossing-btn waiting"
+            onclick="handleCrossingAction()"
+          >
+            Waiting for Signal...
+          </button>
+
+          <div class="lights-grid">
+            <div class="light-card">
+              <div class="direction">Front</div>
+              <div class="icon" id="light-front">○</div>
+              <div class="state" id="state-front">--</div>
+            </div>
+            <div class="light-card">
+              <div class="direction">Left</div>
+              <div class="icon" id="light-left">○</div>
+              <div class="state" id="state-left">--</div>
+            </div>
+            <div class="light-card">
+              <div class="direction">Right</div>
+              <div class="icon" id="light-right">○</div>
+              <div class="state" id="state-right">--</div>
+            </div>
+            <div class="light-card">
+              <div class="direction">Back</div>
+              <div class="icon" id="light-back">○</div>
+              <div class="state" id="state-back">--</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTORS: 8 x 45° LiDAR (built in JS so ids/labels can't drift) -->
+        <div class="sector-grid" id="sector-grid"></div>
+
+        <div class="path-box" id="walk-box" style="margin-top: 12px">
+          <div
+            class="card-title"
+            style="border: none; padding: 0; margin-bottom: 8px"
+          >
+            Path Guidance
+            <span class="det-count" id="walk-rule" title="blocked / approaching / drifting / near_wall / steering / vehicle_approaching / vehicle_ahead / clear / offline">—</span>
+          </div>
+          <div class="path-direction">
+            <div class="path-arrow" id="walk-arrow">•</div>
+            <div>
+              <div id="walk-cue" class="path-action">Waiting for path…</div>
+              <div id="walk-detail" class="path-detail">—</div>
+            </div>
+          </div>
+          <div id="walk-evidence" class="path-detail" style="margin-top: 6px">—</div>
+          <div id="walk-voice" class="path-detail" style="margin-top: 6px">—</div>
+          <div id="walk-readings" class="det-list" style="margin-top: 8px">
+            —
+          </div>
+        </div>
+
+        <!-- 2) OBSTACLE WARNINGS — what is around and how close -->
+        <div class="path-box" id="obs-box" style="margin-top: 12px">
+          <div
+            class="card-title"
+            style="border: none; padding: 0; margin-bottom: 8px"
+          >
+            ⚠️ Obstacle Warnings
+            <span class="det-count" id="obs-count">0</span>
+          </div>
+          <div id="obs-summary" class="path-action" style="font-size: 0.95rem">
+            Scanning…
+          </div>
+          <div id="obs-list" class="det-list" style="margin-top: 6px">—</div>
+        </div>
+
+        <div class="path-box" id="radar-box" style="margin-top: 12px">
+          <div
+            class="card-title"
+            style="border: none; padding: 0; margin-bottom: 8px"
+          >
+            Radar — Nearest
+            <span class="det-count" id="radar-online">0/4</span>
+          </div>
+          <div class="path-direction">
+            <div class="path-arrow" id="radar-dir" style="font-size: 1.1rem">
+              —
+            </div>
+            <div>
+              <div id="radar-min" class="path-action">Waiting for radar…</div>
+              <div id="radar-detail" class="path-detail">—</div>
+            </div>
+          </div>
+          <div id="radar-list" class="det-list radar-list" style="margin-top: 6px">
+            —
+          </div>
+        </div>
+
+      </aside>
+
+      <!-- CENTER: Environment Map -->
+      <main class="card">
+        <div class="card-title">Environment Map</div>
+        <div id="chart"></div>
+
+        <div style="margin-top: 12px">
+          <div class="stat"><span>Nearest</span><b id="nearest">--</b></div>
+          <div class="stat"><span>Angle</span><b id="nearest-ang">--</b></div>
+          <div class="stat"><span>Points</span><b id="pt-count">--</b></div>
+          <div class="stat">
+            <span>LiDAR</span><b id="lidar-status">Connecting...</b>
+          </div>
+        </div>
+
+        <div class="card-title" style="margin-top: 18px">
+          Motion
+          <span class="det-count" id="motion-src">—</span>
+        </div>
+        <div>
+          <div class="stat"><span>Walking speed</span><b id="mo-speed">--</b></div>
+          <div class="stat"><span>Cadence</span><b id="mo-cadence">--</b></div>
+          <div class="stat"><span>Sideways slip</span><b id="mo-slip">--</b></div>
+          <div class="stat"><span>Turn rate</span><b id="mo-yaw">--</b></div>
+        </div>
+        <div
+          id="motion-note"
+          style="font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5"
+        ></div>
+
+        <div class="card-title" style="margin-top: 18px">
+          Radar Scope
+          <span class="det-count" id="scope-live">0/6</span>
+        </div>
+        <svg
+          id="radar-scope"
+          viewBox="0 0 580 580"
+          role="img"
+          aria-label="Radar scope: each board's beam and the nearest return in it"
+        ></svg>
+        <div
+          id="scope-note"
+          style="font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5"
+        ></div>
+      </main>
+
+      <!-- RIGHT: Cameras -->
+      <aside class="card">
+        <div class="card-title">
+          Camera Feeds <span class="fps-badge" id="fps-badge">-- FPS</span>
+        </div>
+        <div class="camera-grid">
+          <div class="video-container">
+            <span class="sector-label">Front</span>
+            <img class="camera-feed-img" src="/camera/stream/front" alt="Front" />
+          </div>
+          <div class="video-container">
+            <span class="sector-label">Right</span>
+            <img class="camera-feed-img" src="/camera/stream/right" alt="Right" />
+          </div>
+          <div class="video-container">
+            <span class="sector-label">Left</span>
+            <img class="camera-feed-img" src="/camera/stream/left" alt="Left" />
+          </div>
+          <div class="video-container">
+            <span class="sector-label">Back</span>
+            <img class="camera-feed-img" src="/camera/stream/back" alt="Back" />
+          </div>
+        </div>
+
+        <div class="det-grid">
+          <div class="det-box">
+            <h4>Front <span class="det-count" id="cnt-front">0</span></h4>
+            <div class="det-list" id="det-front">-</div>
+          </div>
+          <div class="det-box">
+            <h4>Right <span class="det-count" id="cnt-right">0</span></h4>
+            <div class="det-list" id="det-right">-</div>
+          </div>
+          <div class="det-box">
+            <h4>Left <span class="det-count" id="cnt-left">0</span></h4>
+            <div class="det-list" id="det-left">-</div>
+          </div>
+          <div class="det-box">
+            <h4>Back <span class="det-count" id="cnt-back">0</span></h4>
+            <div class="det-list" id="det-back">-</div>
+          </div>
+        </div>
+
+        <div class="card-title" style="margin-top: 14px">
+          Segmentation View
+          <button class="ctl-btn" id="seg-btn" onclick="toggleSeg()"
+                  style="margin-left: 8px">Show</button>
+        </div>
+        <div id="seg-grid" style="display: none">
+          <div style="display: flex; gap: 6px; margin-bottom: 6px">
+            <button class="ctl-btn" onclick="selSeg('front')">Front</button>
+            <button class="ctl-btn" onclick="selSeg('right')">Right</button>
+            <button class="ctl-btn" onclick="selSeg('left')">Left</button>
+            <button class="ctl-btn" onclick="selSeg('back')">Back</button>
+          </div>
+          <div class="video-container">
+            <span class="sector-label" id="seg-label">Front</span>
+            <img class="camera-feed-img seg-img" alt="Segmentation" />
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <script>
+      const tpEsc = (t) =>
+        String(t == null ? "" : t).replace(/[&<>"']/g, (c) =>
+          ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+      const DANGER = 800,
+        WARN = 1500;
+      let crossingState = "idle",
+        canCross = false;
+
+      const PALETTE = {
+        night: {
+          danger: "#ef4444", warning: "#f59e0b", caution: "#eab308",
+          clear: "#22c55e", idle: "#475569", dim: "#94a3b8",
+          axis: "#8b98a7", grid: "#2a3142",
+          lightOn: { border: "2px solid #22c55e", background: "#1a2e1a" },
+          lightOff: { border: "1px solid #1a2332", background: "#0d1628" },
+          dotSize: 3,
+        },
+        sun: {
+          danger: "#b30000", warning: "#8a4700", caution: "#7a5c00",
+          clear: "#0a5c0a", idle: "#333333", dim: "#333333",
+          axis: "#000000", grid: "#9a9a9a",
+          lightOn: { border: "3px solid #0a5c0a", background: "#e8f7e8" },
+          lightOff: { border: "2px solid #000000", background: "#ffffff" },
+          // Bigger dots: 3px specks wash out against a white plot in glare.
+          dotSize: 5,
+        },
+      };
+
+      const _q = new URLSearchParams(location.search).get("theme");
+      let theme =
+        _q === "night" || _q === "sun"
+          ? _q
+          : localStorage.getItem("blindTheme") || "sun";
+      let C = PALETTE[theme];
+
+      function applyTheme() {
+        C = PALETTE[theme];
+        document.documentElement.setAttribute("data-theme", theme);
+        document.getElementById("theme-btn").textContent =
+          theme === "sun" ? "☀ Sunlight" : "☾ Night";
+        layout.polar.radialaxis.color = C.axis;
+        layout.polar.radialaxis.gridcolor = C.grid;
+        layout.polar.angularaxis.color = C.axis;
+        layout.polar.angularaxis.gridcolor = C.grid;
+        if (_latestLidar) renderLidar(_latestLidar);
+        else if (HAS_PLOTLY) Plotly.relayout("chart", layout);
+      }
+
+      function toggleTheme() {
+        theme = theme === "sun" ? "night" : "sun";
+        localStorage.setItem("blindTheme", theme);
+        applyTheme();
+      }
+
+      const layout = {
+        paper_bgcolor: "rgba(0,0,0,0)",
+        plot_bgcolor: "rgba(0,0,0,0)",
+        margin: { l: 10, r: 10, t: 10, b: 10 },
+        showlegend: false,
+        polar: {
+          bgcolor: "rgba(0,0,0,0)",
+          radialaxis: {
+            range: [0, 10000],
+            color: C.axis,
+            gridcolor: C.grid,
+          },
+          angularaxis: {
+            color: C.axis,
+            gridcolor: C.grid,
+            direction: "clockwise",
+          },
+        },
+      };
+      const HAS_PLOTLY = typeof window.Plotly !== "undefined";
+      if (!HAS_PLOTLY)
+        document.getElementById("chart").innerHTML =
+          '<div style="padding:16px;color:var(--muted);font-size:13px">' +
+          "Scan plot unavailable — its library (cdn.plot.ly) needs internet. " +
+          "Everything else on this page still works.</div>";
+      else Plotly.newPlot(
+        "chart",
+        [
+          {
+            type: "scatterpolar",
+            mode: "markers",
+            r: [],
+            theta: [],
+            marker: { size: C.dotSize, color: C.danger },
+          },
+          {
+            type: "scatterpolar",
+            mode: "markers",
+            r: [],
+            theta: [],
+            marker: { size: C.dotSize, color: C.warning },
+          },
+          {
+            type: "scatterpolar",
+            mode: "markers",
+            r: [],
+            theta: [],
+            marker: { size: C.dotSize, color: C.clear },
+          },
+        ],
+        layout,
+        { responsive: true, displayModeBar: false }
+      );
+
+      function mmFt(mm) {
+        return mm && isFinite(mm) ? `${(mm / 304.8).toFixed(1)}ft` : "--";
+      }
+      const LIGHT_COLOR = { red: "#b30000", yellow: "#8a4700", green: "#0a5c0a" };
+      function lightIcon(s) {
+        return LIGHT_COLOR[s] ? "\u25CF" : "\u25CB"; // filled / hollow dot
+      }
+      function lightColor(s) {
+        return LIGHT_COLOR[s] || "var(--muted)";
+      }
+
+      function updateTrafficUI(data) {
+        const tl = data.traffic_lights || {};
+        const guidance = tl.guidance || {};
+        const panel = document.getElementById("traffic-panel");
+
+        let activeState = "unknown";
+        let activeDir = null;
+        ["front", "left", "right", "back"].forEach((d) => {
+          const state = tl[d]?.state;
+          if (state && state !== "unknown") {
+            activeState = state;
+            activeDir = d;
+          }
+        });
+
+        document
+          .getElementById("bulb-red")
+          .classList.toggle("active", activeState === "red");
+        document
+          .getElementById("bulb-yellow")
+          .classList.toggle("active", activeState === "yellow");
+        document
+          .getElementById("bulb-green")
+          .classList.toggle("active", activeState === "green");
+
+        const actionEl = document.getElementById("crossing-action");
+        const msgEl = document.getElementById("crossing-message");
+        const btn = document.getElementById("crossing-btn");
+
+        panel.className = "traffic-light-panel";
+        actionEl.className = "crossing-action";
+
+        const atCrossing = !!tl.detected || !!data.crossing_mode;
+
+        if (!atCrossing) {
+          panel.classList.add("idle");
+          actionEl.classList.add("idle");
+          actionEl.textContent = "NO CROSSING";
+          btn.className = "crossing-btn waiting";
+          btn.textContent = "No crossing detected";
+          canCross = false;
+        } else if (
+          guidance.action === "cross" ||
+          guidance.action === "cross_cautious"
+        ) {
+          panel.classList.add("safe");
+          actionEl.classList.add("cross");
+          actionEl.textContent = "✅ SAFE TO CROSS";
+          btn.className = "crossing-btn ready";
+          btn.textContent = "Start Crossing";
+          canCross = true;
+        } else if (guidance.action === "stop") {
+          panel.classList.add("danger");
+          actionEl.classList.add("stop");
+          actionEl.textContent = "⛔ DO NOT CROSS";
+          btn.className = "crossing-btn danger";
+          btn.textContent = "⛔ Unsafe - Wait";
+          canCross = false;
+        } else {
+          panel.classList.add("warning");
+          actionEl.classList.add("wait");
+          actionEl.textContent = "⏳ WAIT";
+          btn.className = "crossing-btn waiting";
+          btn.textContent = "Waiting for Safe Signal...";
+          canCross = false;
+        }
+
+        msgEl.textContent = !atCrossing
+          ? "No traffic signal in view — steering is in the banner above."
+          : guidance.message ||
+            [guidance.primary, guidance.detail].filter(Boolean).join(" — ") ||
+            "Scanning for signals…";
+
+        ["front", "left", "right", "back"].forEach((d) => {
+          const lightData = tl[d] || {};
+          const state = lightData.state || "unknown";
+          const hasLight = lightData.has_light || false;
+
+          const iconEl = document.getElementById(`light-${d}`);
+          iconEl.textContent = lightIcon(state);
+          iconEl.style.color = lightColor(state);
+          document.getElementById(`state-${d}`).textContent = (
+            state || "unknown"
+          ).toUpperCase();
+
+          const lightCard = document.getElementById(`light-${d}`).parentElement;
+          if (state && state !== "unknown") {
+            lightCard.style.border = C.lightOn.border;
+            lightCard.style.background = C.lightOn.background;
+          } else {
+            lightCard.style.border = C.lightOff.border;
+            lightCard.style.background = C.lightOff.background;
+          }
+        });
+
+        const detDir = guidance.detected_direction || activeDir;
+        document.getElementById("intersection-type").textContent =
+          tl.intersection_type
+            ? `${tl.intersection_type} intersection`
+            : detDir
+            ? `Detected: ${detDir.toUpperCase()}`
+            : "Scanning...";
+      }
+
+      // 8 x 45° LiDAR sectors, clockwise from straight ahead.
+      const LIDAR_SECTORS = ["front", "front_right", "right", "back_right",
+                             "back", "back_left", "left", "front_left"];
+      const SECTOR_LABEL = {
+        front: "Front", front_right: "Front-R", right: "Right",
+        back_right: "Back-R", back: "Back", back_left: "Back-L",
+        left: "Left", front_left: "Front-L",
+      };
+      (function buildSectorGrid() {
+        document.getElementById("sector-grid").innerHTML = LIDAR_SECTORS
+          .map((s) => `<div class="sector" id="sec-${s}">` +
+                      `<div class="sector-name">${SECTOR_LABEL[s]}</div>` +
+                      `<div class="sector-dist" id="dist-${s}">--</div></div>`)
+          .join("");
+      })();
+
+      function updateNavUI(data) {
+        const noLidar = data.action === "no_lidar_data" ||
+          (data.sensor_health && data.sensor_health.lidar_fresh === false);
+        LIDAR_SECTORS.forEach((s) => {
+          const el = document.getElementById(`sec-${s}`);
+          if (!el) return;
+          const dist = data.sector_distances?.[s];
+          el.className = "sector";
+          if (data.dangerous_sectors?.includes(s)) el.classList.add("danger");
+          else if (data.warning_sectors?.includes(s))
+            el.classList.add("warning");
+          else if (data.safe_sectors?.includes(s)) el.classList.add("safe");
+          const distEl = document.getElementById(`dist-${s}`);
+          if (noLidar) {
+            distEl.textContent = "--";
+            distEl.style.opacity = "0.55";
+            distEl.title = "no LiDAR data";
+          } else if (dist?.distance_ft) {
+            distEl.textContent = `${dist.distance_ft}ft`;
+            distEl.style.opacity = "1";
+          } else {
+            distEl.textContent = "40ft*";
+            distEl.style.opacity = "0.55";
+            distEl.title = "no return — LiDAR max range";
+          }
+        });
+      }
+
+      async function handleCrossingAction() {
+        if (!canCross) return;
+        try {
+          const res = await fetch("/crossing/action", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "start_crossing" }),
+          });
+          const data = await res.json();
+          if (data.status === "ok") {
+            document.getElementById("crossing-btn").textContent =
+              "Crossing…";
+            document.getElementById("crossing-btn").className =
+              "crossing-btn crossing";
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      let _latestLidar = null,
+        _lidarRafPending = false,
+        _lidarRetryMs = 1000;
+      function connectLidar() {
+        const ws = new WebSocket(
+          `${location.protocol === "https:" ? "wss" : "ws"}://${
+            location.host
+          }/lidar/ws`
+        );
+        ws.onopen = () => {
+          _lidarRetryMs = 1000;
+          document.getElementById("lidar-status").textContent = "Active";
+          document.getElementById("lidar-status").style.color = C.clear;
+        };
+        ws.onmessage = (e) => {
+          _latestLidar = JSON.parse(e.data);
+          if (!_lidarRafPending) {
+            _lidarRafPending = true;
+            requestAnimationFrame(() => {
+              _lidarRafPending = false;
+              renderLidar(_latestLidar);
+            });
+          }
+        };
+        ws.onclose = () => {
+          document.getElementById("lidar-status").textContent = "Disconnected";
+          setTimeout(connectLidar, _lidarRetryMs);
+          _lidarRetryMs = Math.min(_lidarRetryMs * 2, 15000);
+        };
+        ws.onerror = () => ws.close();
+      }
+      connectLidar();
+      function renderLidar(m) {
+        document.getElementById("scan").textContent = `#${m.scan_index || 0}`;
+        document.getElementById("hz").textContent = `${(m.hz || 0).toFixed(
+          1
+        )}Hz`;
+        const A = m.points?.angles || [],
+          D = m.points?.distances || [];
+        document.getElementById("pt-count").textContent = D.length;
+
+        let minD = Infinity,
+          minA = 0;
+        if (m.sectors)
+          Object.values(m.sectors).forEach((s) => {
+            if (s.min_dist && s.min_dist < minD) {
+              minD = s.min_dist;
+              minA = s.min_angle || 0;
+            }
+          });
+        document.getElementById("nearest").textContent = mmFt(
+          minD < Infinity ? minD : null
+        );
+        document.getElementById("nearest-ang").textContent =
+          minD < Infinity ? `${minA.toFixed(0)}°` : "--";
+
+        const rR = [],
+          rT = [],
+          yR = [],
+          yT = [],
+          gR = [],
+          gT = [];
+        for (let i = 0; i < D.length; i++) {
+          const r = D[i],
+            t = A[i];
+          if (r <= DANGER) {
+            rR.push(r);
+            rT.push(t);
+          } else if (r <= WARN) {
+            yR.push(r);
+            yT.push(t);
+          } else {
+            gR.push(r);
+            gT.push(t);
+          }
+        }
+        if (HAS_PLOTLY) Plotly.react(
+          "chart",
+          [
+            {
+              type: "scatterpolar",
+              mode: "markers",
+              r: rR,
+              theta: rT,
+              marker: { size: C.dotSize, color: C.danger },
+            },
+            {
+              type: "scatterpolar",
+              mode: "markers",
+              r: yR,
+              theta: yT,
+              marker: { size: C.dotSize, color: C.warning },
+            },
+            {
+              type: "scatterpolar",
+              mode: "markers",
+              r: gR,
+              theta: gT,
+              marker: { size: C.dotSize, color: C.clear },
+            },
+          ],
+          layout
+        );
+      }
+
+      // Navigation updates
+      let navBusy = false;
+      async function updateNav() {
+        if (navBusy) return;
+        navBusy = true;
+        try {
+          const res = await fetch("/navigation/decide");
+          const data = await res.json();
+          updateTrafficUI(data);
+          updateNavUI(data);
+        } catch (e) {
+          console.error(e);
+        } finally {
+          navBusy = false;
+        }
+      }
+
+      // Camera updates
+      function renderDets(dets) {
+        if (!dets?.length) return "-";
+        return dets
+          .slice(0, 3)
+          .map(
+            (d) =>
+              `<div class="det-item"><span>${
+                tpEsc(d.class_name)
+              }</span><span>${Math.round(
+                (d.confidence || 0) * 100
+              )}%</span></div>`
+          )
+          .join("");
+      }
+      let camBusy = false;
+      async function updateCam() {
+        if (camBusy) return;
+        camBusy = true;
+        try {
+          const res = await fetch("/camera/stats");
+          const d = await res.json();
+          document.getElementById("total-obj").textContent = `${
+            d.total_objects || 0
+          } objects`;
+          document.getElementById("fps-badge").textContent = `${(
+            d.capture_fps || 0
+          ).toFixed(1)} FPS`;
+          ["front", "right", "left", "back"].forEach((c) => {
+            document.getElementById(`cnt-${c}`).textContent =
+              d[c]?.num_objects || 0;
+            document.getElementById(`det-${c}`).innerHTML = renderDets(
+              d[c]?.detections
+            );
+          });
+        } catch (e) {
+        } finally {
+          camBusy = false;
+        }
+      }
+
+      // Unified guidance updates (obstacle avoidance + surface steering + crossing)
+      function guideArrow(a) {
+        a = (a || "").toLowerCase();
+        if (a.includes("stop") || a === "wait_for_signal") return "⛔";
+        if (a.includes("wait")) return "⏳";
+        if (a.includes("cross"))
+          return a.includes("caution") ? "⚠️" : "⛔";
+        // "move away from the wall on your right" -> step left
+        if (a.includes("move_away_left")) return "↖️";
+        if (a.includes("move_away_right")) return "↗️";
+        if (a.includes("narrow")) return "⚠️";
+        if (a.includes("bear_left")) return "↖️";
+        if (a.includes("bear_right")) return "↗️";
+        if (a.includes("turn_left")) return "⬅️";
+        if (a.includes("turn_right")) return "➡️";
+        if (a.includes("turn_back") || a.includes("back")) return "⬇️";
+        if (a.includes("caution")) return "⚠️";
+        if (a.includes("straight") || a.includes("forward")) return "⬆️";
+        return "•";
+      }
+      function guideLevel(a, blocked) {
+        a = (a || "").toLowerCase();
+        if (a.includes("stop") || a.includes("wait") || a.startsWith("sensors") ||
+            a.startsWith("vehicle_approaching"))
+          return "danger";
+        if (blocked) return "caution";
+        if (a.startsWith("blocked") || a.endsWith("_ahead") ||
+            a.startsWith("drift") || a.startsWith("near_wall") ||
+            a.startsWith("vehicle") || a.startsWith("object") ||
+            a.startsWith("steer") || a === "walk_between") return "caution";
+        // Being half a metre off a wall is a warning, not a routine steer.
+        if (a.includes("move_away") || a.includes("narrow")) return "caution";
+        if (a.includes("caution")) return "caution";
+        if (a === "unknown" || a === "") return "idle";
+        return "clear"; // go / straight / bear / safe to cross
+      }
+      function guideColor(a, blocked) {
+        // Read C on every call: the palette is swapped when the theme changes.
+        return {
+          danger: C.danger,
+          caution: C.warning,
+          idle: C.idle,
+          clear: C.clear,
+        }[guideLevel(a, blocked)];
+      }
+      let walkBusy = false;
+      let saidSeq = -1,
+        saidText = "",
+        saidAt = 0,
+        saidCount = 0;
+      function piHasCue(pv, seq) {
+        return !!(pv && pv.usable && pv.accepted_seq === seq);
+      }
+
+      function announceSr(text) {
+        const el = document.getElementById("gb-announce");
+        el.textContent = "";
+        if (text) setTimeout(() => { el.textContent = text; }, 50);
+      }
+      async function updateWalk() {
+        if (walkBusy) return;
+        walkBusy = true;
+        try {
+          const res = await fetch("/guidance/walk");
+          const d = await res.json();
+
+          const p = d.path || {};
+          const action = p.action || d.action || "unknown";
+          const blocked = !!(d.walk && d.walk.blocked);
+          document.getElementById("walk-arrow").textContent = guideArrow(action);
+          document.getElementById("walk-cue").textContent =
+            p.instruction || "Waiting…";
+          document.getElementById("walk-detail").textContent =
+            (p.reason
+              ? p.reason
+              : p.clear_ft
+              ? `${p.clear_ft}ft clear ahead`
+              : "clear ahead");
+
+          // What kind of situation the sentence describes.
+          document.getElementById("walk-rule").textContent = p.rule || "—";
+
+          const ev = p.raw || {};
+          const evidence = [
+            ev.front_ft != null ? `front ${Number(ev.front_ft).toFixed(1)} ft` : "front open",
+            ev.wall ? "wall on path ✓" : "wall ✗",
+            ev.glass ? "glass ahead ✓" : "glass ✗",
+          ];
+          if (ev.object) evidence.push(`camera: ${ev.object}`);
+          if (ev.drift) evidence.push(`drifting toward ${ev.drift} wall`);
+          if (ev.close) evidence.push(`near ${ev.close} wall`);
+          const veh = ev.vehicles || {};
+          if (veh.approaching) evidence.push(`${veh.class} approaching from ${veh.side}`);
+          else if (veh.stopped) evidence.push(`${veh.class} stopped`);
+          document.getElementById("walk-evidence").textContent = evidence.join(" · ");
+
+          // ---- VOICE: said, or silent for a stated reason ----
+          const n = d.notify || {};
+          let advanced = false;
+          if (typeof n.cue_seq === "number") {
+            if (saidSeq >= 0 && n.cue_seq > saidSeq) {
+              saidCount++;
+              saidText = n.instruction || "";
+              saidAt = Date.now();
+              advanced = true;
+            }
+            saidSeq = n.cue_seq;
+          }
+          const ago = saidAt ? Math.round((Date.now() - saidAt) / 1000) : null;
+          const voiceEl = document.getElementById("walk-voice");
+          voiceEl.textContent = n.speak
+            ? `🔊 saying “${n.instruction}”`
+            : `🔇 quiet — ${n.quiet_reason || "nothing new to say"}` +
+              (saidText ? ` · last said “${saidText}” ${ago}s ago` : "") +
+              (saidCount ? ` · ${saidCount} this session` : "");
+          voiceEl.style.color = n.speak ? C.clear : C.dim;
+
+          const banner = document.getElementById("guide-banner");
+          banner.dataset.level = guideLevel(action, blocked);
+          document.getElementById("gb-arrow").textContent = guideArrow(action);
+          document.getElementById("gb-instruction").textContent =
+            p.instruction || "Waiting for sensors…";
+          const gbReason = document.getElementById("gb-reason");
+          gbReason.textContent = p.reason || p.note || "—";
+          gbReason.title = p.reason || p.note || "";
+
+          const ahead = p.front_ft != null ? p.front_ft : p.clear_ft;
+          document.getElementById("gb-ahead").textContent =
+            ahead == null ? "—" : Number(ahead).toFixed(1);
+          document.getElementById("gb-seen").textContent =
+            p.rule === "offline" ? "offline"
+            : p.rule === "drifting" || p.rule === "near_wall" ? `${p.turn_side || ""} wall`.trim()
+            : p.obstacle || (p.rule === "blocked" ? "obstacle" : "—");
+
+          const gbVoice = document.getElementById("gb-voice");
+          gbVoice.textContent = n.speak
+            ? `🔊 announcing “${n.instruction}”`
+            : `🔇 quiet — ${n.quiet_reason || "nothing new to say"}` +
+              (saidText ? ` · last “${saidText}” ${ago}s ago` : "");
+          gbVoice.style.color = n.speak
+            ? "var(--gb-accent)"
+            : "var(--muted)";
+
+          if (advanced) {
+            banner.classList.remove("said");
+            void banner.offsetWidth; // restart the animation
+            banner.classList.add("said");
+            const pv = n.pi_voice || {};
+            announceSr(pv.audio_enabled === false || piHasCue(pv, n.cue_seq) ? "" : n.instruction || p.instruction || "");  // audio off: silent
+          }
+          const pvs = n.pi_voice || {};
+          gbVoice.title = pvs.usable
+            ? `Spoken by the Pi through ${pvs.output}; the phone stays quiet.`
+            : pvs.running
+            ? `The Pi has no earpiece (${pvs.output || "no output"}), so the phone's screen reader speaks.`
+            : "The Pi's voice is off; the phone's screen reader speaks.";
+          if (pvs.usable) gbVoice.textContent += ` · 🎧 ${pvs.output}`;
+
+
+          const rd = p.readings || {};
+          const ARROWS = { front: "↑", right: "→", back: "↓", left: "←" };
+          const cell = (v, measured) =>
+            v == null
+              ? `<span style="color:${C.danger}">no data</span>`
+              : measured
+              ? `${v.toFixed(1)}`
+              : `<span style="color:${C.dim}" title="max range — nothing detected">${v.toFixed(
+                  1
+                )}*</span>`;
+          const rows = ["front", "right", "back", "left"].filter((d) => rd[d]);
+          document.getElementById("walk-readings").innerHTML = rows.length
+            ? `<div class="det-item" style="opacity:.65"><span>dir · lidar ▸ radar</span>` +
+              `<span>fused ft</span></div>` +
+              rows
+                .map((d) => {
+                  const r = rd[d];
+                  const mark = r.chosen ? "◀" : r.glass ? "glass" : "";
+                  return (
+                    `<div class="det-item"><span style="color:${
+                      r.chosen ? C.clear : C.dim
+                    }">${ARROWS[d]} ${d} · ${cell(r.lidar_ft, r.lidar_measured)}` +
+                    ` ▸ ${cell(r.radar_ft, r.radar_measured)}</span>` +
+                    `<span>${
+                      r.fused_ft == null ? "—" : r.fused_ft.toFixed(1)
+                    } ${mark}</span></div>`
+                  );
+                })
+                .join("")
+            : "<div class='det-item'><span>waiting for sensors</span></div>";
+
+          const lvl = p.stale ? null : p.drift_level;
+          document.getElementById("walk-box").style.borderLeft =
+            "3px solid " +
+            (guideColor(action, blocked) === C.clear && lvl === "urgent"
+              ? C.danger
+              : guideColor(action, blocked) === C.clear && lvl === "advisory"
+              ? C.warning
+              : guideColor(action, blocked));
+
+          // ---- 2) OBSTACLE WARNINGS: what's around, ranked by urgency ----
+          const o = d.obstacles || {};
+          const items = o.items || [];
+          document.getElementById("obs-count").textContent = o.count || 0;
+          document.getElementById("obs-summary").textContent =
+            o.summary || "No obstacles nearby";
+          const UCOL = {
+            danger: C.danger,
+            warning: C.warning,
+            caution: C.caution,
+            clear: C.clear,
+          };
+          document.getElementById("obs-list").innerHTML = items.length
+            ? items
+                .map(
+                  (it) =>
+                    `<div class="det-item"><span style="color:${
+                      UCOL[it.urgency] || C.dim
+                    }">${tpEsc(it.object)} · ${tpEsc(it.clock)} o'clock</span>` +
+                    `<span>${
+                      it.distance_ft != null ? tpEsc(it.distance_ft) + "ft" : "—"
+                    }</span></div>`
+                )
+                .join("")
+            : "<div class='det-item'><span>Nothing detected nearby</span></div>";
+          document.getElementById("obs-box").style.borderLeft =
+            "3px solid " +
+            (o.level === "stop"
+              ? C.danger
+              : o.level === "caution" || o.level === "proceed_slow"
+              ? C.warning
+              : C.clear);
+
+        } catch (e) {
+        } finally {
+          walkBusy = false;
+        }
+      }
+
+      let radarBusy = false;
+      async function updateRadar() {
+        if (radarBusy) return;
+        radarBusy = true;
+        try {
+          const res = await fetch("/radar/state");
+          const d = await res.json();
+          const secs = d.sectors || {};
+          const order = ["front", "right", "back", "left"];
+
+          const live = order.filter((p) => secs[p] && secs[p].online);
+          document.getElementById("radar-online").textContent =
+            live.length + "/4";
+
+          let best = null;
+          for (const p of live) {
+            const d_mm = secs[p].min_dist;
+            if (typeof d_mm === "number" && (best === null || d_mm < best.mm))
+              best = { mm: d_mm, pos: p };
+          }
+
+          const ARROW = { front: "↑", right: "→", back: "↓", left: "←" };
+          if (best) {
+            document.getElementById("radar-dir").textContent =
+              ARROW[best.pos] || "•";
+            document.getElementById("radar-min").textContent =
+              (best.mm / 304.8).toFixed(1) + " ft";
+            document.getElementById("radar-detail").textContent =
+              `${best.pos} · nearest of ${live.length} board${
+                live.length === 1 ? "" : "s"
+              }`;
+            // Same bands the guidance layer uses (config.GUIDANCE_*_MM).
+            document.getElementById("radar-box").style.borderLeft =
+              "3px solid " +
+              (best.mm <= 800
+                ? C.danger
+                : best.mm <= 1500
+                ? C.warning
+                : C.clear);
+          } else {
+            document.getElementById("radar-dir").textContent = "•";
+            document.getElementById("radar-min").textContent = live.length
+              ? "Nothing in range"
+              : "Radar offline";
+            document.getElementById("radar-detail").textContent = live.length
+              ? "no return within 10 ft"
+              : "glass may not be detected";
+            document.getElementById("radar-box").style.borderLeft =
+              "3px solid " + (live.length ? C.clear : C.idle);
+          }
+
+          document.getElementById("radar-list").innerHTML = order
+            .map((p) => {
+              const s = secs[p];
+              const val =
+                s && s.online
+                  ? typeof s.min_dist === "number"
+                    ? (s.min_dist / 304.8).toFixed(1) + " ft"
+                    : "no echo*"
+                  : "offline";
+              const col = !s || !s.online ? C.danger : C.dim;
+              return (
+                `<div class="det-item"><span style="color:${col}">` +
+                `${ARROW[p]} ${p}</span><span>${val}</span></div>`
+              );
+            })
+            .join("");
+        } catch (e) {
+        } finally {
+          radarBusy = false;
+        }
+      }
+
+      let segOn = false,
+        segSector = "front";
+      function applySeg() {
+        const img = document.querySelector(".seg-img");
+        img.src = segOn ? "/camera/seg/" + segSector : "";
+        document.getElementById("seg-label").textContent =
+          segSector.charAt(0).toUpperCase() + segSector.slice(1);
+      }
+      function toggleSeg() {
+        segOn = !segOn;
+        document.getElementById("seg-grid").style.display = segOn ? "" : "none";
+        document.getElementById("seg-btn").textContent = segOn ? "Hide" : "Show";
+        applySeg();
+      }
+      function selSeg(s) {
+        segSector = s;
+        if (segOn) applySeg();
+      }
+
+
+      const SC_NS = "http://www.w3.org/2000/svg";
+      const SC_CX = 290, SC_CY = 290, SC_HUB = 34, SC_IN = 40, SC_OUT = 236;
+
+      const scEl = (n, a = {}) => {
+        const e = document.createElementNS(SC_NS, n);
+        for (const k in a) e.setAttribute(k, a[k]);
+        return e;
+      };
+      const scPt = (deg, r) => {
+        const t = ((deg - 90) * Math.PI) / 180;
+        return [SC_CX + r * Math.cos(t), SC_CY + r * Math.sin(t)];
+      };
+      const scR = (ft, end) =>
+        SC_IN + (SC_OUT - SC_IN) * Math.max(0, Math.min(1, ft / end));
+
+      function scWedge(bearing, half, r0, r1) {
+        const [x0, y0] = scPt(bearing - half, r0);
+        const [x1, y1] = scPt(bearing + half, r0);
+        const [x2, y2] = scPt(bearing + half, r1);
+        const [x3, y3] = scPt(bearing - half, r1);
+        return `M ${x0} ${y0} A ${r0} ${r0} 0 0 1 ${x1} ${y1} L ${x2} ${y2} ` +
+               `A ${r1} ${r1} 0 0 0 ${x3} ${y3} Z`;
+      }
+      function scArc(bearing, half, r) {
+        const [x0, y0] = scPt(bearing - half, r);
+        const [x1, y1] = scPt(bearing + half, r);
+        return `M ${x0} ${y0} A ${r} ${r} 0 0 1 ${x1} ${y1}`;
+      }
+
+      function scColor(ft, zones) {
+        if (ft == null) return "var(--info)";
+        if (zones && ft <= zones.danger) return "var(--alert)";
+        if (zones && ft <= zones.warning) return "var(--warning)";
+        return "var(--success)";
+      }
+
+      function drawRadarScope(d) {
+        const svg = document.getElementById("radar-scope");
+        if (!svg) return;
+        const g = d.geometry || {};
+        const end = g.end_ft || 9.84;
+        const step = g.step_deg || 60;
+        const half = (g.beam_deg || 65) / 2;
+        const zones = d.zones_ft;
+        svg.textContent = "";
+
+        // Which board feeds which direction, so a wedge can say so.
+        const feeds = {};
+        for (const [name, c] of Object.entries(d.cardinals || {}))
+          for (const k of c.sources || []) feeds[k] = name;
+
+        const slit = (((g.offset_deg ?? 0) + step / 2) % step + step) % step;
+        for (let ft = 2; ft <= end + 0.01; ft += 2) {
+          const r = scR(ft, end);
+          svg.appendChild(scEl("circle", {
+            cx: SC_CX, cy: SC_CY, r, class: "sc-ring",
+          }));
+          const [lx, ly] = scPt(slit, r);
+          const t = scEl("text", {
+            x: lx, y: ly, fill: "var(--muted)", "font-size": 13,
+            "text-anchor": "middle", "dominant-baseline": "middle",
+            stroke: "var(--bg)", "stroke-width": 3, "paint-order": "stroke",
+          });
+          t.textContent = ft + " ft";
+          svg.appendChild(t);
+        }
+
+        let live = 0;
+        const slots = d.slots || [];
+
+        const wedgeD = (f) => slots.filter(f)
+          .map((s) => scWedge(s.bearing, half, SC_IN, SC_OUT)).join(" ");
+        const onlineOf = (s) => !!(s.board && s.board.online);
+        const dOff = wedgeD((s) => !onlineOf(s));
+        const dOn = wedgeD(onlineOf);
+        if (dOff)
+          svg.appendChild(scEl("path", {
+            d: dOff, class: "sc-wedge off", "fill-rule": "nonzero",
+          }));
+        if (dOn)
+          svg.appendChild(scEl("path", {
+            d: dOn, class: "sc-wedge", "fill-rule": "nonzero",
+          }));
+        const dBlind = slots.filter(onlineOf)
+          .map((s) => scWedge(s.bearing, half, SC_IN, scR(g.start_ft || 0.82, end)))
+          .join(" ");
+        if (dBlind)
+          svg.appendChild(scEl("path", {
+            d: dBlind, class: "sc-blind", "fill-rule": "nonzero",
+          }));
+
+        for (const slot of slots) {
+          const b = slot.board;
+          const bearing = slot.bearing;
+          const on = !!(b && b.online);
+          if (on) live++;
+          const ft = on ? b.ft : null;
+          const col = scColor(ft, zones);
+          const dim = b && b.degraded ? 0.45 : 1;
+
+          svg.appendChild(scEl("path", {
+            d: scArc(bearing, half, SC_OUT),
+            class: on ? "sc-edge" : "sc-edge off",
+            "stroke-width": on ? 1.4 : 1,
+            "stroke-dasharray": b ? (on ? "" : "5 4") : "6 5",
+          }));
+
+          if (on && ft != null) {
+            const r = scR(ft, end);
+            svg.appendChild(scEl("path", {
+              d: scArc(bearing, half, r), fill: "none", stroke: col,
+              "stroke-width": 4, "stroke-linecap": "round", opacity: 0.45 * dim,
+            }));
+            const [dx, dy] = scPt(bearing, r);
+            const [tx0, ty0] = scPt(bearing, SC_IN);
+            svg.appendChild(scEl("line", {
+              x1: tx0, y1: ty0, x2: dx, y2: dy, stroke: col,
+              "stroke-width": 1, "stroke-dasharray": "3 4", opacity: 0.4 * dim,
+            }));
+            svg.appendChild(scEl("circle", {
+              cx: dx, cy: dy, r: 7, fill: col, stroke: "var(--bg)",
+              "stroke-width": 2, opacity: dim,
+            }));
+            const lside = Math.sin((bearing * Math.PI) / 180);
+            const [lx, ly] = scPt(bearing, r + 22);
+            const lyoff = Math.abs(lside) >= 0.7 ? -15 : 0;
+            const lab = scEl("text", {
+              x: lx, y: ly + lyoff, fill: col, "font-size": 17, "font-weight": 700,
+              "text-anchor":
+                Math.abs(lside) < 0.7 ? "middle" : lside > 0 ? "start" : "end",
+              "dominant-baseline": "middle",
+            });
+            lab.textContent = ft.toFixed(1) + " ft";
+            svg.appendChild(lab);
+          }
+
+          const [cx2, cy2] = scPt(bearing, SC_OUT + 24);
+          const side = Math.sin((bearing * Math.PI) / 180);
+          const anchor =
+            Math.abs(side) < 0.7 ? "middle" : side > 0 ? "end" : "start";
+          const dir = feeds[slot.key];
+          const state = !b ? " · no board"
+            : !on ? " · offline"
+            : b.degraded ? " · lagging"
+            : ft == null ? " · clear" : "";
+          const cap = scEl("text", {
+            x: cx2, y: cy2, "text-anchor": anchor,
+            "dominant-baseline": "middle", "font-size": 14, "font-weight": 600,
+            fill: !b ? "var(--muted)" : on ? "var(--fg)" : "var(--alert)",
+          });
+          const secLabel = slot.sector_label || `${bearing.toFixed(0)}°`;
+          cap.textContent = `${secLabel}${dir ? " · " + dir : ""}${state}`;
+          svg.appendChild(cap);
+          if (b && b.serial) {
+            const sub = scEl("text", {
+              x: cx2, y: cy2 + 15, "text-anchor": anchor,
+              "dominant-baseline": "middle", "font-size": 12,
+              fill: "var(--muted)",
+            });
+            sub.textContent = b.serial.slice(-6);
+            svg.appendChild(sub);
+          }
+        }
+
+        const overlapDeg = (g.beam_deg || 65) - step;
+        const liveAt = {};
+        for (const sl of slots) liveAt[Math.round(sl.bearing)] = onlineOf(sl);
+        for (const b0 of d.ring || []) {
+          const seam = b0 - step / 2;
+          const bothLive =
+            liveAt[Math.round(((b0 % 360) + 360) % 360)] &&
+            liveAt[Math.round((((b0 - step) % 360) + 360) % 360)];
+
+          if (overlapDeg > 0 && bothLive) {
+            svg.appendChild(scEl("path", {
+              d: scWedge(seam, overlapDeg / 2, SC_IN, SC_OUT),
+              class: "sc-overlap",
+            }));
+            const [ox, oy] = scPt(seam, SC_OUT + 11);
+            const ol = scEl("text", {
+              x: ox, y: oy, "text-anchor": "middle",
+              "dominant-baseline": "middle", "font-size": 11,
+              fill: "var(--accent)", stroke: "var(--bg)",
+              "stroke-width": 2.5, "paint-order": "stroke",
+            });
+            ol.textContent = overlapDeg.toFixed(0) + "°";
+            svg.appendChild(ol);
+          } else {
+            const [x1, y1] = scPt(seam, SC_IN);
+            const [x2, y2] = scPt(seam, SC_OUT);
+            svg.appendChild(scEl("line", {
+              x1, y1, x2, y2, stroke: "var(--accent)", "stroke-width": 1,
+              "stroke-opacity": 0.55,
+            }));
+          }
+        }
+
+        const hex = (d.ring || []).map((b) => scPt(b - step / 2, SC_HUB).join(","));
+        if (hex.length > 2) {
+          svg.appendChild(scEl("polygon", {
+            points: hex.join(" "), fill: "var(--card)",
+            stroke: "var(--fg)", "stroke-width": 1.5,
+          }));
+        }
+        const ah = scEl("text", {
+          x: SC_CX, y: SC_CY, "text-anchor": "middle",
+          "dominant-baseline": "middle", "font-size": 11,
+          fill: "var(--muted)", "letter-spacing": "1px",
+        });
+        ah.textContent = "AHEAD";
+        svg.appendChild(ah);
+
+        const badge = document.getElementById("scope-live");
+        if (badge) badge.textContent = `${live}/${slots.length}`;
+
+        const note = document.getElementById("scope-note");
+        if (note) {
+          const blind = Object.entries(d.cardinals || {})
+            .filter(([, c]) => !c.online)
+            .map(([n]) => n);
+          note.innerHTML = blind.length
+            ? `<span style="color:var(--alert)"><b>No glass detection ${tpEsc(blind.join(", "))}.</b>
+               A laser passes through a glass door — on those arcs the whole
+               system is blind to it.</span>`
+            : `The <b>dot</b> is how far — that distance is measured. The
+               <b>arc</b> through it is where along the beam it might be: the
+               A121 resolves no angle inside its beam, so the dot's position
+               round the ring is where the sensor points, not where the object
+               is. Red band = the near zone it cannot see into. Colours are the
+               guidance bands (danger ${(zones && zones.danger || 0).toFixed(1)} ft,
+               warning ${(zones && zones.warning || 0).toFixed(1)} ft). Each wedge is
+               one board's real ${(g.beam_deg || 65).toFixed(0)}° beam, so
+               ${(g.gap_deg ?? -5) < 0
+                   ? `neighbours OVERLAP by ${Math.abs(g.gap_deg).toFixed(0)}° — the
+                      brighter sliver marked at each seam is that overlap, ground
+                      two boards see, and 6 × ${(g.beam_deg || 65).toFixed(0)}° less
+                      6 × ${Math.abs(g.gap_deg).toFixed(0)}° is exactly 360°, so
+                      nothing is missed`
+                   : `there is a genuine ${g.gap_deg.toFixed(0)}° blind slit at each
+                      seam, including one dead ahead`}.`;
+        }
+      }
+
+      let scopeBusy = false;
+      async function updateScope() {
+        if (scopeBusy) return;
+        scopeBusy = true;
+        try {
+          const res = await fetch("/radar/map", { cache: "no-store" });
+          if (res.ok) drawRadarScope(await res.json());
+        } catch (e) {
+          /* transient — the next tick redraws */
+        } finally {
+          scopeBusy = false;
+        }
+      }
+
+      applyTheme();
+
+      const MPS_TO_FTS = 3.28084;
+      const MPS_TO_KMH = 3.6;
+
+      function updateMotionFrom(h) {
+        const el = (id) => document.getElementById(id);
+        const measured = h.speed_source === "odometry";
+        const still = !!h.confidently_still;
+        const simulated = !!(
+          typeof _latestLidar !== "undefined" && _latestLidar && _latestLidar.simulated
+        );
+
+        const cadSpeed = h.speed_cadence_mps;
+        const cadKmh = cadSpeed == null ? null : cadSpeed * MPS_TO_KMH;
+
+        const spd = el("mo-speed");
+        if (simulated) {
+          if (cadKmh != null) {
+            spd.textContent = `${cadKmh.toFixed(1)} km/h`;
+            spd.style.color = "var(--info)";
+          } else {
+            spd.textContent = "— LiDAR simulated";
+            spd.style.color = "var(--muted)";
+          }
+        } else if (still) {
+          spd.textContent = "stopped";
+          spd.style.color = "var(--muted)";
+        } else if (measured) {
+          const kmh = (h.speed_measured_mps || 0) * MPS_TO_KMH;
+          const err = h.speed_error_mps == null
+            ? "" : ` ±${(h.speed_error_mps * MPS_TO_KMH).toFixed(1)}`;
+          spd.textContent = `${kmh.toFixed(1)}${err} km/h`;
+          spd.style.color = "var(--success)";
+        } else if (cadKmh != null) {
+          spd.textContent = `${cadKmh.toFixed(1)} km/h`;
+          spd.style.color = "var(--info)";
+        } else {
+          spd.textContent = "not measurable";
+          spd.style.color = "var(--muted)";
+        }
+
+        const gy = h.gyro || {};
+        const gyroPresent = gy.healthy !== undefined;
+        const gyroOk = gy.healthy === true;
+        const cad = el("mo-cadence");
+        if (gyroOk) {
+          cad.textContent = h.walking_confirmed
+            ? `${(gy.cadence_spm || 0).toFixed(0)} steps/min`
+            : "not stepping";
+          cad.style.color = h.walking_confirmed ? "var(--fg)" : "var(--muted)";
+        } else {
+          cad.textContent = gyroPresent ? "gyro fault" : "no gyro";
+          cad.style.color = gyroPresent ? "var(--alert)" : "var(--muted)";
+        }
+
+        const slip = el("mo-slip");
+        const sl = (h.lateral_mps || 0) * MPS_TO_FTS;
+        slip.textContent = simulated
+          ? "—"
+          : Math.abs(sl) < 0.05
+            ? "0.0 ft/s"
+            : `${Math.abs(sl).toFixed(1)} ft/s ${sl > 0 ? "right" : "left"}`;
+        slip.style.color = simulated ? "var(--muted)" : "";
+
+        const yawEl = el("mo-yaw");
+        yawEl.textContent = simulated
+          ? "—"
+          : `${(h.yaw_rate_dps || 0).toFixed(0)}°/s`;
+        yawEl.style.color = simulated ? "var(--muted)" : "";
+
+        const usingCadence = !measured && !still && cadKmh != null;
+        const src = el("motion-src");
+        src.textContent = usingCadence
+          ? "from footsteps"
+          : simulated ? "simulated"
+          : still ? "still" : measured ? "measured" : "no reading";
+        src.style.color = usingCadence
+          ? "var(--info)"
+          : simulated ? "var(--warning)"
+          : measured ? "var(--success)" : "var(--muted)";
+
+        const note = el("motion-note");
+        const notes = [];
+        if (usingCadence)
+          notes.push(
+            `Pace from footfalls: ${(h.stride_m ?? 0).toFixed(2)} m stride × ` +
+            "cadence, because the scan matcher " +
+            (simulated ? "is simulated here." : "cannot resolve a pace here.") +
+            (h.stride_learned
+              ? ` Stride learned from ${tpEsc(h.stride_samples || 0)} LiDAR samples.`
+              : " Stride is still the default — it is taught automatically the " +
+                "first time you walk somewhere the LiDAR can measure pace."));
+        if (simulated && !usingCadence)
+          notes.push(
+            "<span style='color:var(--warning)'>The LiDAR is in simulation, so " +
+            "speed, slip and turn rate would be derived from fabricated scans — " +
+            "withheld rather than shown.</span> Take a few steps and pace will " +
+            "appear from the accelerometer instead.");
+        else if (!measured && !still && cadKmh == null)
+          notes.push(
+            "Pace could not be measured: " +
+            (h.speed_observable
+              ? "the scan match was too noisy to trust here."
+              : "these surroundings give the scan matcher nothing to range against " +
+                `(forward sensitivity ${(h.forward_sensitivity ?? 0).toFixed(2)}).`) +
+            " The guidance layer still uses a nominal pace internally for " +
+            "time-to-contact, but that is an assumption, not your speed.");
+        // The one contradiction worth surfacing rather than averaging away.
+        if (measured && (h.speed_measured_mps || 0) > 0.4 && gyroOk
+            && !h.walking_confirmed)
+          notes.push(
+            "<span style='color:var(--warning)'>Odometry says moving but the " +
+            "accelerometer sees no footfalls — being carried, or a scan-match " +
+            "artifact off something else that moved.</span>");
+        if (gyroOk && gy.tilt_warn)
+          notes.push(`Gyro board is ${(gy.tilt_deg ?? 0).toFixed(0)}° off level — ` +
+                     "cadence and tilt are unreliable until it is mounted flat.");
+        note.innerHTML = notes.join("<br>");
+      }
+
+      let motionBusy = false;
+      async function updateMotion() {
+        if (motionBusy) return;
+        motionBusy = true;
+        try {
+          const res = await fetch("/guidance/heading", { cache: "no-store" });
+          if (res.ok) updateMotionFrom(await res.json());
+        } catch (e) {
+          /* transient — the next tick retries */
+        } finally {
+          motionBusy = false;
+        }
+      }
+
+
+      setInterval(updateNav, 200);
+      setInterval(updateCam, 500);
+      setInterval(updateWalk, 400);
+
+      let tpBusy = false;
+      async function updateTest() {
+        if (tpBusy) return;
+        tpBusy = true;
+        try {
+          const d = await (await fetch("/guidance/test?limit=15")).json();
+          const h = d.health || {};
+          const v = d.voice || {};
+          const ok = (b) => (b ? "✓" : "✗");
+          const down = (h.radar_down || []).join(", ");
+          const radar = h.radar_ok ? (down ? `partial (${down} down)` : "✓") : "✗";
+          const voice = v.usable
+            ? `🎧 Pi → ${v.output}`
+            : `📱 phone screen reader${v.running ? ` (Pi has ${v.output || "no output"})` : ""}`;
+          const start = d.startup && d.startup.ready ? "ready" : "scanning…";
+          const healthEl = document.getElementById("tp-health");
+          healthEl.textContent =
+            `LiDAR ${ok(h.lidar_ok)} · radar ${radar} · camera ${ok(h.camera_ok)} · ` +
+            `NPU ${ok(h.hailo_ok)} · startup ${start} · voice ${voice}`;
+          healthEl.style.color = h.all_ok ? "" : "var(--warning)";
+          const perMin = d.said_last_minute || 0;
+          document.getElementById("tp-stats").textContent =
+            `${perMin} said in the last minute · ${d.said_total || 0} this run · ` +
+            `${d.marks_total || 0} marks`;
+          const rows = (d.lines || []).slice().reverse();
+          document.getElementById("tp-log").innerHTML = rows.length
+            ? rows.map((r) => {
+                const cls = r.source === "tester" ? "mark" : r.level === "urgent" ? "urgent" : "";
+                return `<div class="tp-row ${cls}"><span class="tp-t">${tpEsc(r.time)}</span>` +
+                  `<span><b>${tpEsc(r.text)}</b>` +
+                  (r.detail ? `<br><span class="tp-why">${tpEsc(r.detail)}</span>` : "") +
+                  `</span></div>`;
+              }).join("")
+            : "<div class='det-item'><span>Nothing said yet this run</span></div>";
+        } catch (e) {
+          document.getElementById("tp-health").textContent =
+            "⚠ cannot reach the device — is the app running?";
+        } finally {
+          tpBusy = false;
+        }
+      }
+      document.querySelectorAll(".tp-mark").forEach((btn) =>
+        btn.addEventListener("click", async () => {
+          const kind = btn.dataset.kind;
+          let note = "";
+          if (kind === "note") {
+            note = prompt("Note for the log:") || "";
+            if (!note) return;
+          }
+          const ack = document.getElementById("tp-mark-ack");
+          try {
+            const r = await (await fetch("/guidance/mark", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ kind, note }),
+            })).json();
+            ack.textContent = `marked ${kind} — after “${r.last_said}”`;
+          } catch (e) {
+            ack.textContent = "⚠ mark not saved";
+          }
+          updateTest();
+        }));
+      updateTest();
+      setInterval(updateTest, 1000);
+      setInterval(updateRadar, 300);
+      setInterval(updateScope, 300);
+      setInterval(updateMotion, 500);
+      updateNav();
+      updateCam();
+      updateWalk();
+      updateRadar();
+      updateScope();
+      updateMotion();
+    </script>
+  </body>
+</html>

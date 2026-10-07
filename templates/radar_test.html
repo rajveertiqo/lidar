@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>A121 Radar — Hardware Test</title>
+    <style>
+      :root {
+        --bg: #0a0e14; --fg: #e5e9f0; --muted: #8892a0; --card: #141921;
+        --alert: #e53e3e; --warning: #ed8936; --success: #48bb78;
+        --info: #4299e1; --border: #1e2633; --accent: #667eea;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--fg);
+        font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      header {
+        display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+        padding: 14px 18px; border-bottom: 1px solid var(--border);
+      }
+      h1 { font-size: 17px; margin: 0 8px 0 0; font-weight: 650; }
+      .pill {
+        font-size: 12px; padding: 3px 10px; border-radius: 999px;
+        border: 1px solid var(--border); color: var(--muted); background: var(--card);
+      }
+      .pill.ok { color: var(--success); border-color: #2c5b40; }
+      .pill.bad { color: var(--alert); border-color: #5b2c2c; }
+      .pill.warn { color: var(--warning); border-color: #5b452c; }
+      a.nav { font-size: 12px; color: var(--info); text-decoration: none; }
+      a.nav:hover { text-decoration: underline; }
+      button {
+        font: inherit; font-size: 12px; padding: 5px 12px; border-radius: 8px;
+        background: var(--card); color: var(--fg); border: 1px solid var(--border);
+        cursor: pointer;
+      }
+      button:hover { border-color: var(--accent); }
+      button:disabled { opacity: .5; cursor: default; }
+      #rediscover { margin-left: auto; }
+      #rediscover-msg { margin: 0; max-width: 48ch; }
+      .wrap { padding: 18px; }
+      .hint {
+        color: var(--muted); font-size: 13px; margin: 0 0 16px;
+        padding: 10px 14px; background: var(--card);
+        border: 1px solid var(--border); border-radius: 10px;
+      }
+      .grid {
+        display: grid; gap: 14px;
+        grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+      }
+      .card {
+        background: var(--card); border: 1px solid var(--border);
+        border-radius: 12px; padding: 14px; border-left: 4px solid var(--muted);
+      }
+      .card.live { border-left-color: var(--success); }
+      .card.lag  { border-left-color: var(--warning); }
+      .card.dead { border-left-color: var(--alert); }
+      .card.refused { border-left-color: var(--info); }
+      .card h2 {
+        margin: 0; font-size: 15px; font-weight: 650;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .sub { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+      .big {
+        font-size: 34px; font-weight: 750; line-height: 1.1;
+        font-variant-numeric: tabular-nums;
+      }
+      .big small { font-size: 14px; font-weight: 600; color: var(--muted); }
+      .track {
+        position: relative; height: 20px; border-radius: 10px; margin: 10px 0 4px;
+        background: var(--bg); border: 1px solid var(--border); overflow: hidden;
+      }
+      .blind { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(229,62,62,.22); }
+      .pip { position: absolute; top: -1px; bottom: -1px; width: 6px;
+             border-radius: 3px; transform: translateX(-3px); }
+      .scale { display: flex; justify-content: space-between;
+               color: var(--muted); font-size: 10px; margin-bottom: 10px; }
+      .kv { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 12px; }
+      .kv div { display: flex; justify-content: space-between; gap: 8px;
+                border-bottom: 1px solid var(--border); padding: 3px 0; }
+      .kv span:first-child { color: var(--muted); }
+      .kv b { font-weight: 600; font-variant-numeric: tabular-nums; }
+      .err {
+        margin-top: 10px; font-size: 12px; color: #ffb4b4;
+        background: #2a1a1a; border: 1px solid #5b2c2c;
+        border-radius: 8px; padding: 7px 9px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .note {
+        margin-top: 10px; font-size: 12px; color: #cfe0ff;
+        background: #16202e; border: 1px solid #2c405b;
+        border-radius: 8px; padding: 7px 9px;
+      }
+      .empty { color: var(--muted); padding: 40px; text-align: center; }
+      .top { display: grid; grid-template-columns: minmax(320px, 520px) 1fr;
+             gap: 14px; margin-bottom: 16px; align-items: start; }
+      @media (max-width: 900px) { .top { grid-template-columns: 1fr; } }
+      .panel { background: var(--card); border: 1px solid var(--border);
+               border-radius: 12px; padding: 14px; }
+      .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .8px;
+                  color: var(--muted); margin: 0 0 10px; }
+      svg { width: 100%; height: auto; display: block; }
+      .slot { display: grid; grid-template-columns: 1fr 92px 70px; gap: 8px;
+              align-items: center; padding: 6px 0;
+              border-bottom: 1px solid var(--border); font-size: 12px; }
+      .slot:last-of-type { border-bottom: 0; }
+      .slot small { color: var(--muted); }
+      .slot .now { text-align: right; font-weight: 700;
+                   font-variant-numeric: tabular-nums; }
+      select { font: inherit; font-size: 12px; padding: 5px 6px; border-radius: 7px;
+               background: var(--bg); color: var(--fg); border: 1px solid var(--border); }
+      .save { margin-top: 10px; width: 100%; padding: 9px;
+              background: var(--accent); border-color: var(--accent);
+              color: #fff; font-weight: 600; }
+      .msg { font-size: 12px; margin-top: 8px; }
+      .msg.err { color: var(--alert); }
+      .msg.ok { color: var(--success); }
+      .msg.warn { color: var(--warning); }
+      .warnbox {
+        font-size: 13px; color: #ffd9b3; background: #2a1f14;
+        border: 1px solid #5b452c; border-radius: 10px;
+        padding: 10px 14px; margin: 0 0 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>A121 Radar — Hardware Test</h1>
+      <span class="pill" id="p-found">—</span>
+      <span class="pill" id="p-live">—</span>
+      <span class="pill" id="p-rate">—</span>
+      <span class="pill" id="p-blind">—</span>
+      <span class="pill" id="p-conn">connecting…</span>
+      <a class="nav" href="/radar/view">guidance map →</a>
+      <button id="rediscover">Rediscover boards</button>
+      <span class="msg err" id="rediscover-msg"></span>
+    </header>
+
+    <div class="wrap">
+      <div class="warnbox" id="blindwarn" style="display:none"></div>
+      <p class="hint">
+        One card per board. Wave a hand ~1.5&nbsp;ft in front of one sensor —
+        its distance drops and its bar jumps, which is how you tell which
+        physical board is which serial. Anything nearer than the blind zone
+        (shaded red, left of each bar) is invisible to the sensor by design.
+        <strong>Measured Hz</strong> and <strong>lag</strong> are the numbers to
+        watch when checking whether the USB link keeps up with all six boards
+        running at once.
+      </p>
+      <div class="top">
+        <div class="panel">
+          <h2>Scope</h2>
+          <svg id="scope" viewBox="0 0 580 580" role="img"
+               aria-label="Radar scope showing each board's beam and detected range"></svg>
+          <div style="font-size:12px;color:var(--muted);margin-top:8px" id="scope-note"></div>
+        </div>
+        <div class="panel">
+          <h2>Bearing calibration</h2>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px">
+            Which way each board FACES, in degrees clockwise from straight
+            ahead. <strong>0°</strong> is dead ahead. Wave a hand at one board,
+            see which row's number jumps, then pick its bearing.
+            <br /><br />
+            This is a <strong>measurement</strong>, not a preference — it is
+            the same table the guidance layer steers on, and a board with no
+            bearing is refused rather than guessed at.
+          </div>
+          <div id="slots"></div>
+          <button class="save" id="save">Save bearings</button>
+          <div class="msg" id="msg"></div>
+        </div>
+      </div>
+
+      <div class="grid" id="cards"></div>
+      <div class="empty" id="empty">Waiting for discovery…</div>
+    </div>
+
+    <script>
+      const fmt = (v, d = 1) => (v == null ? "—" : Number(v).toFixed(d));
+      const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+      async function adminFetch(url, opts = {}) {
+        const KEY = "shappe-admin-token";
+        let token = "";
+        try { token = localStorage.getItem(KEY) || ""; } catch (e) {}
+        const send = () => fetch(url, { ...opts,
+          headers: { ...(opts.headers || {}), "X-Admin-Token": token } });
+        let r = await send();
+        if (r.status === 401) {
+          token = (prompt("Admin token for this device (SHAPPE_ADMIN_TOKEN):") || "").trim();
+          if (!token) return r;
+          r = await send();
+          if (r.status !== 401) { try { localStorage.setItem(KEY, token); } catch (e) {} }
+        }
+        return r;
+      }
+
+      function colorFor(b, cfg) {
+        if (!b.online) return "var(--muted)";
+        if (b.ft == null) return "var(--info)";
+        if (b.ft <= cfg.end_ft * 0.27) return "var(--alert)";     // ~2.6 ft
+        if (b.ft <= cfg.end_ft * 0.5) return "var(--warning)";    // ~4.9 ft
+        return "var(--success)";
+      }
+
+      function card(b, cfg) {
+        const col = colorFor(b, cfg);
+        const cls = b.phase === "refused" ? "refused"
+          : !b.online ? "dead" : (b.degraded ? "lag" : "live");
+        const pct = (b.online && b.ft != null)
+          ? Math.max(0, Math.min(100, (b.ft / cfg.end_ft) * 100)) : null;
+
+        const value = !b.online
+          ? (b.phase === "calibrating" || b.phase === "recalibrating" ? "calibrating…"
+            : b.phase === "starting" ? "starting…"
+            : b.phase === "refused" ? "not calibrated"
+            : b.phase === "reconnecting" ? "reconnecting…" : "offline")
+          : (b.ft == null ? "no echo" : `${fmt(b.ft)} <small>ft</small>`);
+
+        const extra = (b.peaks_mm || []).length > 1
+          ? (b.peaks_mm || []).slice(1)
+              .map(mm => (mm / 304.8).toFixed(1) + " ft").join(", ")
+          : "—";
+
+        const bearing = b.bearing == null
+          ? '<span style="color:var(--warning)">not measured</span>'
+          : `${Number(b.bearing).toFixed(0)}° · ${esc(b.key)}`;
+
+        return `<div class="card ${cls}">
+          <h2>${esc(b.serial || "?")}</h2>
+          <div class="sub">hub port ${esc(b.hub_port ?? "?")} · ${esc(b.device || "?")}
+            ${b.rss_version ? " · rss " + esc(b.rss_version) : ""}</div>
+          <div class="big" style="color:${col}">${value}</div>
+          <div class="track">
+            <span class="blind" style="width:${(cfg.start_ft / cfg.end_ft) * 100}%"></span>
+            ${pct == null ? "" : `<span class="pip" style="left:${pct}%;background:${col}"></span>`}
+          </div>
+          <div class="scale"><span>0</span><span>${cfg.end_ft.toFixed(1)} ft</span></div>
+          <div class="kv">
+            <div><span>bearing</span><b>${bearing}</b></div>
+            <div><span>state</span><b>${esc(b.phase || "—")}</b></div>
+            <div><span>mm</span><b>${b.mm == null ? "—" : fmt(b.mm, 0)}</b></div>
+            <div><span>measured Hz</span><b>${fmt(b.measured_hz, 2)}</b></div>
+            <div><span>lag</span><b style="color:${b.degraded ? "var(--warning)" : "inherit"}">${
+              fmt(b.lag_s, 3)} s</b></div>
+            <div><span>strength</span><b>${fmt(b.strength_db, 1)} dB</b></div>
+            <div><span>temp</span><b>${b.temperature_c == null ? "—" : esc(b.temperature_c) + " °C"}</b></div>
+            <div><span>other peaks</span><b>${extra}</b></div>
+            <div><span>frames</span><b>${esc(b.frames ?? "—")}</b></div>
+            <div><span>reconnects</span><b style="color:${
+              b.reconnects ? "var(--warning)" : "inherit"}">${esc(b.reconnects ?? 0)}</b></div>
+          </div>
+          ${b.reason ? `<div class="note">${esc(b.reason)}</div>` : ""}
+          ${b.provisional ? `<div class="note">Streaming for CALIBRATION ONLY —
+            it has no measured bearing, so it feeds no direction and cannot
+            steer. Set its bearing on the right.</div>` : ""}
+          ${b.error ? `<div class="err">${esc(b.error)}</div>` : ""}
+        </div>`;
+      }
+
+      // ---- scope ----------------------------------------------------------
+      const NS = "http://www.w3.org/2000/svg";
+      const CX = 290, CY = 290, R_HUB = 34, R_IN = 40, R_OUT = 236;
+      const mk = (n, a = {}) => {
+        const e = document.createElementNS(NS, n);
+        for (const k in a) e.setAttribute(k, a[k]);
+        return e;
+      };
+      // 0 deg is straight up (straight ahead); bearing increases clockwise.
+      const pt = (deg, r) => {
+        const t = (deg - 90) * Math.PI / 180;
+        return [CX + r * Math.cos(t), CY + r * Math.sin(t)];
+      };
+      const rOf = (ft, end) => R_IN + (R_OUT - R_IN) * Math.max(0, Math.min(1, ft / end));
+
+      function sector(bearing, half, r0, r1) {
+        const [x0, y0] = pt(bearing - half, r0), [x1, y1] = pt(bearing + half, r0);
+        const [x2, y2] = pt(bearing + half, r1), [x3, y3] = pt(bearing - half, r1);
+        return `M ${x0} ${y0} A ${r0} ${r0} 0 0 1 ${x1} ${y1} L ${x2} ${y2} `
+             + `A ${r1} ${r1} 0 0 0 ${x3} ${y3} Z`;
+      }
+      function arc(bearing, half, r) {
+        const [x0, y0] = pt(bearing - half, r), [x1, y1] = pt(bearing + half, r);
+        return `M ${x0} ${y0} A ${r} ${r} 0 0 1 ${x1} ${y1}`;
+      }
+
+      function drawScope(d) {
+        const cfg = d.config, lay = d.layout;
+        const half = (cfg.beam_deg || 65) / 2, end = cfg.end_ft;
+        const svg = document.getElementById("scope");
+        svg.textContent = "";
+
+        for (let ft = 2; ft <= end + 0.01; ft += 2) {
+          const r = rOf(ft, end);
+          svg.appendChild(mk("circle", { cx: CX, cy: CY, r, fill: "none",
+            stroke: "var(--border)", "stroke-width": 1 }));
+          const [lx, ly] = pt(0, r);
+          const t = mk("text", { x: lx, y: ly, fill: "var(--muted)", "font-size": 10,
+            "text-anchor": "middle", "dominant-baseline": "middle" });
+          t.textContent = ft + " ft";
+          svg.appendChild(t);
+        }
+
+        const bySerial = d.boards;
+        const placed = lay.positions;      // serial -> measured bearing
+        let drawn = 0;
+
+        const sectors = (lay.sectors || []).slice();
+        const onGrid = new Set(sectors.map(s => s.start));
+        for (const s of Object.keys(placed)) {
+          if (!onGrid.has(placed[s])) {
+            sectors.push({ start: placed[s], centre: placed[s],
+                           label: Number(placed[s]).toFixed(0) + "° (off-grid)" });
+          }
+        }
+        sectors.sort((a, b) => a.start - b.start);
+
+        for (const sec of sectors) {
+          const bearing = sec.centre;
+          const serial = Object.keys(placed).find(s => placed[s] === sec.start);
+          const b = serial ? bySerial[serial] : null;
+          const live = b && b.online;
+          if (b) drawn++;
+
+          svg.appendChild(mk("path", {
+            d: sector(bearing, half, R_IN, R_OUT),
+            fill: live ? "rgba(102,126,234,.08)" : "rgba(136,146,160,.04)",
+            stroke: live ? "var(--accent)" : "var(--muted)",
+            "stroke-width": live ? 1.4 : 1,
+            "stroke-dasharray": b ? (live ? "" : "5 4") : "6 5",
+            opacity: b ? 1 : 0.8,
+          }));
+
+          if (live) {                     // the near zone the sensor cannot see
+            svg.appendChild(mk("path", {
+              d: sector(bearing, half, R_IN, rOf(cfg.start_ft, end)),
+              fill: "rgba(229,62,62,.16)", stroke: "none" }));
+          }
+
+          if (live && b.ft != null) {
+            const r = rOf(b.ft, end), col = colorFor(b, cfg);
+            const dim = b.degraded ? 0.5 : 1;
+
+            svg.appendChild(mk("path", { d: arc(bearing, half, r), fill: "none",
+              stroke: col, "stroke-width": 4, "stroke-linecap": "round",
+              opacity: 0.45 * dim }));
+
+            const [dx, dy] = pt(bearing, r);
+            svg.appendChild(mk("circle", { cx: dx, cy: dy, r: 7, fill: col,
+              stroke: "var(--bg)", "stroke-width": 2, opacity: dim }));
+            const [t0x, t0y] = pt(bearing, R_IN);
+            svg.appendChild(mk("line", { x1: t0x, y1: t0y, x2: dx, y2: dy,
+              stroke: col, "stroke-width": 1, "stroke-dasharray": "3 4",
+              opacity: 0.4 * dim }));
+
+            const [lx, ly] = pt(bearing, r + 19);
+            const lab = mk("text", { x: lx, y: ly, fill: col, "font-size": 14,
+              "font-weight": 700, "text-anchor": "middle",
+              "dominant-baseline": "middle" });
+            lab.textContent = b.ft.toFixed(1) + " ft";
+            svg.appendChild(lab);
+          }
+
+          const [tx, ty] = pt(bearing, R_OUT + 22);
+          const side = Math.sin(bearing * Math.PI / 180);
+          const anchor = Math.abs(side) < 0.7
+            ? "middle" : (side > 0 ? "end" : "start");
+          const cap = mk("text", { x: tx, y: ty, "text-anchor": anchor,
+            "dominant-baseline": "middle", "font-size": 11, "font-weight": 600,
+            fill: !b ? "var(--muted)" : live ? "var(--fg)" : "var(--alert)" });
+          cap.textContent = sec.label + (!b ? " · no board"
+            : !live ? " · offline" : (b.ft == null ? " · clear" : ""));
+          svg.appendChild(cap);
+
+          if (b) {
+            const s = mk("text", { x: tx, y: ty + 12, "text-anchor": anchor,
+              "dominant-baseline": "middle", "font-size": 9, fill: "var(--muted)" });
+            s.textContent = serial.slice(-6);
+            svg.appendChild(s);
+          }
+        }
+
+        const step = cfg.step_deg || 60;
+        const hex = (lay.ring || []).map(b => pt(b - step / 2, R_HUB).join(","));
+        if (hex.length > 2) {
+          svg.appendChild(mk("polygon", { points: hex.join(" "), fill: "var(--card)",
+            stroke: "var(--fg)", "stroke-width": 1.5 }));
+        }
+        const ah = mk("text", { x: CX, y: CY - R_HUB - 11, "text-anchor": "middle",
+          "font-size": 9, fill: "var(--muted)", "letter-spacing": "1px" });
+        ah.textContent = "AHEAD";
+        svg.appendChild(ah);
+
+        const total = Object.keys(bySerial).length + (d.refused || []).length;
+        const unmeasured = (lay.unmeasured || []).length;
+        const why = `The <strong>dot</strong> is the closest return — its distance `
+          + `from the hub is measured. The <strong>arc</strong> through it is where `
+          + `along the beam it might actually be: the A121 resolves no angle inside `
+          + `its beam, so the dot's position around the ring is where the sensor `
+          + `points, not where the object is.`;
+        document.getElementById("scope-note").innerHTML = drawn === 0
+          ? (unmeasured
+              ? `<span style="color:var(--warning)">No board has a measured `
+                + `bearing, so none can be placed on the ring — and none can `
+                + `steer. Measure them on the right.</span>`
+              : "No boards streaming yet.")
+          : (unmeasured
+              ? `<span style="color:var(--warning)">${esc(drawn)}/${esc(total)} boards placed. `
+                + `${esc(unmeasured)} have NO measured bearing: they are refused by the `
+                + `guidance layer rather than given a guessed direction, so those `
+                + `arcs have no radar. Measure them on the right.</span><br><br>` + why
+              : `${esc(drawn)}/${esc(total)} boards placed from the measured bearings.<br><br>` + why);
+      }
+
+      let dirty = false;
+      function drawSlots(d) {
+        const box = document.getElementById("slots");
+        const all = Object.values(d.boards).concat(d.refused || []);
+        // Forgetting the sig lets the same boards coming back rebuild the rows.
+        if (!all.length) { box.innerHTML =
+          '<div style="font-size:12px;color:var(--muted)">No boards yet.</div>';
+          delete box.dataset.sig; return; }
+        all.sort((a, b) => String(a.hub_port).localeCompare(String(b.hub_port)));
+
+        const sig = all.map(b => b.serial).join(",") + "|"
+          + (d.layout.unmeasured || []).join(",");
+        if (box.dataset.sig !== sig) {
+          box.dataset.sig = sig;
+          box.innerHTML = all.map(b => {
+            const cur = d.layout.positions[b.serial];
+            const extra = cur != null && !(d.layout.sectors || []).some(s => s.start === cur)
+              ? [`<option value="${esc(cur)}">${Number(cur).toFixed(0)}° (off-grid)</option>`] : [];
+            const opts = ['<option value="">— none —</option>'].concat(
+              (d.layout.sectors || []).map(
+                s => `<option value="${esc(s.start)}">${esc(s.label)}</option>`), extra).join("");
+            const un = b.bearing == null;
+            return `<div class="slot">
+              <span>${esc(b.serial)}<br><small>port ${esc(b.hub_port)}${
+                un ? ' · <span style="color:var(--warning)">not measured</span>' : ""}</small></span>
+              <select data-serial="${esc(b.serial)}">${opts}</select>
+              <span class="now" id="now-${esc(b.serial)}">—</span></div>`;
+          }).join("");
+          box.querySelectorAll("select").forEach(s =>
+            s.addEventListener("change", () => { dirty = true; s.dataset.touched = "1"; }));
+          dirty = false;
+        }
+
+        for (const b of all) {
+          const cell = document.getElementById("now-" + b.serial);
+          if (!cell) continue;
+          cell.textContent = !b.online ? (b.phase === "refused" ? "—" : "offline")
+            : (b.ft == null ? "clear" : b.ft.toFixed(1) + " ft");
+          cell.style.color = colorFor(b, d.config);
+        }
+        if (!dirty) {
+          box.querySelectorAll("select").forEach(sel => {
+            const v = d.layout.positions[sel.dataset.serial];
+            sel.value = v == null ? "" : String(v);
+          });
+        }
+      }
+
+      document.getElementById("save").addEventListener("click", async (ev) => {
+        const msg = document.getElementById("msg"), bearings = {};
+        document.querySelectorAll("#slots select[data-touched]").forEach(s => {
+          bearings[s.dataset.serial] = s.value === "" ? null : Number(s.value);
+        });
+        if (!Object.keys(bearings).length) {
+          msg.className = "msg err"; msg.textContent = "Nothing changed — pick a bearing first.";
+          return;
+        }
+        ev.target.disabled = true;
+        msg.className = "msg"; msg.textContent = "Saving…";
+        try {
+          const r = await adminFetch("/radar/calibrate", { method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bearings }) });
+          const out = await r.json();
+          if (!out.ok) { msg.className = "msg err";
+            msg.textContent = out.error || out.detail || ("save failed (HTTP " + r.status + ")"); return; }
+          dirty = false;
+          document.querySelectorAll("#slots select").forEach(s => { delete s.dataset.touched; });
+          msg.className = "msg ok";
+          msg.textContent = out.restarting
+            ? `Saved ${out.measured} bearing(s) — restarting the `
+              + `array, each board recalibrates (~30 s).`
+            : `Saved ${out.measured} bearing(s) — applied live, no restart.`;
+        } catch (e) { msg.className = "msg err"; msg.textContent = e.message; }
+        finally { ev.target.disabled = false; }
+      });
+
+      async function tick() {
+        const conn = document.getElementById("p-conn");
+        try {
+          const [dr, hr] = await Promise.all([
+            fetch("/radar/diagnostics", { cache: "no-store" }),
+            fetch("/radar/health", { cache: "no-store" }),
+          ]);
+          if (!dr.ok) throw new Error("HTTP " + dr.status);
+          const d = await dr.json();
+          const h = hr.ok ? await hr.json() : null;
+          const cfg = d.config;
+
+          const all = Object.values(d.boards).concat(d.refused || []);
+          all.sort((a, b) => String(a.hub_port).localeCompare(String(b.hub_port)));
+
+          document.getElementById("cards").innerHTML =
+            all.map(b => card(b, cfg)).join("");
+          drawScope(d);
+          drawSlots(d);
+
+          const empty = document.getElementById("empty");
+          empty.style.display = all.length ? "none" : "block";
+          if (!all.length) {
+            empty.textContent = !d.enabled
+              ? "Radar is disabled in config (RADAR_ENABLED = False)."
+              : !d.discovery.ran ? "Waiting for discovery…"
+              : d.discovery.error ? "Discovery failed: " + d.discovery.error
+              : "No boards answered. Check the USB hub and cables.";
+          }
+
+          const found = d.discovery.found.length;
+          const live = Object.values(d.boards).filter(b => b.online).length;
+          const lagging = Object.values(d.boards).filter(b => b.degraded).length;
+
+          const pf = document.getElementById("p-found");
+          pf.textContent = `${found} discovered`;
+          pf.className = "pill " + (found ? "ok" : "bad");
+
+          const pl = document.getElementById("p-live");
+          pl.textContent = `${live}/${found || "?"} streaming`;
+          pl.className = "pill " + (found && live === found ? "ok" : live ? "warn" : "bad");
+
+          const hz = Object.values(d.boards)
+            .reduce((a, b) => a + (b.measured_hz || 0), 0);
+          const pr = document.getElementById("p-rate");
+          pr.textContent = `${hz.toFixed(1)} Hz total`
+            + (lagging ? ` · ${lagging} lagging` : "");
+          pr.className = "pill " + (lagging ? "warn" : "ok");
+
+          const blind = (h && h.blind_cardinals) || [];
+          const pb = document.getElementById("p-blind");
+          pb.textContent = blind.length
+            ? `${blind.length} blind: ${blind.join(", ")}`
+            : "all cardinals live";
+          pb.className = "pill " + (blind.length ? "bad" : "ok");
+
+          const bw = document.getElementById("blindwarn");
+          if (blind.length) {
+            bw.style.display = "block";
+            bw.innerHTML = `<strong>No glass detection on ${esc(blind.join(", "))}.</strong>
+              The radar is the only sensor that sees glass — a laser passes
+              through a glass door and reports the room beyond — so on these
+              arcs a glass door is invisible to the whole system.
+              ${(d.layout.unmeasured || []).length
+                ? `${esc(d.layout.unmeasured.length)} board(s) have no measured bearing
+                   and are refused rather than pointed in a guessed direction;
+                   measure them above.`
+                : `Check the boards covering those directions.`}`;
+          } else { bw.style.display = "none"; }
+
+          conn.textContent = "live";
+          conn.className = "pill ok";
+        } catch (e) {
+          conn.textContent = "disconnected — " + e.message;
+          conn.className = "pill bad";
+        }
+      }
+
+      document.getElementById("rediscover").addEventListener("click", async (ev) => {
+        const note = document.getElementById("rediscover-msg");
+        ev.target.disabled = true;
+        ev.target.textContent = "Rediscovering…";
+        note.textContent = "";
+        try {
+          const r = await adminFetch("/radar/rediscover", { method: "POST" });
+          if (!r.ok) {
+            let detail = "";
+            try { const out = await r.json(); detail = out.detail || out.error || ""; } catch (e) {}
+            if (typeof detail !== "string") detail = JSON.stringify(detail);
+            ev.target.textContent = r.status === 401
+              ? "Refused — needs the admin token" : "Refused (HTTP " + r.status + ")";
+            note.textContent = detail || ("the device answered HTTP " + r.status);
+          }
+        } catch (e) {
+          ev.target.textContent = "Rediscover failed";
+          note.textContent = "request failed — " + e.message;
+        }
+        setTimeout(() => {
+          ev.target.disabled = false;
+          ev.target.textContent = "Rediscover boards";
+        }, 3000);
+      });
+
+      tick();
+      setInterval(tick, 250);   // boards publish at 6 Hz; 4 Hz polling is plenty
+    </script>
+  </body>
+</html>

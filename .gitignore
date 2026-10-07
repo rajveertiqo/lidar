@@ -1,0 +1,16 @@
+__pycache__/
+venv/
+
+
+# Walking-test logs written by tools/walk_logger.py, and the speech logs.
+logs/
+
+radar_bearings.json
+stride.json
+
+hailort.log
+*.log
+Shappe_Spatial_Experiment_Plan.pdf
+.vscode/
+
+tests/

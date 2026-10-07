@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Walking Speed — Gait Test</title>
+    <style>
+      :root {
+        --bg: #0a0e14; --fg: #e5e9f0; --muted: #8892a0; --card: #141921;
+        --alert: #e53e3e; --warning: #ed8936; --success: #48bb78;
+        --info: #4299e1; --border: #1e2633; --accent: #667eea;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--fg);
+        font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      header {
+        display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+        padding: 14px 18px; border-bottom: 1px solid var(--border);
+      }
+      h1 { font-size: 17px; margin: 0 8px 0 0; font-weight: 650; }
+      .pill {
+        font-size: 12px; padding: 3px 10px; border-radius: 999px;
+        border: 1px solid var(--border); color: var(--muted); background: var(--card);
+      }
+      .pill.ok { color: var(--success); border-color: #2c5b40; }
+      .pill.bad { color: var(--alert); border-color: #5b2c2c; }
+      .pill.warn { color: var(--warning); border-color: #5b452c; }
+      a.nav { font-size: 12px; color: var(--info); text-decoration: none; }
+      a.nav:hover { text-decoration: underline; }
+      button {
+        font: inherit; font-size: 12px; padding: 5px 12px; border-radius: 8px;
+        background: var(--card); color: var(--fg); border: 1px solid var(--border);
+        cursor: pointer;
+      }
+      button:hover { border-color: var(--accent); }
+      button:disabled { opacity: .5; cursor: default; }
+      input[type="number"] {
+        font: inherit; font-size: 12px; width: 84px; padding: 5px 8px;
+        border-radius: 8px; background: var(--bg); color: var(--fg);
+        border: 1px solid var(--border); font-variant-numeric: tabular-nums;
+      }
+      .wrap { padding: 18px; max-width: 1180px; }
+      .hint {
+        color: var(--muted); font-size: 13px; margin: 0 0 16px;
+        padding: 10px 14px; background: var(--card);
+        border: 1px solid var(--border); border-radius: 10px;
+      }
+      .grid {
+        display: grid; gap: 14px;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      }
+      .card {
+        background: var(--card); border: 1px solid var(--border);
+        border-radius: 12px; padding: 14px; border-left: 4px solid var(--muted);
+      }
+      .card.live { border-left-color: var(--success); }
+      .card.idle { border-left-color: var(--info); }
+      .card.dead { border-left-color: var(--alert); }
+      .card.warn { border-left-color: var(--warning); }
+      .card h2 { margin: 0; font-size: 15px; font-weight: 650; }
+      .sub { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+      .big {
+        font-size: 38px; font-weight: 750; line-height: 1.1;
+        font-variant-numeric: tabular-nums;
+      }
+      .big small { font-size: 14px; font-weight: 600; color: var(--muted); }
+      .kv { display: grid; grid-template-columns: 1fr; gap: 4px 12px; font-size: 12px; }
+      .kv div { display: flex; justify-content: space-between; gap: 8px;
+                border-bottom: 1px solid var(--border); padding: 3px 0; }
+      .kv span:first-child { color: var(--muted); }
+      .kv b { font-weight: 600; font-variant-numeric: tabular-nums; }
+      .err {
+        margin-top: 10px; font-size: 12px; color: #ffb4b4;
+        background: #2a1a1a; border: 1px solid #5b2c2c;
+        border-radius: 8px; padding: 7px 9px;
+      }
+      .note {
+        margin-top: 10px; font-size: 12px; color: #cfe0ff;
+        background: #16202e; border: 1px solid #2c405b;
+        border-radius: 8px; padding: 7px 9px;
+      }
+      .warnbox {
+        margin-top: 10px; font-size: 12px; color: #ffdcb4;
+        background: #2a2116; border: 1px solid #5b452c;
+        border-radius: 8px; padding: 7px 9px;
+      }
+      .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+             margin-top: 10px; }
+      .row label { font-size: 12px; color: var(--muted); }
+      .bar {
+        position: relative; height: 18px; border-radius: 9px; margin: 8px 0 2px;
+        background: var(--bg); border: 1px solid var(--border); overflow: hidden;
+      }
+      .fill { position: absolute; left: 0; top: 0; bottom: 0;
+              background: linear-gradient(90deg, #2c5b40, var(--success)); }
+      .thresh { position: absolute; top: -2px; bottom: -2px; width: 2px;
+                background: var(--warning); }
+      .scale { display: flex; justify-content: space-between;
+               color: var(--muted); font-size: 10px; }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Walking speed</h1>
+      <span class="pill" id="p-imu">imu —</span>
+      <span class="pill" id="p-walk">—</span>
+      <span class="pill" id="p-src">—</span>
+      <a class="nav" href="/">&larr; dashboard</a>
+      <a class="nav" href="/radar/test">radar test</a>
+      <a class="nav" href="/guidance/gait">raw json</a>
+    </header>
+
+    <div class="wrap">
+      <p class="hint">
+        Pace is <b>cadence &times; stride</b>, counted from footfalls in
+        |a| &mdash; never integrated from acceleration, which drifts to metres
+        within seconds. Shown in <b>km/h</b>, with m/s alongside because that
+        is the unit the API and config use. Strap the board on and walk normally; on a desk it
+        correctly reports nothing. This reads the running guidance app, so it
+        does not need the app stopped.
+      </p>
+
+      <div class="grid">
+        <div class="card" id="c-speed">
+          <h2>Pace</h2>
+          <div class="sub" id="s-src">&mdash;</div>
+          <div class="big"><span id="v-speed">--</span> <small>km/h</small></div>
+          <div class="kv" style="margin-top:10px">
+            <div><span>m/s</span><b id="v-mps">--</b></div>
+            <div><span>from cadence</span><b id="v-cadspeed">--</b></div>
+          </div>
+          <div class="note" id="n-src" hidden></div>
+        </div>
+
+        <div class="card" id="c-cad">
+          <h2>Cadence</h2>
+          <div class="sub">footfalls, from |a| excursions</div>
+          <div class="big"><span id="v-cad">--</span> <small>steps/min</small></div>
+          <div class="kv" style="margin-top:10px">
+            <div><span>steps counted</span><b id="v-steps">--</b></div>
+            <div><span>walking</span><b id="v-walking">--</b></div>
+            <div><span>|a| spread</span><b id="v-std">--</b></div>
+          </div>
+        </div>
+
+        <div class="card" id="c-stride">
+          <h2>Stride</h2>
+          <div class="sub" id="s-stride">&mdash;</div>
+          <div class="big"><span id="v-stride">--</span> <small>m</small></div>
+          <div class="row">
+            <label>walked</label>
+            <input type="number" id="i-dist" step="0.1" min="0" placeholder="m" />
+            <label>in</label>
+            <input type="number" id="i-steps" step="1" min="2" placeholder="steps" />
+            <button id="b-save">Save</button>
+            <button id="b-clear">Reset</button>
+          </div>
+          <div class="note" id="n-stride" hidden></div>
+          <!-- Its own element: poll() rewrites n-stride every 500 ms. -->
+          <div class="note" id="ok-stride" hidden></div>
+          <div class="err" id="e-stride" hidden></div>
+        </div>
+
+        <div class="card" id="c-tune">
+          <h2>Detector</h2>
+          <div class="sub">what the threshold is being compared against</div>
+          <div class="bar">
+            <div class="fill" id="f-exc"></div>
+            <div class="thresh" id="t-exc"></div>
+          </div>
+          <div class="scale"><span>0 g</span><span id="l-excmax">0.40 g</span></div>
+          <div class="kv" style="margin-top:8px">
+            <div><span>largest excursion</span><b id="v-max">--</b></div>
+            <div><span>95th percentile</span><b id="v-p95">--</b></div>
+            <div><span>median</span><b id="v-med">--</b></div>
+            <div><span>GYRO_STEP_PEAK_G</span><b id="v-peak">--</b></div>
+            <div><span>samples over it</span><b id="v-over">--</b></div>
+          </div>
+          <div class="note" id="n-tune" hidden></div>
+          <div class="warnbox" id="w-tune" hidden></div>
+        </div>
+
+        <div class="card" id="c-mount">
+          <h2>Mounting</h2>
+          <div class="sub">shoulder strap &mdash; +X forward, +Y left, +Z up</div>
+          <div class="big"><span id="v-tilt">--</span> <small>&deg; tilt</small></div>
+          <div class="kv" style="margin-top:10px">
+            <div><span>pitch/roll leak into yaw</span><b id="v-leak">--</b></div>
+            <div><span>sample rate</span><b id="v-hz">--</b></div>
+            <div><span>chip</span><b id="v-chip">--</b></div>
+          </div>
+          <div class="warnbox" id="w-tilt" hidden></div>
+          <div class="note">
+            Tilt affects the <b>yaw</b> only. Pace comes from |a|, a magnitude,
+            which does not care how the board is turned.
+          </div>
+        </div>
+      </div>
+
+      <div class="err" id="e-poll" hidden></div>
+    </div>
+
+    <script>
+      async function adminFetch(url, opts = {}) {
+        const KEY = "shappe-admin-token";
+        let token = "";
+        try { token = localStorage.getItem(KEY) || ""; } catch (e) {}
+        const send = () => fetch(url, { ...opts,
+          headers: { ...(opts.headers || {}), "X-Admin-Token": token } });
+        let r = await send();
+        if (r.status === 401) {
+          token = (prompt("Admin token for this device (SHAPPE_ADMIN_TOKEN):") || "").trim();
+          if (!token) return r;
+          r = await send();
+          if (r.status !== 401) { try { localStorage.setItem(KEY, token); } catch (e) {} }
+        }
+        return r;
+      }
+
+      const MPS_TO_KMH = 3.6;
+      const el = (id) => document.getElementById(id);
+      const fmt = (v, d = 2) => (v === null || v === undefined ? "--" : (+v).toFixed(d));
+
+      function pill(node, text, cls) {
+        node.textContent = text;
+        node.className = "pill" + (cls ? " " + cls : "");
+      }
+
+      async function poll() {
+        let g;
+        try {
+          const r = await fetch("/guidance/gait", { cache: "no-store" });
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          g = await r.json();
+          el("e-poll").hidden = true;
+        } catch (e) {
+          el("e-poll").hidden = false;
+          el("e-poll").textContent = "cannot reach /guidance/gait — " + e.message;
+          return;
+        }
+
+        const gy = g.gyro || {}, tun = g.tuning || {}, str = g.stride || {};
+        const th = g.thresholds || {};
+
+        // ---- header ----
+        pill(el("p-imu"), gy.healthy ? `${gy.chip || "imu"} ok` : "imu down",
+             gy.healthy ? "ok" : "bad");
+        pill(el("p-walk"), g.walking ? "walking" : "still",
+             g.walking ? "ok" : "");
+        pill(el("p-src"), g.speed_source || "—",
+             g.speed_source === "odometry" ? "ok"
+               : g.speed_source === "cadence" ? "" : "warn");
+
+        el("v-speed").textContent = g.speed_mps == null ? "--"
+          : fmt(g.speed_mps * MPS_TO_KMH, 1);
+        el("v-mps").textContent = g.speed_mps == null ? "--"
+          : fmt(g.speed_mps) + " m/s";
+        el("v-cadspeed").textContent = g.speed_cadence_mps == null ? "--"
+          : fmt(g.speed_cadence_mps * MPS_TO_KMH, 1) + " km/h";
+        const srcNote = {
+          odometry: "Measured by matching consecutive LiDAR scans — the best "
+                  + "figure available, and what teaches the stride.",
+          cadence: "From footfalls × stride. This is the rung that matters in a "
+                 + "bare corridor, where forward motion is geometrically "
+                 + "invisible to the scan matcher.",
+          nominal: "ASSUMED — HEADING_NOMINAL_SPEED_MPS standing in. Neither "
+                 + "the LiDAR nor the footfalls could give a pace.",
+        }[g.speed_source];
+        el("s-src").textContent = "source: " + (g.speed_source || "—");
+        el("n-src").hidden = !srcNote;
+        if (srcNote) el("n-src").textContent = srcNote;
+        el("c-speed").className = "card " + (g.speed_source === "nominal" ? "warn"
+          : g.walking ? "live" : "idle");
+
+        // ---- cadence ----
+        el("v-cad").textContent = fmt(g.cadence_spm, 1);
+        el("v-steps").textContent = g.steps ?? "--";
+        el("v-walking").textContent = g.walking ? "yes" : "no";
+        el("v-std").textContent = gy.accel_std_g == null ? "--"
+          : `${fmt(gy.accel_std_g, 4)} g  (gate ${th.std_g})`;
+        el("c-cad").className = "card " + (g.walking ? "live" : "idle");
+
+        // ---- stride ----
+        el("v-stride").textContent = fmt(str.stride_m, 2);
+        el("s-stride").textContent = str.measured
+          ? `${str.source}${str.measured_at ? " · " + str.measured_at : ""}`
+          : `config seed (${str.seed_m} m) — not measured on this device`;
+        el("c-stride").className = "card " + (str.measured ? "live" : "idle");
+        el("n-stride").hidden = str.measured;
+        if (!str.measured)
+          el("n-stride").textContent =
+            "Stride is a straight multiplier on every speed and every "
+            + "time-to-contact. Walk a measured distance and save it — the app "
+            + "also learns it whenever the LiDAR can vouch for a pace, but a "
+            + "seeded figure makes the first walk right too.";
+
+        // ---- detector ----
+        const p = tun.percentiles_g;
+        const cap = 0.4;
+        el("l-excmax").textContent = cap.toFixed(2) + " g";
+        el("f-exc").style.width = p ? Math.min(100, (p.max / cap) * 100) + "%" : "0%";
+        el("t-exc").style.left = Math.min(100, ((th.peak_g || 0) / cap) * 100) + "%";
+        el("v-max").textContent = p ? fmt(p.max, 3) + " g" : "--";
+        el("v-p95").textContent = p ? fmt(p.p95, 3) + " g" : "--";
+        el("v-med").textContent = p ? fmt(p.median, 3) + " g" : "--";
+        el("v-peak").textContent = (th.peak_g ?? "--") + " g";
+        el("v-over").textContent = `${tun.cleared_threshold ?? 0} of ${tun.samples ?? 0}`;
+        const sug = tun.suggested_peak_g;
+        el("n-tune").hidden = !(tun.looks_like_gait && sug != null);
+        if (tun.looks_like_gait && sug != null)
+          el("n-tune").textContent = Math.abs(sug - th.peak_g) >= 0.02
+            ? `This walk suggests GYRO_STEP_PEAK_G = ${sug} (currently ${th.peak_g}). `
+              + "Re-check false positives after changing it: sit still, fidget, "
+              + "and ride in a vehicle, and confirm walking stays no."
+            : `Consistent with this walk — leave GYRO_STEP_PEAK_G at ${th.peak_g}.`;
+        el("w-tune").hidden = tun.looks_like_gait || !p;
+        if (!tun.looks_like_gait && p)
+          el("w-tune").textContent =
+            "Not a walk — the |a| spread never reached the "
+            + `${th.std_g} g gate, so these excursions are handling noise, not `
+            + "footfalls. No threshold is suggested from them: scaling to noise "
+            + "would tune the detector to call stillness walking.";
+        el("c-tune").className = "card " + (tun.looks_like_gait ? "live" : "idle");
+
+        // ---- mounting ----
+        el("v-tilt").textContent = fmt(gy.tilt_deg, 1);
+        const leak = gy.tilt_deg == null ? null
+          : Math.sin((gy.tilt_deg * Math.PI) / 180);
+        el("v-leak").textContent = leak == null ? "--" : fmt(leak, 2);
+        el("v-hz").textContent = gy.sample_rate_hz == null ? "--"
+          : fmt(gy.sample_rate_hz, 1) + " Hz";
+        el("v-chip").textContent = `${gy.chip || "—"} / ${gy.transport || "—"}`;
+        const bad = gy.tilt_deg != null && gy.tilt_deg > 15;
+        el("w-tilt").hidden = !bad;
+        if (bad)
+          el("w-tilt").textContent =
+            `${fmt(gy.tilt_deg, 1)}° off vertical leaks ${fmt(leak, 2)} of every `
+            + "pitch and roll rate into the yaw channel, and a walking torso "
+            + "pitches and rolls with every step. Pad the outboard edge of the "
+            + "strap to bring the board level before trusting the yaw.";
+        el("c-mount").className = "card " + (bad ? "warn" : gy.healthy ? "live" : "dead");
+
+        if (gy.last_error) {
+          el("e-poll").hidden = false;
+          el("e-poll").textContent = "imu: " + gy.last_error;
+        }
+      }
+
+      async function post(body) {
+        const e = el("e-stride"), n = el("ok-stride");
+        e.hidden = true;
+        n.hidden = true;
+        try {
+          const r = await adminFetch("/guidance/gait/stride", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          const j = await r.json();
+          if (!j.ok) {
+            e.hidden = false;
+            e.textContent = j.error || j.detail || "refused";
+            return;
+          }
+          n.hidden = false;
+          n.textContent = "Saved. The running tracker keeps the stride it has "
+            + "learned this session; this is what the next start begins from.";
+          await poll();
+        } catch (err) {
+          e.hidden = false;
+          e.textContent = String(err);
+        }
+      }
+
+      el("b-save").onclick = () => {
+        const d = parseFloat(el("i-dist").value);
+        const s = parseInt(el("i-steps").value, 10);
+        if (!(d > 0) || !(s >= 2)) {
+          el("e-stride").hidden = false;
+          el("e-stride").textContent =
+            "Enter the distance walked and the steps it took (at least 2).";
+          return;
+        }
+        post({ distance_m: d, steps: s });
+      };
+      el("b-clear").onclick = () => post({ clear: true });
+
+      poll();
+      setInterval(poll, 500);
+    </script>
+  </body>
+</html>

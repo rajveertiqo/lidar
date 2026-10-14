@@ -1,0 +1,3009 @@
+{
+ "registry": "shappe-phrases",
+ "version": 1,
+ "revision": 3,
+ "sha": "690108ffa2ae7139",
+ "note": "Append-only. id 0 = no sentence; 65535 = not in this registry (use ALERT_TEXT). Generated from utils/simple_guidance.ALLOWED by ble_bridge/make_vocab.py — do not edit by hand.",
+ "phrases": [
+  {
+   "id": 1,
+   "text": "Walk straight",
+   "action": "walk_straight",
+   "level": 0,
+   "urgent": false,
+   "side": null,
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 2,
+   "text": "Wall ahead",
+   "action": "wall_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "wall",
+   "mover": false
+  },
+  {
+   "id": 3,
+   "text": "Glass ahead",
+   "action": "glass_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "glass",
+   "mover": false
+  },
+  {
+   "id": 4,
+   "text": "Blocked by wall",
+   "action": "blocked_wall",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "wall",
+   "mover": false
+  },
+  {
+   "id": 5,
+   "text": "Blocked by glass",
+   "action": "blocked_glass",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "glass",
+   "mover": false
+  },
+  {
+   "id": 6,
+   "text": "Turn left",
+   "action": "turn_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 7,
+   "text": "Turn right",
+   "action": "turn_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 8,
+   "text": "Drifting toward left wall, turn slightly right",
+   "action": "drift_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "wall",
+   "mover": false
+  },
+  {
+   "id": 9,
+   "text": "Drifting toward right wall, turn slightly left",
+   "action": "drift_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "wall",
+   "mover": false
+  },
+  {
+   "id": 10,
+   "text": "Near left wall, move right",
+   "action": "near_wall_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "wall",
+   "mover": false
+  },
+  {
+   "id": 11,
+   "text": "Near right wall, move left",
+   "action": "near_wall_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "wall",
+   "mover": false
+  },
+  {
+   "id": 12,
+   "text": "Glass on left, move right",
+   "action": "glass_beside_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "glass",
+   "mover": false
+  },
+  {
+   "id": 13,
+   "text": "Glass on right, move left",
+   "action": "glass_beside_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "glass",
+   "mover": false
+  },
+  {
+   "id": 14,
+   "text": "Sensors offline",
+   "action": "sensors_offline",
+   "level": 2,
+   "urgent": false,
+   "side": null,
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 15,
+   "text": "Vehicle approaching, move right",
+   "action": "vehicle_approaching_left",
+   "level": 3,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "vehicle",
+   "mover": false
+  },
+  {
+   "id": 16,
+   "text": "Vehicle approaching, move left",
+   "action": "vehicle_approaching_right",
+   "level": 3,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "vehicle",
+   "mover": false
+  },
+  {
+   "id": 17,
+   "text": "Vehicle approaching",
+   "action": "vehicle_approaching",
+   "level": 3,
+   "urgent": true,
+   "side": null,
+   "obstacle": "vehicle",
+   "mover": false
+  },
+  {
+   "id": 18,
+   "text": "Vehicle in front, be careful",
+   "action": "vehicle_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "vehicle",
+   "mover": false
+  },
+  {
+   "id": 19,
+   "text": "Glass sensor off",
+   "action": "glass_sensor_off",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 20,
+   "text": "Glass sensor on",
+   "action": "glass_sensor_on",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 21,
+   "text": "Person approaching from left, stop",
+   "action": "mover_stop",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "person",
+   "mover": true
+  },
+  {
+   "id": 22,
+   "text": "Person approaching from right, stop",
+   "action": "mover_stop",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "person",
+   "mover": true
+  },
+  {
+   "id": 23,
+   "text": "Vehicle approaching from left, stop",
+   "action": "mover_stop",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "vehicle",
+   "mover": true
+  },
+  {
+   "id": 24,
+   "text": "Vehicle approaching from right, stop",
+   "action": "mover_stop",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "vehicle",
+   "mover": true
+  },
+  {
+   "id": 25,
+   "text": "Something approaching from left, stop",
+   "action": "mover_stop",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "something",
+   "mover": true
+  },
+  {
+   "id": 26,
+   "text": "Something approaching from right, stop",
+   "action": "mover_stop",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "something",
+   "mover": true
+  },
+  {
+   "id": 27,
+   "text": "Person coming toward you, move left",
+   "action": "mover_move_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "person",
+   "mover": true
+  },
+  {
+   "id": 28,
+   "text": "Person coming toward you, move right",
+   "action": "mover_move_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "person",
+   "mover": true
+  },
+  {
+   "id": 29,
+   "text": "Vehicle coming toward you, move left",
+   "action": "mover_move_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "vehicle",
+   "mover": true
+  },
+  {
+   "id": 30,
+   "text": "Vehicle coming toward you, move right",
+   "action": "mover_move_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "vehicle",
+   "mover": true
+  },
+  {
+   "id": 31,
+   "text": "Something coming toward you, move left",
+   "action": "mover_move_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "something",
+   "mover": true
+  },
+  {
+   "id": 32,
+   "text": "Something coming toward you, move right",
+   "action": "mover_move_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "something",
+   "mover": true
+  },
+  {
+   "id": 33,
+   "text": "Person coming toward you, stop",
+   "action": "mover_stop",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "person",
+   "mover": true
+  },
+  {
+   "id": 34,
+   "text": "Vehicle coming toward you, stop",
+   "action": "mover_stop",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "vehicle",
+   "mover": true
+  },
+  {
+   "id": 35,
+   "text": "Something coming toward you, stop",
+   "action": "mover_stop",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "something",
+   "mover": true
+  },
+  {
+   "id": 36,
+   "text": "Person approaching from behind, move left",
+   "action": "mover_move_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "person",
+   "mover": true
+  },
+  {
+   "id": 37,
+   "text": "Person approaching from behind, move right",
+   "action": "mover_move_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "person",
+   "mover": true
+  },
+  {
+   "id": 38,
+   "text": "Vehicle approaching from behind, move left",
+   "action": "mover_move_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "vehicle",
+   "mover": true
+  },
+  {
+   "id": 39,
+   "text": "Vehicle approaching from behind, move right",
+   "action": "mover_move_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "vehicle",
+   "mover": true
+  },
+  {
+   "id": 40,
+   "text": "Something approaching from behind, move left",
+   "action": "mover_move_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "something",
+   "mover": true
+  },
+  {
+   "id": 41,
+   "text": "Something approaching from behind, move right",
+   "action": "mover_move_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "something",
+   "mover": true
+  },
+  {
+   "id": 42,
+   "text": "Person approaching from behind",
+   "action": "mover_warn",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "person",
+   "mover": true
+  },
+  {
+   "id": 43,
+   "text": "Vehicle approaching from behind",
+   "action": "mover_warn",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "vehicle",
+   "mover": true
+  },
+  {
+   "id": 44,
+   "text": "Something approaching from behind",
+   "action": "mover_warn",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "something",
+   "mover": true
+  },
+  {
+   "id": 45,
+   "text": "Animal ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "animal",
+   "mover": false
+  },
+  {
+   "id": 46,
+   "text": "Bear ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "bear",
+   "mover": false
+  },
+  {
+   "id": 47,
+   "text": "Bench ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "bench",
+   "mover": false
+  },
+  {
+   "id": 48,
+   "text": "Bicycle ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "bicycle",
+   "mover": false
+  },
+  {
+   "id": 49,
+   "text": "Bin ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "bin",
+   "mover": false
+  },
+  {
+   "id": 50,
+   "text": "Bollard ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "bollard",
+   "mover": false
+  },
+  {
+   "id": 51,
+   "text": "Branch ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "branch",
+   "mover": false
+  },
+  {
+   "id": 52,
+   "text": "Buffalo ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "buffalo",
+   "mover": false
+  },
+  {
+   "id": 53,
+   "text": "Bus ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "bus",
+   "mover": false
+  },
+  {
+   "id": 54,
+   "text": "Bus stop ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "bus stop",
+   "mover": false
+  },
+  {
+   "id": 55,
+   "text": "Car ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "car",
+   "mover": false
+  },
+  {
+   "id": 56,
+   "text": "Cow ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "cow",
+   "mover": false
+  },
+  {
+   "id": 57,
+   "text": "Dog ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "dog",
+   "mover": false
+  },
+  {
+   "id": 58,
+   "text": "Elephant ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "elephant",
+   "mover": false
+  },
+  {
+   "id": 59,
+   "text": "Forklift ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "forklift",
+   "mover": false
+  },
+  {
+   "id": 60,
+   "text": "Horse ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "horse",
+   "mover": false
+  },
+  {
+   "id": 61,
+   "text": "Hydrant ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "hydrant",
+   "mover": false
+  },
+  {
+   "id": 62,
+   "text": "Motorbike ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "motorbike",
+   "mover": false
+  },
+  {
+   "id": 63,
+   "text": "Person ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "person",
+   "mover": false
+  },
+  {
+   "id": 64,
+   "text": "Pillar ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "pillar",
+   "mover": false
+  },
+  {
+   "id": 65,
+   "text": "Plant ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "plant",
+   "mover": false
+  },
+  {
+   "id": 66,
+   "text": "Pole ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "pole",
+   "mover": false
+  },
+  {
+   "id": 67,
+   "text": "Post ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "post",
+   "mover": false
+  },
+  {
+   "id": 68,
+   "text": "Pothole ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "pothole",
+   "mover": false
+  },
+  {
+   "id": 69,
+   "text": "Sheep ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "sheep",
+   "mover": false
+  },
+  {
+   "id": 70,
+   "text": "Stairs ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "stairs",
+   "mover": false
+  },
+  {
+   "id": 71,
+   "text": "Stone ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "stone",
+   "mover": false
+  },
+  {
+   "id": 72,
+   "text": "Train ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "train",
+   "mover": false
+  },
+  {
+   "id": 73,
+   "text": "Tree ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "tree",
+   "mover": false
+  },
+  {
+   "id": 74,
+   "text": "Truck ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "truck",
+   "mover": false
+  },
+  {
+   "id": 75,
+   "text": "Vehicle ahead",
+   "action": "object_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "vehicle",
+   "mover": false
+  },
+  {
+   "id": 76,
+   "text": "Animal in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "animal",
+   "mover": false
+  },
+  {
+   "id": 77,
+   "text": "Bear in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "bear",
+   "mover": false
+  },
+  {
+   "id": 78,
+   "text": "Bench in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "bench",
+   "mover": false
+  },
+  {
+   "id": 79,
+   "text": "Bicycle in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "bicycle",
+   "mover": false
+  },
+  {
+   "id": 80,
+   "text": "Bin in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "bin",
+   "mover": false
+  },
+  {
+   "id": 81,
+   "text": "Bollard in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "bollard",
+   "mover": false
+  },
+  {
+   "id": 82,
+   "text": "Branch in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "branch",
+   "mover": false
+  },
+  {
+   "id": 83,
+   "text": "Buffalo in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "buffalo",
+   "mover": false
+  },
+  {
+   "id": 84,
+   "text": "Bus in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "bus",
+   "mover": false
+  },
+  {
+   "id": 85,
+   "text": "Bus stop in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "bus stop",
+   "mover": false
+  },
+  {
+   "id": 86,
+   "text": "Car in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "car",
+   "mover": false
+  },
+  {
+   "id": 87,
+   "text": "Cow in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "cow",
+   "mover": false
+  },
+  {
+   "id": 88,
+   "text": "Dog in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "dog",
+   "mover": false
+  },
+  {
+   "id": 89,
+   "text": "Elephant in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "elephant",
+   "mover": false
+  },
+  {
+   "id": 90,
+   "text": "Forklift in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "forklift",
+   "mover": false
+  },
+  {
+   "id": 91,
+   "text": "Horse in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "horse",
+   "mover": false
+  },
+  {
+   "id": 92,
+   "text": "Hydrant in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "hydrant",
+   "mover": false
+  },
+  {
+   "id": 93,
+   "text": "Motorbike in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "motorbike",
+   "mover": false
+  },
+  {
+   "id": 94,
+   "text": "Person in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "person",
+   "mover": false
+  },
+  {
+   "id": 95,
+   "text": "Pillar in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "pillar",
+   "mover": false
+  },
+  {
+   "id": 96,
+   "text": "Plant in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "plant",
+   "mover": false
+  },
+  {
+   "id": 97,
+   "text": "Pole in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "pole",
+   "mover": false
+  },
+  {
+   "id": 98,
+   "text": "Post in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "post",
+   "mover": false
+  },
+  {
+   "id": 99,
+   "text": "Pothole in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "pothole",
+   "mover": false
+  },
+  {
+   "id": 100,
+   "text": "Sheep in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "sheep",
+   "mover": false
+  },
+  {
+   "id": 101,
+   "text": "Stairs in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "stairs",
+   "mover": false
+  },
+  {
+   "id": 102,
+   "text": "Stone in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "stone",
+   "mover": false
+  },
+  {
+   "id": 103,
+   "text": "Train in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "train",
+   "mover": false
+  },
+  {
+   "id": 104,
+   "text": "Tree in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "tree",
+   "mover": false
+  },
+  {
+   "id": 105,
+   "text": "Truck in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "truck",
+   "mover": false
+  },
+  {
+   "id": 106,
+   "text": "Vehicle in front",
+   "action": "object_in_front",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "vehicle",
+   "mover": false
+  },
+  {
+   "id": 107,
+   "text": "Animal on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "animal",
+   "mover": false
+  },
+  {
+   "id": 108,
+   "text": "Animal on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "animal",
+   "mover": false
+  },
+  {
+   "id": 109,
+   "text": "Animal ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "animal",
+   "mover": false
+  },
+  {
+   "id": 110,
+   "text": "Animal ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "animal",
+   "mover": false
+  },
+  {
+   "id": 111,
+   "text": "Bear on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "bear",
+   "mover": false
+  },
+  {
+   "id": 112,
+   "text": "Bear on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "bear",
+   "mover": false
+  },
+  {
+   "id": 113,
+   "text": "Bear ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "bear",
+   "mover": false
+  },
+  {
+   "id": 114,
+   "text": "Bear ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "bear",
+   "mover": false
+  },
+  {
+   "id": 115,
+   "text": "Bench on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "bench",
+   "mover": false
+  },
+  {
+   "id": 116,
+   "text": "Bench on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "bench",
+   "mover": false
+  },
+  {
+   "id": 117,
+   "text": "Bench ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "bench",
+   "mover": false
+  },
+  {
+   "id": 118,
+   "text": "Bench ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "bench",
+   "mover": false
+  },
+  {
+   "id": 119,
+   "text": "Bicycle on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "bicycle",
+   "mover": false
+  },
+  {
+   "id": 120,
+   "text": "Bicycle on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "bicycle",
+   "mover": false
+  },
+  {
+   "id": 121,
+   "text": "Bicycle ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "bicycle",
+   "mover": false
+  },
+  {
+   "id": 122,
+   "text": "Bicycle ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "bicycle",
+   "mover": false
+  },
+  {
+   "id": 123,
+   "text": "Bin on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "bin",
+   "mover": false
+  },
+  {
+   "id": 124,
+   "text": "Bin on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "bin",
+   "mover": false
+  },
+  {
+   "id": 125,
+   "text": "Bin ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "bin",
+   "mover": false
+  },
+  {
+   "id": 126,
+   "text": "Bin ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "bin",
+   "mover": false
+  },
+  {
+   "id": 127,
+   "text": "Bollard on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "bollard",
+   "mover": false
+  },
+  {
+   "id": 128,
+   "text": "Bollard on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "bollard",
+   "mover": false
+  },
+  {
+   "id": 129,
+   "text": "Bollard ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "bollard",
+   "mover": false
+  },
+  {
+   "id": 130,
+   "text": "Bollard ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "bollard",
+   "mover": false
+  },
+  {
+   "id": 131,
+   "text": "Branch on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "branch",
+   "mover": false
+  },
+  {
+   "id": 132,
+   "text": "Branch on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "branch",
+   "mover": false
+  },
+  {
+   "id": 133,
+   "text": "Branch ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "branch",
+   "mover": false
+  },
+  {
+   "id": 134,
+   "text": "Branch ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "branch",
+   "mover": false
+  },
+  {
+   "id": 135,
+   "text": "Buffalo on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "buffalo",
+   "mover": false
+  },
+  {
+   "id": 136,
+   "text": "Buffalo on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "buffalo",
+   "mover": false
+  },
+  {
+   "id": 137,
+   "text": "Buffalo ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "buffalo",
+   "mover": false
+  },
+  {
+   "id": 138,
+   "text": "Buffalo ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "buffalo",
+   "mover": false
+  },
+  {
+   "id": 139,
+   "text": "Bus on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "bus",
+   "mover": false
+  },
+  {
+   "id": 140,
+   "text": "Bus on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "bus",
+   "mover": false
+  },
+  {
+   "id": 141,
+   "text": "Bus ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "bus",
+   "mover": false
+  },
+  {
+   "id": 142,
+   "text": "Bus ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "bus",
+   "mover": false
+  },
+  {
+   "id": 143,
+   "text": "Bus stop on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "bus stop",
+   "mover": false
+  },
+  {
+   "id": 144,
+   "text": "Bus stop on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "bus stop",
+   "mover": false
+  },
+  {
+   "id": 145,
+   "text": "Bus stop ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "bus stop",
+   "mover": false
+  },
+  {
+   "id": 146,
+   "text": "Bus stop ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "bus stop",
+   "mover": false
+  },
+  {
+   "id": 147,
+   "text": "Car on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "car",
+   "mover": false
+  },
+  {
+   "id": 148,
+   "text": "Car on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "car",
+   "mover": false
+  },
+  {
+   "id": 149,
+   "text": "Car ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "car",
+   "mover": false
+  },
+  {
+   "id": 150,
+   "text": "Car ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "car",
+   "mover": false
+  },
+  {
+   "id": 151,
+   "text": "Cow on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "cow",
+   "mover": false
+  },
+  {
+   "id": 152,
+   "text": "Cow on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "cow",
+   "mover": false
+  },
+  {
+   "id": 153,
+   "text": "Cow ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "cow",
+   "mover": false
+  },
+  {
+   "id": 154,
+   "text": "Cow ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "cow",
+   "mover": false
+  },
+  {
+   "id": 155,
+   "text": "Dog on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "dog",
+   "mover": false
+  },
+  {
+   "id": 156,
+   "text": "Dog on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "dog",
+   "mover": false
+  },
+  {
+   "id": 157,
+   "text": "Dog ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "dog",
+   "mover": false
+  },
+  {
+   "id": 158,
+   "text": "Dog ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "dog",
+   "mover": false
+  },
+  {
+   "id": 159,
+   "text": "Elephant on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "elephant",
+   "mover": false
+  },
+  {
+   "id": 160,
+   "text": "Elephant on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "elephant",
+   "mover": false
+  },
+  {
+   "id": 161,
+   "text": "Elephant ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "elephant",
+   "mover": false
+  },
+  {
+   "id": 162,
+   "text": "Elephant ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "elephant",
+   "mover": false
+  },
+  {
+   "id": 163,
+   "text": "Forklift on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "forklift",
+   "mover": false
+  },
+  {
+   "id": 164,
+   "text": "Forklift on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "forklift",
+   "mover": false
+  },
+  {
+   "id": 165,
+   "text": "Forklift ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "forklift",
+   "mover": false
+  },
+  {
+   "id": 166,
+   "text": "Forklift ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "forklift",
+   "mover": false
+  },
+  {
+   "id": 167,
+   "text": "Horse on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "horse",
+   "mover": false
+  },
+  {
+   "id": 168,
+   "text": "Horse on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "horse",
+   "mover": false
+  },
+  {
+   "id": 169,
+   "text": "Horse ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "horse",
+   "mover": false
+  },
+  {
+   "id": 170,
+   "text": "Horse ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "horse",
+   "mover": false
+  },
+  {
+   "id": 171,
+   "text": "Hydrant on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "hydrant",
+   "mover": false
+  },
+  {
+   "id": 172,
+   "text": "Hydrant on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "hydrant",
+   "mover": false
+  },
+  {
+   "id": 173,
+   "text": "Hydrant ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "hydrant",
+   "mover": false
+  },
+  {
+   "id": 174,
+   "text": "Hydrant ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "hydrant",
+   "mover": false
+  },
+  {
+   "id": 175,
+   "text": "Motorbike on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "motorbike",
+   "mover": false
+  },
+  {
+   "id": 176,
+   "text": "Motorbike on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "motorbike",
+   "mover": false
+  },
+  {
+   "id": 177,
+   "text": "Motorbike ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "motorbike",
+   "mover": false
+  },
+  {
+   "id": 178,
+   "text": "Motorbike ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "motorbike",
+   "mover": false
+  },
+  {
+   "id": 179,
+   "text": "Person on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "person",
+   "mover": false
+  },
+  {
+   "id": 180,
+   "text": "Person on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "person",
+   "mover": false
+  },
+  {
+   "id": 181,
+   "text": "Person ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "person",
+   "mover": false
+  },
+  {
+   "id": 182,
+   "text": "Person ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "person",
+   "mover": false
+  },
+  {
+   "id": 183,
+   "text": "Pillar on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "pillar",
+   "mover": false
+  },
+  {
+   "id": 184,
+   "text": "Pillar on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "pillar",
+   "mover": false
+  },
+  {
+   "id": 185,
+   "text": "Pillar ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "pillar",
+   "mover": false
+  },
+  {
+   "id": 186,
+   "text": "Pillar ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "pillar",
+   "mover": false
+  },
+  {
+   "id": 187,
+   "text": "Plant on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "plant",
+   "mover": false
+  },
+  {
+   "id": 188,
+   "text": "Plant on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "plant",
+   "mover": false
+  },
+  {
+   "id": 189,
+   "text": "Plant ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "plant",
+   "mover": false
+  },
+  {
+   "id": 190,
+   "text": "Plant ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "plant",
+   "mover": false
+  },
+  {
+   "id": 191,
+   "text": "Pole on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "pole",
+   "mover": false
+  },
+  {
+   "id": 192,
+   "text": "Pole on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "pole",
+   "mover": false
+  },
+  {
+   "id": 193,
+   "text": "Pole ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "pole",
+   "mover": false
+  },
+  {
+   "id": 194,
+   "text": "Pole ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "pole",
+   "mover": false
+  },
+  {
+   "id": 195,
+   "text": "Post on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "post",
+   "mover": false
+  },
+  {
+   "id": 196,
+   "text": "Post on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "post",
+   "mover": false
+  },
+  {
+   "id": 197,
+   "text": "Post ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "post",
+   "mover": false
+  },
+  {
+   "id": 198,
+   "text": "Post ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "post",
+   "mover": false
+  },
+  {
+   "id": 199,
+   "text": "Pothole on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "pothole",
+   "mover": false
+  },
+  {
+   "id": 200,
+   "text": "Pothole on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "pothole",
+   "mover": false
+  },
+  {
+   "id": 201,
+   "text": "Pothole ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "pothole",
+   "mover": false
+  },
+  {
+   "id": 202,
+   "text": "Pothole ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "pothole",
+   "mover": false
+  },
+  {
+   "id": 203,
+   "text": "Sheep on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "sheep",
+   "mover": false
+  },
+  {
+   "id": 204,
+   "text": "Sheep on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "sheep",
+   "mover": false
+  },
+  {
+   "id": 205,
+   "text": "Sheep ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "sheep",
+   "mover": false
+  },
+  {
+   "id": 206,
+   "text": "Sheep ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "sheep",
+   "mover": false
+  },
+  {
+   "id": 207,
+   "text": "Stairs on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "stairs",
+   "mover": false
+  },
+  {
+   "id": 208,
+   "text": "Stairs on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "stairs",
+   "mover": false
+  },
+  {
+   "id": 209,
+   "text": "Stairs ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "stairs",
+   "mover": false
+  },
+  {
+   "id": 210,
+   "text": "Stairs ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "stairs",
+   "mover": false
+  },
+  {
+   "id": 211,
+   "text": "Stone on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "stone",
+   "mover": false
+  },
+  {
+   "id": 212,
+   "text": "Stone on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "stone",
+   "mover": false
+  },
+  {
+   "id": 213,
+   "text": "Stone ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "stone",
+   "mover": false
+  },
+  {
+   "id": 214,
+   "text": "Stone ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "stone",
+   "mover": false
+  },
+  {
+   "id": 215,
+   "text": "Train on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "train",
+   "mover": false
+  },
+  {
+   "id": 216,
+   "text": "Train on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "train",
+   "mover": false
+  },
+  {
+   "id": 217,
+   "text": "Train ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "train",
+   "mover": false
+  },
+  {
+   "id": 218,
+   "text": "Train ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "train",
+   "mover": false
+  },
+  {
+   "id": 219,
+   "text": "Tree on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "tree",
+   "mover": false
+  },
+  {
+   "id": 220,
+   "text": "Tree on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "tree",
+   "mover": false
+  },
+  {
+   "id": 221,
+   "text": "Tree ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "tree",
+   "mover": false
+  },
+  {
+   "id": 222,
+   "text": "Tree ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "tree",
+   "mover": false
+  },
+  {
+   "id": 223,
+   "text": "Truck on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "truck",
+   "mover": false
+  },
+  {
+   "id": 224,
+   "text": "Truck on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "truck",
+   "mover": false
+  },
+  {
+   "id": 225,
+   "text": "Truck ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "truck",
+   "mover": false
+  },
+  {
+   "id": 226,
+   "text": "Truck ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "truck",
+   "mover": false
+  },
+  {
+   "id": 227,
+   "text": "Vehicle on left, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "vehicle",
+   "mover": false
+  },
+  {
+   "id": 228,
+   "text": "Vehicle on right, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "vehicle",
+   "mover": false
+  },
+  {
+   "id": 229,
+   "text": "Vehicle ahead, turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": "vehicle",
+   "mover": false
+  },
+  {
+   "id": 230,
+   "text": "Vehicle ahead, turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": "vehicle",
+   "mover": false
+  },
+  {
+   "id": 231,
+   "text": "Animal in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "animal",
+   "mover": false
+  },
+  {
+   "id": 232,
+   "text": "Animal in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "animal",
+   "mover": false
+  },
+  {
+   "id": 233,
+   "text": "Bear in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "bear",
+   "mover": false
+  },
+  {
+   "id": 234,
+   "text": "Bear in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "bear",
+   "mover": false
+  },
+  {
+   "id": 235,
+   "text": "Bench in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "bench",
+   "mover": false
+  },
+  {
+   "id": 236,
+   "text": "Bench in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "bench",
+   "mover": false
+  },
+  {
+   "id": 237,
+   "text": "Bicycle in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "bicycle",
+   "mover": false
+  },
+  {
+   "id": 238,
+   "text": "Bicycle in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "bicycle",
+   "mover": false
+  },
+  {
+   "id": 239,
+   "text": "Bin in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "bin",
+   "mover": false
+  },
+  {
+   "id": 240,
+   "text": "Bin in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "bin",
+   "mover": false
+  },
+  {
+   "id": 241,
+   "text": "Bollard in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "bollard",
+   "mover": false
+  },
+  {
+   "id": 242,
+   "text": "Bollard in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "bollard",
+   "mover": false
+  },
+  {
+   "id": 243,
+   "text": "Branch in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "branch",
+   "mover": false
+  },
+  {
+   "id": 244,
+   "text": "Branch in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "branch",
+   "mover": false
+  },
+  {
+   "id": 245,
+   "text": "Buffalo in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "buffalo",
+   "mover": false
+  },
+  {
+   "id": 246,
+   "text": "Buffalo in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "buffalo",
+   "mover": false
+  },
+  {
+   "id": 247,
+   "text": "Bus in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "bus",
+   "mover": false
+  },
+  {
+   "id": 248,
+   "text": "Bus in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "bus",
+   "mover": false
+  },
+  {
+   "id": 249,
+   "text": "Bus stop in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "bus stop",
+   "mover": false
+  },
+  {
+   "id": 250,
+   "text": "Bus stop in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "bus stop",
+   "mover": false
+  },
+  {
+   "id": 251,
+   "text": "Car in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "car",
+   "mover": false
+  },
+  {
+   "id": 252,
+   "text": "Car in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "car",
+   "mover": false
+  },
+  {
+   "id": 253,
+   "text": "Cow in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "cow",
+   "mover": false
+  },
+  {
+   "id": 254,
+   "text": "Cow in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "cow",
+   "mover": false
+  },
+  {
+   "id": 255,
+   "text": "Dog in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "dog",
+   "mover": false
+  },
+  {
+   "id": 256,
+   "text": "Dog in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "dog",
+   "mover": false
+  },
+  {
+   "id": 257,
+   "text": "Elephant in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "elephant",
+   "mover": false
+  },
+  {
+   "id": 258,
+   "text": "Elephant in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "elephant",
+   "mover": false
+  },
+  {
+   "id": 259,
+   "text": "Forklift in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "forklift",
+   "mover": false
+  },
+  {
+   "id": 260,
+   "text": "Forklift in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "forklift",
+   "mover": false
+  },
+  {
+   "id": 261,
+   "text": "Horse in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "horse",
+   "mover": false
+  },
+  {
+   "id": 262,
+   "text": "Horse in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "horse",
+   "mover": false
+  },
+  {
+   "id": 263,
+   "text": "Hydrant in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "hydrant",
+   "mover": false
+  },
+  {
+   "id": 264,
+   "text": "Hydrant in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "hydrant",
+   "mover": false
+  },
+  {
+   "id": 265,
+   "text": "Motorbike in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "motorbike",
+   "mover": false
+  },
+  {
+   "id": 266,
+   "text": "Motorbike in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "motorbike",
+   "mover": false
+  },
+  {
+   "id": 267,
+   "text": "Person in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "person",
+   "mover": false
+  },
+  {
+   "id": 268,
+   "text": "Person in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "person",
+   "mover": false
+  },
+  {
+   "id": 269,
+   "text": "Pillar in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "pillar",
+   "mover": false
+  },
+  {
+   "id": 270,
+   "text": "Pillar in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "pillar",
+   "mover": false
+  },
+  {
+   "id": 271,
+   "text": "Plant in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "plant",
+   "mover": false
+  },
+  {
+   "id": 272,
+   "text": "Plant in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "plant",
+   "mover": false
+  },
+  {
+   "id": 273,
+   "text": "Pole in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "pole",
+   "mover": false
+  },
+  {
+   "id": 274,
+   "text": "Pole in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "pole",
+   "mover": false
+  },
+  {
+   "id": 275,
+   "text": "Post in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "post",
+   "mover": false
+  },
+  {
+   "id": 276,
+   "text": "Post in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "post",
+   "mover": false
+  },
+  {
+   "id": 277,
+   "text": "Pothole in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "pothole",
+   "mover": false
+  },
+  {
+   "id": 278,
+   "text": "Pothole in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "pothole",
+   "mover": false
+  },
+  {
+   "id": 279,
+   "text": "Sheep in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "sheep",
+   "mover": false
+  },
+  {
+   "id": 280,
+   "text": "Sheep in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "sheep",
+   "mover": false
+  },
+  {
+   "id": 281,
+   "text": "Stairs in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "stairs",
+   "mover": false
+  },
+  {
+   "id": 282,
+   "text": "Stairs in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "stairs",
+   "mover": false
+  },
+  {
+   "id": 283,
+   "text": "Stone in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "stone",
+   "mover": false
+  },
+  {
+   "id": 284,
+   "text": "Stone in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "stone",
+   "mover": false
+  },
+  {
+   "id": 285,
+   "text": "Train in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "train",
+   "mover": false
+  },
+  {
+   "id": 286,
+   "text": "Train in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "train",
+   "mover": false
+  },
+  {
+   "id": 287,
+   "text": "Tree in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "tree",
+   "mover": false
+  },
+  {
+   "id": 288,
+   "text": "Tree in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "tree",
+   "mover": false
+  },
+  {
+   "id": 289,
+   "text": "Truck in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "truck",
+   "mover": false
+  },
+  {
+   "id": 290,
+   "text": "Truck in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "truck",
+   "mover": false
+  },
+  {
+   "id": 291,
+   "text": "Vehicle in front, turn left",
+   "action": "steer_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "vehicle",
+   "mover": false
+  },
+  {
+   "id": 292,
+   "text": "Vehicle in front, turn right",
+   "action": "steer_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "vehicle",
+   "mover": false
+  },
+  {
+   "id": 293,
+   "text": "Walk between them, slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 294,
+   "text": "Walk between them, slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 295,
+   "text": "Walk straight between them",
+   "action": "walk_between",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 296,
+   "text": "Camera off",
+   "action": "camera_off",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 297,
+   "text": "Camera on",
+   "action": "camera_on",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 298,
+   "text": "Turn slightly left",
+   "action": "steer_left",
+   "level": 1,
+   "urgent": false,
+   "side": "left",
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 299,
+   "text": "Turn slightly right",
+   "action": "steer_right",
+   "level": 1,
+   "urgent": false,
+   "side": "right",
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 300,
+   "text": "Turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": null,
+   "mover": false
+  }
+ ]
+}

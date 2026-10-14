@@ -110,7 +110,6 @@ def _arm_teardown_watchdog():
               f"exit so the camera is released", file=sys.stderr)
         sys.stderr.flush()
         os._exit(1)
-
     threading.Thread(target=bail, daemon=True).start()
 
 
@@ -256,6 +255,7 @@ def make_handler(broker, views, page):
                 except (BrokenPipeError, ConnectionResetError):
                     pass                       # browser closed the tab
                 return
+            
 
             self.send_error(404)
 
@@ -266,8 +266,6 @@ class ThreadedServer(ThreadingMixIn, server.HTTPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-
-# ---------------------------------------------------------------- entry point
 
 def parse_size(text):
     w, _, h = text.lower().partition("x")

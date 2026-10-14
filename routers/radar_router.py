@@ -220,6 +220,13 @@ async def calibrate(request: Request):
     return out
 
 
+@router.get("/movers")
+async def radar_movers():
+    """Echoes closing in by themselves, and the one only the radar hears coming at the user (utils/radar_movers)."""
+    from utils.radar_movers import get_radar_movers
+    return get_radar_movers().snapshot()
+
+
 @router.get("/view", response_class=HTMLResponse)
 async def radar_view():
     """The live map page itself."""

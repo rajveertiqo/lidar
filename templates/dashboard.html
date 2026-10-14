@@ -106,7 +106,8 @@
         transition: background .25s;
       }
       #now[data-rule="blocked"]::before, #now[data-rule="offline"]::before,
-      #now[data-rule="vehicle_approaching"]::before { background: var(--red); }
+      #now[data-rule="vehicle_approaching"]::before,
+      #now[data-rule="mover_approaching"]::before { background: var(--red); }
       #now[data-rule="approaching"]::before, #now[data-rule="drifting"]::before,
       #now[data-rule="near_wall"]::before, #now[data-rule="vehicle_ahead"]::before,
       #now[data-rule="steering"]::before { background: var(--amber); }
@@ -177,6 +178,7 @@
       .row .why { display: block; font-size: 12px; color: var(--muted); }
       .row.urgent b { color: var(--red); }
       .row.mark b { color: var(--blue); }
+      .row.silent b { font-weight: 600; font-style: italic; color: var(--muted); }
 
       /* ---------------------------------------------------------------- sensors / around */
       .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 14px; }
@@ -249,6 +251,7 @@
             <span><i style="background:var(--fg)"></i>laser return</span>
             <span><i style="background:var(--red)"></i>on your path, inside the block radius</span>
             <span><i style="background:var(--teal)"></i>body corridor &amp; front beam</span>
+            <span><i style="background:var(--amber)"></i>moving by itself (red: coming at you; line: where it goes in 1 s; dashed arc: only the radar hears it)</span>
           </div>
           <div class="dirs" id="dirs"></div>
         </section>
@@ -273,8 +276,11 @@
           <div class="muted" style="font-size:12px;margin-top:8px" id="cam-note">
             Front camera: only things that can hurt the user are named — vehicles, people,
             animals, poles, hydrants, benches (trees and bollards need the custom model).
-            Crossed-out classes, like chairs and laptops, are ignored: the laser still steers
-            round them, unnamed. A named object must overlap the shaded middle band, be tall
+            Nothing else is detected at all — chairs, tables, laptops never appear here
+            (config.DETECTION_CLASSES); the laser still steers round them, unnamed. Each box says how far
+            away it is: <b>10.5 ft</b> is the laser's range in that direction; <b>≈38 ft</b> is guessed from the
+            box's size where the laser has nothing that matches (the lens angle is assumed); <b>≤4 ft</b> means
+            the frame cuts the box off, so it is at most that far. A named object must overlap the shaded middle band, be tall
             enough to be near — and the laser or radar must already have something on the path.
             A vehicle in the band that is getting bigger is <b>approaching</b> (red): the user is
             told to move away from the half it is in. A stopped vehicle while the user stands
@@ -360,7 +366,7 @@
       }
 
       // ------------------------------------------------------------ NOW (400 ms)
-      let seenSeq = null, lastSaidAt = 0, lastSaidText = "", busyWalk = false, lastObject = null, lastVehicle = null, lastSteer = null;
+      let seenSeq = null, lastSaidAt = 0, lastSaidText = "", busyWalk = false, lastObject = null, lastVehicle = null, lastSteer = null, lastMovers = [], lastRadarMovers = [];
       async function pollWalk() {
         if (busyWalk) return; busyWalk = true;
         try {
@@ -402,11 +408,21 @@
               const moving = rate != null && rate > 0.05 ? ` · closing ${Number(rate).toFixed(1)} ft/s` : "";
               return chip(`${s} wall ${Number(ft).toFixed(1)} ft${moving}`, !!moving);
             }),
+            (() => {
+              // LiDAR movers: spoken only with LIDAR_MOVERS_SPEAK; until then, "would say".
+              const m = raw.mover, n = (raw.movers || []).length + (raw.radar_movers || []).length;
+              if (!m) return chip(n ? `movers: ${n} moving, none coming at you` : "movers: —", false);
+              const from = m.mode === "toward" ? "coming at you" : m.mode === "behind" ? "from behind" : `from ${m.side}`;
+              return chip(`${m.source === "radar" ? "radar" : "LiDAR"}: ${String(m.word).toLowerCase()} ${from} · ${Number(m.distance_ft).toFixed(1)} ft · ${Number(m.ttc_s).toFixed(1)} s` +
+                (m.would_say && !m.spoken ? ` · would say “${m.would_say}” (silent)` : ""), true);
+            })(),
             chip(d.at_crossing ? "at a crossing" : "no crossing", !!d.at_crossing),
           ].join("");
           lastObject = raw.object || null;
           lastVehicle = raw.vehicles || null;
           lastSteer = raw.steer || null;
+          lastMovers = raw.movers || [];
+          lastRadarMovers = raw.radar_movers || [];
 
           // Announce once per sequence step; the first poll only learns it.
           const seq = n.cue_seq, pv = n.pi_voice || {};
@@ -499,7 +515,8 @@
           $("log-path").textContent = d.log_path ? d.log_path.split("/").slice(-1)[0] : "";
           const lines = (d.lines || []).slice().reverse();
           $("log").innerHTML = lines.length ? lines.map((r) => {
-            const cls = r.source === "tester" ? "mark" : r.level === "urgent" ? "urgent" : "";
+            const cls = r.source === "tester" ? "mark" : r.source === "lidar-movers" ? "silent"
+              : r.level === "urgent" ? "urgent" : "";
             return `<div class="row ${cls}"><span class="t mono">${esc(r.time)}</span><span><b>${esc(r.text)}</b>` +
               (r.detail ? `<span class="why">${esc(r.detail)}</span>` : "") + `</span></div>`;
           }).join("") : '<div class="muted">Nothing said yet this run</div>';
@@ -577,9 +594,12 @@
             lastObject.toLowerCase() === String(spoken(det.class_name) || "").toLowerCase();
           const ignored = !spoken(det.class_name);
           const colour = named ? "#2dd4bf" : ignored ? "#94a3b8" : "#fbbf24";
+          const dist = distText(det);
+          const label = `${det.class_name} ${Math.round((det.confidence || 0) * 100)}%${dist ? " · " + dist : ""}`;
+          const lw = Math.min(W, 18 + 12 * label.length), lx = Math.max(0, Math.min(x1, W - lw));  // kept inside the frame
           out += `<rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" fill="none" stroke="${colour}" stroke-width="${named ? 5 : ignored ? 2 : 3}"${ignored ? ' stroke-dasharray="8 6"' : ""}/>` +
-            `<rect x="${x1}" y="${Math.max(0, y1 - 30)}" width="${Math.min(W - x1, 18 + 14 * String(det.class_name).length)}" height="28" fill="${colour}"/>` +
-            `<text x="${x1 + 8}" y="${Math.max(0, y1 - 30) + 20}" font-size="20" font-weight="700" fill="#04121a">${esc(det.class_name)} ${Math.round((det.confidence || 0) * 100)}%</text>`;
+            `<rect x="${lx}" y="${Math.max(0, y1 - 30)}" width="${lw}" height="28" fill="${colour}"/>` +
+            `<text x="${lx + 8}" y="${Math.max(0, y1 - 30) + 20}" font-size="20" font-weight="700" fill="#04121a">${esc(label)}</text>`;
         }
         // Where the guide is steering the user past what is in the way.
         const st = lastSteer;
@@ -610,9 +630,21 @@
           const named = c === "front" && lastObject &&
             lastObject.toLowerCase() === String(spoken(dt.class_name) || "").toLowerCase();
           const ignored = !spoken(dt.class_name);
-          return `<span class="${named ? "named" : ignored ? "ignored" : ""}" title="${ignored ? "not a hazard class — never named" : "can be named: " + esc(spoken(dt.class_name))}">${camView === "all" ? esc(c) + ": " : ""}${esc(dt.class_name)} ${Math.round((dt.confidence || 0) * 100)}%${named ? " · named" : ""}</span>`;
+          const dist = distText(dt);
+          return `<span class="${named ? "named" : ignored ? "ignored" : ""}" title="${ignored ? "not a hazard class — never named" : "can be named: " + esc(spoken(dt.class_name))}">${camView === "all" ? esc(c) + ": " : ""}${esc(dt.class_name)} ${Math.round((dt.confidence || 0) * 100)}%${dist ? " · " + esc(dist) : ""}${named ? " · named" : ""}</span>`;
         }).join("") : '<span>no detections</span>';
       }
+      // How far away a detection is: "12.3 ft" from the LiDAR or the ToF, "≈15 ft" from the
+      // box's size (the lens is assumed), "≤15 ft" when the frame cuts the box off. While
+      // TOF_USE_DISTANCE is off the ToF's reading is only shown beside the others.
+      const distText = (d) => {
+        const tof = d.depth && d.depth.distance_m != null && d.distance_source !== "tof"
+          ? ` (ToF ${(Number(d.depth.distance_m) / 0.3048).toFixed(1)} ft)` : "";
+        return d.distance_ft == null ? tof.trim()
+          : d.distance_source === "lidar" || d.distance_source === "tof"
+            ? `${Number(d.distance_ft).toFixed(1)} ft${d.distance_source === "tof" ? " ToF" : ""}${tof}`
+            : `${d.distance_source === "camera_cut" ? "≤" : "≈"}${Math.round(Number(d.distance_ft))} ft est.${tof}`;
+      };
       const spoken = (c) => (geom.named_objects || {})[String(c || "").toLowerCase()] || null;
 
       let busyCam = false;
@@ -688,6 +720,27 @@
           }
         } else {
           ctx.fillStyle = muted; ctx.font = "15px system-ui"; ctx.fillText("waiting for the LiDAR stream…", 16, 28);
+        }
+
+        // Things the LiDAR sees moving by themselves; the line is where each goes in 1 s.
+        for (const m of lastMovers) {
+          const fwd = m.x_m * 1000, x = m.y_m * 1000;
+          if (Math.hypot(fwd, x) > viewMm * 1.25) continue;
+          const px = cx + x * k, py = cy - fwd * k, colour = m.alert ? red : amber;
+          ctx.strokeStyle = colour; ctx.fillStyle = colour + "33"; ctx.lineWidth = 2.5;
+          ctx.beginPath(); ctx.arc(px, py, 10, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + m.vy_mps * 1000 * k, py - m.vx_mps * 1000 * k); ctx.stroke();
+          labels.push([`${String(m.word).toLowerCase()} ${Number(m.distance_ft).toFixed(1)} ft · ${Number(m.speed_ft_s).toFixed(1)} ft/s`, colour, px - 12, py]);
+        }
+        // Echoes only the radar hears closing in: an arc across the board's beam, at its range.
+        for (const m of lastRadarMovers) {
+          if (m.lidar_sees) continue;                       // the LiDAR follows that one
+          const r = m.distance_m * 1000 * k, b = (m.bearing_deg - 90) * Math.PI / 180, half = 32.5 * Math.PI / 180;
+          const colour = m.alert ? red : amber;
+          ctx.strokeStyle = colour; ctx.lineWidth = 5; ctx.setLineDash([3, 4]);
+          ctx.beginPath(); ctx.arc(cx, cy, r, b - half, b + half); ctx.stroke(); ctx.setLineDash([]);
+          labels.push([`radar: ${Number(m.distance_ft).toFixed(1)} ft, closing ${Number(m.closing_ft_s).toFixed(1)} ft/s`, colour,
+            cx + Math.cos(b) * r - 8, cy + Math.sin(b) * r]);
         }
 
         ctx.font = "700 12px system-ui";

@@ -9,7 +9,7 @@ from starlette.concurrency import run_in_threadpool
 
 from utils.access import require_admin
 from utils.sensor_fusion import fuse_guidance, describe_scene, get_system_health
-from utils.unified_guidance import get_unified_guidance
+from utils.unified_guidance import latest_guidance
 
 router = APIRouter(prefix="/guidance", tags=["Guidance"])
 
@@ -24,8 +24,8 @@ def get_fused():
 
 @router.get("/walk")
 def get_walk():
-    """ONE merged walking instruction: obstacle avoidance + surface steering + crossing, in a safety-first priority order."""
-    return get_unified_guidance()
+    """ONE merged walking instruction, as the guidance loop last made it — a request never runs the pipeline, so it cannot decide or commit what is said."""
+    return latest_guidance()
 
 
 @router.get("/policy")
@@ -148,14 +148,13 @@ def get_scene():                      # plain `def`, as /fused
     return describe_scene()
 
 
-# Plain `def`, as /walk: it runs the whole guidance pipeline.
+# Plain `def`: the scan fits surfaces to the whole sweep.
 @router.get("/spatial")
 def get_spatial():
     """What KIND of place this is, and the ways out of it."""
     from utils.spatial_scan import scan
     try:
-        from utils.unified_guidance import get_unified_guidance
-        clearances = ((get_unified_guidance() or {}).get("path") or {}).get("clearance_ft")
+        clearances = ((latest_guidance() or {}).get("path") or {}).get("clearance_ft")
     except Exception:
         clearances = None
     return scan(clearances)
@@ -214,7 +213,30 @@ async def tester_mark(payload: dict):
     speech_log.say("tester", f"MARK {kind.upper()}", level="mark",
                    detail=f"{note + ' | ' if note else ''}last said: {last}")
     test_console.mark(kind, f"{note + ' | ' if note else ''}last said: {last}")
+    try:
+        from utils.walk_recorder import get_recorder
+        get_recorder().mark(kind, f"{note + ' | ' if note else ''}last said: {last}")
+    except Exception:
+        pass
     return {"ok": True, "kind": kind, "last_said": last}
+
+
+@router.get("/record")
+def walk_record_status():
+    """Is the walk being recorded for replay (tools/walk_replay.py)?"""
+    from utils.walk_recorder import get_recorder
+    return get_recorder().status()
+
+
+@router.post("/record")
+async def walk_record(payload: dict):
+    """{"on": true, "label": "..."} starts recording every guidance tick to
+    logs/walks/; {"on": false} stops. Nothing about guidance changes."""
+    from utils.walk_recorder import get_recorder
+    rec = get_recorder()
+    if (payload or {}).get("on"):
+        return rec.start(_one_line_note((payload or {}).get("label", "")))
+    return await run_in_threadpool(rec.stop)
 
 
 @router.get("/test")
@@ -226,7 +248,9 @@ def field_test_snapshot(limit: int = 12):
     log = speech_log.recent(limit=400)
     lines = log.get("lines") or []
     now = _time.time()
-    spoken = [r for r in lines if r.get("source") != "tester"]
+    # Tester marks and the LiDAR movers' silent "would say" lines were not said.
+    unsaid = ("tester", "lidar-movers")
+    spoken = [r for r in lines if r.get("source") not in unsaid]
     totals = log.get("totals") or {}
     marks = int(totals.get("tester", 0))
     return {
@@ -234,8 +258,9 @@ def field_test_snapshot(limit: int = 12):
         "startup": startup_gate.state(),
         "voice": pi_voice.status(),
         "said_last_minute": sum(1 for r in spoken if now - r.get("epoch", 0) <= 60),
-        "said_total": sum(totals.values()) - marks,
+        "said_total": sum(n for s, n in totals.items() if s not in unsaid),
         "marks_total": marks,
+        "would_say_total": int(totals.get("lidar-movers", 0)),
         "log_path": log.get("path"),
         "lines": lines[-max(1, min(50, limit)):],
         "geometry": _geometry(),

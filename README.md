@@ -61,6 +61,9 @@ How it decides, in one paragraph each:
   named only for something the rangefinders already have on the path, in the
   middle half of the front camera, and big enough to be near — and only for
   things that can hurt you (`SIMPLE_NAMED_OBJECTS` in `config.py`). The
+  detector reports nothing else at all (`DETECTION_CLASSES`): a chair, table or
+  laptop is dropped inside the engine, so it is not in the hazard list, the BEV
+  labels or the dashboard either — the laser still steers round it. The
   detector on the rig is COCO-80, which has no tree or pole class; the list
   already covers the custom 129-class model's trees, poles and bollards for
   when it is deployed. A car the laser reads as a flat "wall" is named as the
@@ -475,6 +478,69 @@ of a glass door**, hang black cloth, and turn 90° on the spot watching
 take seriously — while any of it is in view, `path.action` must never become a
 stop because of something only the grid can see.
 
+### Things that move — LiDAR movers (added 2026-10-07, silent for now)
+
+The camera sees one direction, and on the rig two of the four cameras are dark.
+The LiDAR sees all the way round, so `utils/lidar_movers.py` follows what moves
+in it: each scan is cut into blobs (a person, a bike, the front of a car — up to
+2 m wide; anything wider is a wall), each blob is followed from scan to scan,
+and its speed is fitted over ~1.2 s.
+
+**"It moves" vs "I move".** Walking makes everything look as if it moves. Every
+*still* thing moves the same way relative to the user, so the user's own walk and
+turn are fitted from the still things around them (`ego` on `/lidar/movers`),
+and a mover is whatever does not fit. Where there are too few still things (a
+bare corridor, an open space), any walk up to `LIDAR_MOVERS_WALK_MAX_MPS` is
+allowed for: sideways motion and approaching from behind are still caught, but
+something coming head-on at a walking pace is not. Walking past something near
+shows a different face of it each scan, so the threshold grows with its size
+over its range.
+
+**What it would say** — one approach at a time, the soonest, and only if it
+will pass within `LIDAR_MOVERS_MISS_M` (1 m; vehicles 2 m) inside
+`LIDAR_MOVERS_HORIZON_S` (5 s):
+
+| It is | Sentence |
+| --- | --- |
+| crossing in front, or coming from a side | `Person approaching from left, stop` (and the mirror) — let it pass |
+| ahead, heading at the user | `Person coming toward you, move left` — away from the side it passes on, where the laser shows 2 ft of room; else `…, stop` |
+| behind | `Person approaching from behind, move right` — else just `Person approaching from behind` |
+
+"Person" or "Vehicle" is a guess from size and speed (wider than 0.9 m or faster
+than 3 m/s is a vehicle); in front, the camera's name for a box at that bearing
+wins. The camera's own `Vehicle approaching` outranks all of these.
+
+**Silent until a test walk says otherwise.** `LIDAR_MOVERS_SPEAK = False`: the
+dashboard shows each mover on the laser view and its "would say" sentence in a
+chip, the speech log records `would say: …` lines (source `lidar-movers`, not
+counted as speech), and the terminal prints them. Setting it True puts the same
+sentences through the one voice and its gate (level 2: said as soon as the
+sentence playing ends).
+
+**The radar fills the LiDAR's gaps** (`utils/radar_movers.py`). Each board's
+echoes are followed in distance, and one closing in by itself is a mover — but
+only where the LiDAR has no blob (a thing up to 2 m wide) at that distance inside
+that board's beam: its blind back-left arc, or something above or below the
+laser's plane (a child, a dog, a low trolley). Where the LiDAR sees it, the
+LiDAR's warning is used and the radar stays silent: one warning per thing. The
+radar cannot tell what it is, so it says `Something approaching from behind,
+move right` (and the same shapes as above). A board ranges the nearest point of
+a wall in its beam, and that point slides along the wall, so while the user walks
+an echo must close faster than the walk itself — on any board; and while the user
+turns faster than `RADAR_MOVERS_MAX_TURN_DPS` (which sweeps the beams across walls),
+radar warnings pause. In practice: standing still, someone walking or jogging up
+is caught 1–3 s ahead; walking, only something much faster than the user, inside
+the radar's 4 m reach — a person catching up at a walking pace is not.
+
+**Limits.** 2D: one plane at the LiDAR's height. Reach is `LIDAR_MOVERS_MAX_RANGE_MM`
+(8 m), so a car at speed is warned only ~1 s ahead — the camera covers vehicles in
+front. A car crossing broadside shows a side longer than 2 m and is not followed.
+Where the LiDAR returns nothing (on the rig, ~170°–290°, back-left) only the radar's 4 m reach is left.
+A crowd moving together can pass for the user's own motion. Checked only in
+simulation so far — `./venv/bin/python tools/movers_sim.py` (rooms, a corridor,
+clutter with lost beams, a car, a bike, the blind arc, a glass pane, a turn, and
+radar-only echoes) — not yet on a real walk.
+
 ---
 
 ## Architecture
@@ -523,6 +589,11 @@ utils/
   unified_guidance.py       Merges every source into ONE instruction
   traffic_light_detection.py    Crossing state machine
   environment_detection.py  Fog / rain / low-light from camera + LiDAR quality
+  lidar_movers.py           People and vehicles MOVING in the LiDAR scan, from any
+                            side: who is coming at the user, from where, and when.
+                            Silent ("would say") until LIDAR_MOVERS_SPEAK
+  radar_movers.py           Echoes only the radar hears closing in — the LiDAR's blind
+                            arc, things above/below its plane ("Something …")
   bev_grid.py               Ego-centred BEV occupancy grid — obstacle SHAPE, doorways,
                             radar-stamped glass, blind arcs. ADVISORY, never stops
   shared_state.py           Thread-safe state shared between all sensor threads
@@ -539,6 +610,9 @@ tools/drift_sim.py      Walks a virtual user down a synthetic corridor to tune t
                         drift thresholds without leaving the desk
 tools/bev_check.py      Is the BEV grid actually working? Diagnoses each way it can
                         be quietly useless, and --checklist prints the physical tests
+tools/movers_sim.py     People, bikes and cars moving round the user, and still rooms,
+                        through the real mover tracker: caught, from the right side,
+                        and nothing still ever called moving?
 tools/glass_sim.py      Glass doors, panes beside walls, corridors and posts, through
                         the real policy: is the pane named, and only the pane?
 tools/anchor_diversity.py  Can the scan band anchor camera depth? The go/no-go
@@ -959,7 +1033,7 @@ label sizes are set for that capped width; changing the cap needs them revisited
 
 | Endpoint                | Returns                                                                                                                                                                                                                                 |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /guidance/walk`    | **The one merged instruction.** Obstacle avoidance + surface steering + crossing, in safety-first priority order. `notify.speak` / `notify.cue_seq` is the _only_ field that means "announce this"; everything else is state to display |
+| `GET /guidance/walk`    | **The one merged instruction.** Obstacle avoidance + surface steering + crossing, in safety-first priority order. `notify.speak` / `notify.cue_seq` is the _only_ field that means "announce this"; everything else is state to display. It is the 5 Hz guidance loop's newest result (`loop.age_s`): a request never runs the pipeline, so no page decides or commits what is said. Older than `GUIDANCE_RESULT_STALE_S`, it reports rule `unavailable` and why |
 | `GET /guidance/policy`  | The straight-walk decision on its own, in metres                                                                                                                                                                                        |
 | `GET /guidance/gyro`    | IMU health, yaw bias and whether it is trusted, tilt, gait. `/guidance/heading`'s `yaw_source` says which sensor is steering; this says why |
 | `GET /guidance/drift`   | Collision course + veer: what you will walk into, when, and the smallest correction                                                                                                                                                     |
@@ -977,9 +1051,11 @@ label sizes are set for that capped width; changing the cap needs them revisited
 | ----------------------------- | ------------------------------------------------------------- |
 | `WS  /lidar/ws`               | Live scan stream                                              |
 | `GET /lidar/reader`           | Is the serial reader keeping up: `dropped_meas`, `resyncs`, `partial_scans` (all should stay near zero), backlog, measured rate, and the newest scan's age |
+| `GET /lidar/movers`           | Things moving by themselves: position, speed, the user's own motion (`ego`), and the one coming at the user (`threat`) |
 | `GET /lidar/bev`              | BEV grid extraction — obstacle shapes, doorways, blind arcs, `radar_confirmed` (= glass) |
 | `GET /lidar/bev/summary`      | The same, as plain sentences in feet and clock positions      |
 | `GET /lidar/bev/image`        | Top-down PNG: red occupied, dark free, grey unknown. A registration smear is obvious here and nearly invisible in the numbers |
+| `GET /radar/movers`           | Echoes closing in by themselves; `threat` is one only the radar hears coming at the user |
 | `GET /radar/state`            | Per-direction radar distance + staleness                      |
 | `GET /radar/boards`           | Which board is on which port, plus per-board lag              |
 | `GET /radar/config`           | Range, guidance zones, timing thresholds                      |
@@ -990,7 +1066,8 @@ label sizes are set for that capped width; changing the cap needs them revisited
 | `POST /radar/rediscover`      | Stop every reader and rediscover, after replugging a cable    |
 | `GET /camera/stream/{sector}` | MJPEG per sector (`front`/`right`/`left`/`back`)              |
 | `GET /camera/seg/{sector}`    | Colorized segmentation debug view                             |
-| `GET /camera/stats`           | capture / detection / segmentation FPS, per-sector detections |
+| `GET /camera/stats`           | capture / detection / segmentation FPS, per-sector detections — each with `distance_ft`: of the things the laser ranges in the box's bearings, the one that fits the box's size (`distance_source` `lidar`), else the box-size estimate (`camera`; `camera_cut` = at most) |
+| `GET /camera/distances`       | Why each detection's distance is what it is: bearings searched, every laser range there, the size estimate (a wide person box = sitting), the choice, and the lens angle it implies (`implied_hfov_deg`) |
 | `GET /environment/status`     | Fog / rain / low light / visibility                           |
 
 **Navigation & crossing**
@@ -1102,6 +1179,20 @@ run for the absence of a *veer* cue, not for the absence of output.
 
 ## Known limits
 
+- **The camera board's 4-camera merge can scramble the picture** (seen 2026-10-08:
+  every camera clean on its own, the 2x2 picture corrupted on and off). So by default
+  the app CYCLES the cameras (`CAMERA_CYCLE`): the board shows one camera at a time
+  and is switched between frames; a frame is the new camera's when its sensor
+  timestamp is after the switch. The front gets 2 frames to each other camera's 1
+  (~24 fps front, ~6 fps each other with three cameras). Only cameras found at start
+  are visited — switching to an empty channel stops the stream for good — and a
+  missing one is reported by `/health`. Each quadrant carries its own capture time.
+  With `CAMERA_CYCLE = False` the 2x2 picture is used, each camera picture checked
+  first (`CAMERA_CORRUPT_PCT`) and a scrambled one skipped; the stream restarts when
+  one stays corrupted, and the front camera alone is fallen back to if that fails.
+  `CAMERA_SINGLE_CHANNEL = "front"` forces front-only. One auto-exposure serves every
+  camera, so a bright view on one can darken the others. `/camera/stats` gives
+  `camera_mode`, `camera_fps` and each camera's `corrupt` share.
 - **Traffic-light colour cannot be read.** The stock COCO detector emits only
   the class `traffic light` with no colour, and a bounding box cannot tell you
   which lamp is lit. Colour is reported as `unknown` rather than guessed. The

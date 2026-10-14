@@ -1,0 +1,9 @@
+# The Windows laptop (or Colab). Install PyTorch FIRST with the command from
+# https://pytorch.org/get-started/locally/ (pick CUDA if the laptop has an NVIDIA GPU),
+# then: pip install -r training/requirements.txt
+ultralytics>=8.3.0
+onnx>=1.15
+onnxslim
+pyyaml
+pillow
+numpy

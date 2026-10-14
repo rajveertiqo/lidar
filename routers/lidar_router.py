@@ -69,6 +69,13 @@ async def get_sectors():
     }
 
 
+@router.get("/movers")
+async def lidar_movers():
+    """Things the LiDAR sees moving by themselves: where, how fast, and which is coming at the user (utils/lidar_movers)."""
+    from utils.lidar_movers import get_movers
+    return get_movers().snapshot()
+
+
 @router.get("/bev")
 async def bev_state():
     """Latest BEV extraction: obstacle shapes, openings, blind wedges."""

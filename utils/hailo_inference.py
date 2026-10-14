@@ -15,7 +15,7 @@ from utils.yoloseg_decode import cls_is_probability
 # ── Constants ──────────────────────────────────────────────────────────────────
 IMG_SIZE = 640
 
-from config import HAILO_DETECT_RUN_TIMEOUT_MS  # noqa: E402
+from config import DETECTION_CLASSES, HAILO_DETECT_RUN_TIMEOUT_MS  # noqa: E402
 
 _N_PROTO = 32                    # mask prototypes / channels in a coeff head
 _PROTO_FEAT = IMG_SIZE // 4      # 160 — prototype spatial resolution
@@ -25,6 +25,15 @@ _METADATA_PATH = os.path.join(os.path.dirname(__file__), "..", "model", "metadat
 _SURFACE_NAMES = frozenset(WALKABLE_NAMES | {
     "tactile", "tactile paving", "tactile_paving", "tactile path",
 })
+
+_REPORTED_NAMES = frozenset(str(c).strip().lower() for c in DETECTION_CLASSES)
+
+
+def _unreported(names) -> frozenset:
+    """Class ids never reported as objects: ground surfaces, and every class outside config.DETECTION_CLASSES (chairs, tables, laptops ...)."""
+    low = [str(n).strip().lower() for n in names]
+    return frozenset(i for i, n in enumerate(low)
+                     if n in _SURFACE_NAMES or n not in _REPORTED_NAMES)
 
 
 def _metadata_names(num_classes: int):
@@ -214,9 +223,9 @@ class HailoInferenceEngine:
             self._names = (_metadata_names(self._num_classes)
                            or [f"class_{i}" for i in range(self._num_classes)])
 
-        self._suppressed = frozenset(
-            i for i, n in enumerate(self._names)
-            if str(n).strip().lower() in _SURFACE_NAMES)
+        self._suppressed = _unreported(self._names)
+        self._reported = np.array([i not in self._suppressed
+                                   for i in range(self._num_classes)], dtype=bool)
 
         self._cls_is_prob = None
 
@@ -232,9 +241,12 @@ class HailoInferenceEngine:
         if self._scratch:
             print(f"[Hailo] Segmentation hef: {len(self._scratch)} mask/prototype "
                   f"output(s) bound but unused ({', '.join(sorted(self._scratch))})")
-        if self._suppressed:
-            print("[Hailo] Not reported as objects (ground surfaces): "
-                  + ", ".join(sorted(self._names[i] for i in self._suppressed)))
+        surfaces = sorted(n for n in self._names if str(n).strip().lower() in _SURFACE_NAMES)
+        if surfaces:
+            print("[Hailo] Not reported as objects (ground surfaces): " + ", ".join(surfaces))
+        reported = [n for i, n in enumerate(self._names) if self._reported[i]]
+        print(f"[Hailo] Reporting {len(reported)} of {self._num_classes} classes "
+              f"(config.DETECTION_CLASSES): {', '.join(reported) or 'NONE'}")
 
     # ── context-manager support ────────────────────────────────────────────────
 
@@ -326,7 +338,7 @@ class HailoInferenceEngine:
         row_idx, cls_idx = np.where(scores >= self._conf)
 
         if self._suppressed and row_idx.size:
-            wanted = ~np.isin(cls_idx, list(self._suppressed))
+            wanted = self._reported[cls_idx]
             row_idx, cls_idx = row_idx[wanted], cls_idx[wanted]
 
         if row_idx.size == 0:

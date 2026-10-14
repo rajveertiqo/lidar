@@ -2,7 +2,7 @@
 
 import threading
 import time
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Optional, Tuple
 
 from config import LIDAR_SECTOR_ORDER
 
@@ -24,6 +24,42 @@ def _warn(layer: str, exc: Exception) -> None:
 _turn_lock = threading.Lock()
 _last_turn = None
 
+# The guidance loop's newest result: (result, time.monotonic() when made).
+_latest_lock = threading.Lock()
+_latest: Optional[Tuple[Dict[str, Any], float]] = None
+
+
+def latest_guidance() -> Dict[str, Any]:
+    """The newest result of the guidance loop (pi_voice), for the web pages."""
+    from config import GUIDANCE_RESULT_STALE_S
+    with _latest_lock:
+        latest = _latest
+    age = None if latest is None else time.monotonic() - latest[1]
+    if latest is not None and age <= GUIDANCE_RESULT_STALE_S:
+        return {**latest[0], "loop": {"age_s": round(age, 2), "stale": False}}
+
+    from utils import pi_voice, simple_guidance
+    why = ("the guidance loop has not produced a result yet" if latest is None else
+           f"the guidance loop is not updating (newest result {age:.1f} s old)")
+    error = pi_voice.loop_status().get("error")
+    if error:
+        why += f": {error}"
+    seq = simple_guidance.state()["cue_seq"]      # unchanged: nothing to announce
+    return {
+        "notify": {"speak": False, "cue_seq": seq, "instruction": "",
+                   "level": "advisory", "source": None, "reason": why,
+                   "quiet_reason": why},
+        "path": {"instruction": "", "action": "unknown", "rule": "unavailable",
+                 "reason": why, "speak": False, "cue_seq": seq, "raw": {}},
+        "walk": {},
+        "obstacles": {"level": "unknown", "summary": "", "count": 0, "items": []},
+        "crossing": False,
+        "at_crossing": False,
+        "sector_ft": {},
+        "loop": {"age_s": None if age is None else round(age, 2), "stale": True},
+    }
+
+
 def _startup_ready() -> Dict[str, Any]:
     """Whether the sensors have settled enough to speak. Never raises."""
     try:
@@ -33,8 +69,23 @@ def _startup_ready() -> Dict[str, Any]:
         return {"ready": True, "cue": "", "quiet_reason": ""}
 
 
+def _record(now: float, mono: float, inputs: Dict[str, Any],
+            simple: Dict[str, Any]) -> None:
+    """Hand one tick to the walk recorder, if it is recording (utils/walk_recorder)."""
+    try:
+        from utils.walk_recorder import get_recorder
+        rec = get_recorder()
+        if rec.active:
+            rec.tick(now, mono, inputs,
+                     {k: simple.get(k) for k in ("instruction", "speak", "cue_seq",
+                                                 "quiet_reason", "rule", "reason",
+                                                 "mover_shadow", "route_shadow")})
+    except Exception as e:
+        _warn("walk recorder", e)
+
+
 def get_unified_guidance() -> Dict[str, Any]:
-    """Compute one merged guidance instruction from live sensor state."""
+    """Compute one merged guidance instruction from live sensor state, and commit it to speech — the guidance loop's tick; readers use latest_guidance()."""
     from utils.unified_navigation_system import decisionMaker
     from utils.sensor_fusion import fresh_camera_state, merge_navigation_inputs
     from utils.shared_state import (
@@ -130,16 +181,74 @@ def get_unified_guidance() -> Dict[str, Any]:
             motion = get_tracker().state()
         except Exception as e:
             _warn("heading state", e)
+        movers = None
+        try:
+            from utils.lidar_movers import get_movers
+            movers = get_movers().snapshot()
+        except Exception as e:
+            _warn("lidar movers", e)
+        try:
+            from config import MOTION_TRACKER_ENABLED
+            if MOTION_TRACKER_ENABLED:
+                # Kalman tracks (utils/motion_tracker): read here so the walk recorder keeps them.
+                from utils.motion_tracker import get_motion_tracker
+                movers = {**(movers or {}), "kalman": get_motion_tracker().snapshot()}
+        except Exception as e:
+            _warn("motion tracker", e)
+        try:
+            from config import RADAR_MOVERS_ENABLED
+            if RADAR_MOVERS_ENABLED:
+                # Fed here, once a tick: this loop is the only caller (latest_guidance).
+                from utils.radar_movers import get_radar_movers
+                radar_movers = get_radar_movers()
+                radar_movers.update(get_radar_state(), (movers or {}).get("blobs"),
+                                    (movers or {}).get("ego"),
+                                    turn_dps=(motion or {}).get("yaw_rate_dps"))
+                movers = {**(movers or {}), "radar": radar_movers.snapshot()}
+        except Exception as e:
+            _warn("radar movers", e)
+        radar_now = get_radar_state()
+        hold = None if ready["ready"] else (ready["quiet_reason"] or "scanning")
+        tick_t, tick_mono = time.time(), time.monotonic()
         simple = simple_guidance.guidance(
             walk_decision, lidar,
-            hold=None if ready["ready"] else (ready["quiet_reason"] or "scanning"),
+            now=tick_t,
+            hold=hold,
             hold_lidar_absent=bool(ready.get("lidar_absent")),
             at_crossing=at_crossing,
-            radar_state=get_radar_state(),
+            radar_state=radar_now,
             camera_state=camera,
-            motion=motion)
+            motion=motion,
+            movers=movers)
+        _record(tick_t, tick_mono, {
+            "walk_decision": walk_decision, "lidar": lidar, "radar": radar_now,
+            "camera": camera, "motion": motion, "movers": movers, "hold": hold,
+            "hold_lidar_absent": bool(ready.get("lidar_absent")),
+            "at_crossing": at_crossing}, simple)
     except Exception as e:
         _warn("simple guidance", e)
+
+    if simple.get("mover_shadow"):
+        # Not spoken (LIDAR_MOVERS_SPEAK False): logged so a test walk can judge it.
+        try:
+            from utils import speech_log, test_console
+            speech_log.say(source="lidar-movers", text=f"would say: {simple['mover_shadow']}",
+                           level="silent", detail=simple.get("mover_shadow_reason", ""),
+                           via="none")
+            test_console.would_say(simple["mover_shadow"], simple.get("mover_shadow_reason", ""))
+        except Exception:
+            pass
+
+    if simple.get("route_shadow"):
+        # Not spoken (ROUTE_PLANNER_SPEAK False): logged so a test walk can judge it.
+        try:
+            from utils import speech_log, test_console
+            speech_log.say(source="route-planner", text=f"would say: {simple['route_shadow']}",
+                           level="silent", detail=simple.get("route_shadow_reason", ""),
+                           via="none")
+            test_console.would_say(simple["route_shadow"], simple.get("route_shadow_reason", ""))
+        except Exception:
+            pass
 
     path["action"] = simple.get("action", "unknown")
     path["instruction"] = simple.get("instruction", "")
@@ -240,7 +349,7 @@ def get_unified_guidance() -> Dict[str, Any]:
         _warn("obstacle list", e)
 
     instruction = simple.get("instruction") or ""
-    urgent = simple.get("rule") in ("blocked", "vehicle_approaching")
+    urgent = simple.get("rule") in ("blocked", "vehicle_approaching", "mover_approaching")
 
     say = bool(simple.get("speak"))
     notify_seq = simple.get("cue_seq", 0)
@@ -302,7 +411,7 @@ def get_unified_guidance() -> Dict[str, Any]:
 
     # A little context for the UI.
     sectors = nav.get("sector_distances", {}) or {}
-    return {
+    result = {
         "notify": notify,
         "path": path,
         "walk": walk_decision,
@@ -314,3 +423,7 @@ def get_unified_guidance() -> Dict[str, Any]:
         "sector_ft": {s: sectors.get(s, {}).get("distance_ft")
                       for s in LIDAR_SECTOR_ORDER},
     }
+    global _latest
+    with _latest_lock:
+        _latest = (result, time.monotonic())
+    return result

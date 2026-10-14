@@ -29,6 +29,7 @@ from routers import (
     pi_camera_router,
 )
 from routers import guidance_router
+from routers import tof_router
 from routers import road_crossing_router
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -47,6 +48,8 @@ async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
     start_scanner(loop)
     start_radar()
+    from utils.tof_camera import start_tof
+    start_tof()                       # only with TOF_ENABLED (the depth camera)
 
     from utils import pi_voice, service, test_console
 
@@ -87,6 +90,8 @@ async def lifespan(app: FastAPI):
     stop_camera()
     stop_scanner_thread()
     stop_radar()
+    from utils.tof_camera import stop_tof
+    stop_tof()
     stop_gyro()
     print("👋 Application shutdown complete")
 
@@ -171,6 +176,7 @@ app.include_router(navigation_router.router)
 app.include_router(environment_router.router)
 app.include_router(road_crossing_router.router)
 app.include_router(guidance_router.router)
+app.include_router(tof_router.router)
 
 
 def _page(name: str) -> HTMLResponse:
@@ -230,7 +236,7 @@ def health_check():
 
 @app.get("/api/status")
 async def api_status():
-    """Get overall system status"""
+    """Get overall system statphus"""
     from utils.shared_state import get_fused_sensor_state
     from utils.environment_detection import get_environment_state
     from utils.traffic_light_detection import get_traffic_detector

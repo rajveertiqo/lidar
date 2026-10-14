@@ -11,6 +11,8 @@ from config import (
     NOTIFY_WORDS_PER_SEC, SIMPLE_GLASS_LOSS_CONFIRM_S,
     SIMPLE_GLASS_RECOVER_CONFIRM_S, SIMPLE_GLASS_RECOVER_MAX_S,
     SIMPLE_GLASS_STARTUP_GRACE_S,
+    SIMPLE_CAMERA_LOSS_CONFIRM_S, SIMPLE_CAMERA_RECOVER_CONFIRM_S,
+    SIMPLE_CAMERA_RECOVER_MAX_S, SIMPLE_CAMERA_STARTUP_GRACE_S,
     SIMPLE_ALERT_CONFIRM_S, SIMPLE_ALERT_GAP_S, SIMPLE_BAND_MARGIN_FT,
     SIMPLE_CLEAR_CONFIRM_S, SIMPLE_CROSSING_HOLD_S, SIMPLE_GLASS_RELEASE_S,
     SIMPLE_CONFIRM_S, SIMPLE_LIDAR_FRESH_S, SIMPLE_MIN_GAP_S, SIMPLE_ON_WALL_MM,
@@ -36,6 +38,9 @@ from config import (
     SIMPLE_OBJECT_HEIGHT_M, SIMPLE_STEER_DEAD_BAND, SIMPLE_STEER_GAP_M,
     SIMPLE_STEER_RANGE_M, SIMPLE_STEER_SIDE_MIN_FT, SIMPLE_STEER_STICKY,
     HEADING_STATE_STALE_S, RADAR_CONE_TRUST_MM,
+    LIDAR_MOVERS_CAMERA_MATCH_DEG, LIDAR_MOVERS_REPEAT_S, LIDAR_MOVERS_SPEAK,
+    MOTION_TRACKER_WARN, ROUTE_NEED_M, ROUTE_PLANNER_ENABLED, ROUTE_PLANNER_SPEAK,
+    ROUTE_STEER_MAX_DEG, TOF_USE_DISTANCE,
 )
 
 MM_PER_FT = 304.8
@@ -47,6 +52,11 @@ BLOCKED_WALL = "Blocked by wall"
 BLOCKED_GLASS = "Blocked by glass"
 TURN_LEFT = "Turn left"
 TURN_RIGHT = "Turn right"
+# The route planner's (utils/route_planner, 2026-10-13): past something no camera names, and
+# no way ahead at all. Said only with ROUTE_PLANNER_SPEAK.
+TURN_SLIGHT_LEFT = "Turn slightly left"
+TURN_SLIGHT_RIGHT = "Turn slightly right"
+TURN_AROUND = "Turn around"
 
 DRIFT_LEFT = "Drifting toward left wall, turn slightly right"
 DRIFT_RIGHT = "Drifting toward right wall, turn slightly left"
@@ -67,11 +77,39 @@ VEHICLE_AHEAD = "Vehicle in front, be careful"
 _VEHICLE_APPROACH = (VEHICLE_FROM_LEFT, VEHICLE_FROM_RIGHT, VEHICLE_APPROACHING)
 _VEHICLE_SENTENCES = _VEHICLE_APPROACH + (VEHICLE_AHEAD,)
 
+# Something the LiDAR sees moving by itself, coming at the user (utils/lidar_movers,
+# 2026-10-07), or that only the radar hears closing in where the LiDAR cannot see it
+# (utils/radar_movers: "Something"). Crossing: stop and let it pass. Head-on or from
+# behind: step aside, where the laser shows room. Spoken only with LIDAR_MOVERS_SPEAK.
+_MOVER_WORDS = ("Person", "Vehicle", "Something")
+MOVER_CROSSING = {(w, s): f"{w} approaching from {s}, stop"
+                  for w in _MOVER_WORDS for s in ("left", "right")}
+MOVER_TOWARD = {(w, m): f"{w} coming toward you, move {m}"
+                for w in _MOVER_WORDS for m in ("left", "right")}
+MOVER_TOWARD_STOP = {w: f"{w} coming toward you, stop" for w in _MOVER_WORDS}
+MOVER_BEHIND = {(w, m): f"{w} approaching from behind, move {m}"
+                for w in _MOVER_WORDS for m in ("left", "right")}
+MOVER_BEHIND_ONLY = {w: f"{w} approaching from behind" for w in _MOVER_WORDS}
+_MOVER_INFO: Dict[str, Dict[str, Any]] = {
+    **{t: {"word": k[0], "move": None} for k, t in MOVER_CROSSING.items()},
+    **{t: {"word": k[0], "move": k[1]} for k, t in MOVER_TOWARD.items()},
+    **{t: {"word": w, "move": None} for w, t in MOVER_TOWARD_STOP.items()},
+    **{t: {"word": k[0], "move": k[1]} for k, t in MOVER_BEHIND.items()},
+    **{t: {"word": w, "move": None} for w, t in MOVER_BEHIND_ONLY.items()},
+}
+_MOVER_SENTENCES = tuple(_MOVER_INFO)
+_APPROACHING = _VEHICLE_SENTENCES + _MOVER_SENTENCES
+
 SENSORS_OFFLINE = "Sensors offline"
 
 GLASS_SENSOR_OFF = "Glass sensor off"
 GLASS_SENSOR_ON = "Glass sensor on"
 _GLASS_NOTICES = (GLASS_SENSOR_OFF, GLASS_SENSOR_ON)
+
+CAMERA_OFF = "Camera off"
+CAMERA_ON = "Camera on"
+_CAMERA_NOTICES = (CAMERA_OFF, CAMERA_ON)
+_STATUS_NOTICES = _GLASS_NOTICES + _CAMERA_NOTICES
 
 _OBJECT_WORDS = {c.lower(): w for c, w in SIMPLE_NAMED_OBJECTS.items()}
 _WORDS = sorted(set(_OBJECT_WORDS.values()))
@@ -99,15 +137,18 @@ _STEER_INFO: Dict[str, Dict[str, Any]] = {
     BETWEEN_LEFT: {"turn": "left", "word": None, "where": "between"},
     BETWEEN_RIGHT: {"turn": "right", "word": None, "where": "between"},
     BETWEEN_STRAIGHT: {"turn": None, "word": None, "where": "between"},
+    TURN_SLIGHT_LEFT: {"turn": "left", "word": None, "where": "ahead"},
+    TURN_SLIGHT_RIGHT: {"turn": "right", "word": None, "where": "ahead"},
 }
 
 ALLOWED = ((WALK_STRAIGHT, WALL_AHEAD, GLASS_AHEAD,
             BLOCKED_WALL, BLOCKED_GLASS, TURN_LEFT, TURN_RIGHT,
             DRIFT_LEFT, DRIFT_RIGHT, NEAR_LEFT, NEAR_RIGHT, GLASS_LEFT, GLASS_RIGHT, SENSORS_OFFLINE,
             VEHICLE_FROM_LEFT, VEHICLE_FROM_RIGHT, VEHICLE_APPROACHING, VEHICLE_AHEAD)
-           + _GLASS_NOTICES
+           + _GLASS_NOTICES + _MOVER_SENTENCES
            + tuple(OBJECT_AHEAD.values()) + tuple(OBJECT_IN_FRONT.values())
-           + tuple(STEER_PAST.values()) + tuple(STEER_IN_FRONT.values()) + _BETWEEN)
+           + tuple(STEER_PAST.values()) + tuple(STEER_IN_FRONT.values()) + _BETWEEN
+           + _CAMERA_NOTICES + (TURN_SLIGHT_LEFT, TURN_SLIGHT_RIGHT, TURN_AROUND))
 
 _ACTION = {
     WALK_STRAIGHT: "walk_straight",
@@ -117,6 +158,7 @@ _ACTION = {
     BLOCKED_GLASS: "blocked_glass",
     TURN_LEFT: "turn_left",
     TURN_RIGHT: "turn_right",
+    TURN_AROUND: "turn_around",
     DRIFT_LEFT: "drift_left",
     DRIFT_RIGHT: "drift_right",
     NEAR_LEFT: "near_wall_left",
@@ -130,10 +172,15 @@ _ACTION = {
     SENSORS_OFFLINE: "sensors_offline",
     GLASS_SENSOR_OFF: "glass_sensor_off",
     GLASS_SENSOR_ON: "glass_sensor_on",
+    CAMERA_OFF: "camera_off",
+    CAMERA_ON: "camera_on",
     **{t: "object_ahead" for t in OBJECT_AHEAD.values()},
     **{t: "object_in_front" for t in OBJECT_IN_FRONT.values()},
     **{t: "steer_" + i["turn"] for t, i in _STEER_INFO.items() if i["turn"]},
     BETWEEN_STRAIGHT: "walk_between",
+    **{t: ("mover_move_" + i["move"] if i["move"] else
+           "mover_warn" if t in MOVER_BEHIND_ONLY.values() else "mover_stop")
+       for t, i in _MOVER_INFO.items()},
 }
 
 _LEVEL = {
@@ -141,16 +188,20 @@ _LEVEL = {
     WALL_AHEAD: 1, GLASS_AHEAD: 1,
     DRIFT_LEFT: 1, DRIFT_RIGHT: 1, NEAR_LEFT: 1, NEAR_RIGHT: 1,
     GLASS_LEFT: 1, GLASS_RIGHT: 1,
-    BLOCKED_WALL: 2, BLOCKED_GLASS: 2, TURN_LEFT: 2, TURN_RIGHT: 2,
+    BLOCKED_WALL: 2, BLOCKED_GLASS: 2, TURN_LEFT: 2, TURN_RIGHT: 2, TURN_AROUND: 2,
     SENSORS_OFFLINE: 2,
     GLASS_SENSOR_OFF: 1, GLASS_SENSOR_ON: 1,
+    CAMERA_OFF: 1, CAMERA_ON: 1,
     **{t: 1 for t in OBJECT_AHEAD.values()},
     **{t: 2 for t in OBJECT_IN_FRONT.values()},
     # A stopped vehicle, the user standing still: an advisory, said once.
     VEHICLE_AHEAD: 1,
     VEHICLE_FROM_LEFT: 3, VEHICLE_FROM_RIGHT: 3, VEHICLE_APPROACHING: 3,
+    # Said the moment the sentence playing ends; the camera's vehicle cuts in.
+    **{t: 2 for t in _MOVER_SENTENCES},
     **{t: 1 for t in STEER_PAST.values()},
     **{t: 1 for t in _BETWEEN},
+    TURN_SLIGHT_LEFT: 1, TURN_SLIGHT_RIGHT: 1,
     **{t: 2 for t in STEER_IN_FRONT.values()},
 }
 _BLOCKED = 2
@@ -546,6 +597,17 @@ def _size_range(cls: str, box: Tuple[float, float, float, float]) -> Tuple[float
     return focal_px * _object_height_m(cls) / max(1.0, y2 - y1), cut
 
 
+def _box_range(det: Dict[str, Any], cls: str,
+               box: Tuple[float, float, float, float]) -> Tuple[float, bool]:
+    """(range in metres, cut off?) of a front detection: the ToF's measured distance of the
+    nearest surface in its box (utils/depth_fusion.py) with TOF_USE_DISTANCE, else the
+    box-size estimate. A measured distance is never "cut off"."""
+    depth = det.get("depth") if TOF_USE_DISTANCE else None
+    if isinstance(depth, dict) and isinstance(depth.get("distance_m"), (int, float)):
+        return float(depth["distance_m"]), False
+    return _size_range(cls, box)
+
+
 def _range_matches(est_m: float, front_m: Optional[float], cut: bool) -> bool:
     """Is a camera thing at `est_m` (by its size) plausibly what the rangefinders range at `front_m`?"""
     if front_m is None or front_m <= 0:
@@ -576,7 +638,7 @@ def front_object(camera_state: Optional[Dict[str, Any]],
         if (y2 - y1) < SIMPLE_OBJECT_MIN_HEIGHT_FRAC * height:
             continue                           # far away
         if front_ft is not None:
-            est, cut = _size_range(str(det.get("class_name", "")).lower(), (x1, y1, x2, y2))
+            est, cut = _box_range(det, str(det.get("class_name", "")).lower(), (x1, y1, x2, y2))
             if not _range_matches(est, front_ft * MM_PER_FT / 1000.0, cut):
                 continue                       # not the thing being ranged
         rank = (str(det.get("class_name", "")).lower() in SIMPLE_VEHICLE_CLASSES,
@@ -608,7 +670,7 @@ def ranged_vehicle(camera_state: Optional[Dict[str, Any]], now: float,
         h = y2 - y1
         if x2 < lo or x1 > hi or h < SIMPLE_OBJECT_MIN_HEIGHT_FRAC * _QUAD_H:
             continue
-        range_m, cut = _size_range(cls, (x1, y1, x2, y2))
+        range_m, cut = _box_range(det, cls, (x1, y1, x2, y2))
         if not _range_matches(range_m, front_m, cut):
             continue
         if best is None or h > best[0]:
@@ -834,7 +896,7 @@ def camera_path(camera_state: Optional[Dict[str, Any]], now: float,
         if x2 <= x1 or y2 <= y1:
             continue
         ppm_px = (y2 - y1) / _object_height_m(cls)          # pixels per metre
-        range_m, cut = _size_range(cls, (x1, y1, x2, y2))
+        range_m, cut = _box_range(det, cls, (x1, y1, x2, y2))
         if range_m > SIMPLE_STEER_RANGE_M and not cut:
             continue
         things.append({"word": word, "x1": x1 / _QUAD_W, "x2": x2 / _QUAD_W,
@@ -918,10 +980,92 @@ def vehicle_move_blocked(walk_decision: Optional[Dict[str, Any]],
     """True when the move a vehicle warning would give — AWAY from the vehicle's side — has under SIMPLE_STEER_SIDE_MIN_FT of room, or no reading at all (decided 2026-09-29, audit NEW-049)."""
     if vehicle not in ("left", "right"):
         return False
-    move = "right" if vehicle == "left" else "left"
+    return _step_blocked(walk_decision, lidar_state, fresh,
+                         "right" if vehicle == "left" else "left")
+
+
+def _step_blocked(walk_decision: Optional[Dict[str, Any]],
+                  lidar_state: Optional[Dict[str, Any]], fresh: bool, move: str) -> bool:
+    """True when a step `move` (left/right) has under SIMPLE_STEER_SIDE_MIN_FT of room, or no reading."""
     if not ((walk_decision or {}).get("directions") or {}).get(move):
         return True                                   # nothing reports that side
     return _side_room(walk_decision, lidar_state, fresh, move) < SIMPLE_STEER_SIDE_MIN_FT
+
+
+_FT_PER_M = 1000.0 / MM_PER_FT
+
+
+def _in_ft(metres: Any) -> Optional[float]:
+    """Metres (or m/s) as feet (or ft/s), to 0.1; None stays None."""
+    return round(float(metres) * _FT_PER_M, 1) if isinstance(metres, (int, float)) else None
+
+
+_PERSON_CLASSES = frozenset(c.lower() for c, w in SIMPLE_NAMED_OBJECTS.items() if w == "Person")
+
+
+def _camera_word(camera_state: Optional[Dict[str, Any]], now: float,
+                 bearing_deg: float) -> Optional[str]:
+    """"Person" / "Vehicle" when the front camera has one at this bearing (LIDAR_MOVERS_CAMERA_MATCH_DEG), else None."""
+    cam = camera_state or {}
+    if abs(bearing_deg) > SIMPLE_CAMERA_HFOV_DEG / 2.0 or not _camera_sees(cam, now):
+        return None
+    focal_px = (_QUAD_W / 2.0) / math.tan(math.radians(SIMPLE_CAMERA_HFOV_DEG) / 2.0)
+    best = None
+    for det in (cam.get("front") or {}).get("detections") or []:
+        cls = str(det.get("class_name", "")).lower()
+        word = ("Vehicle" if cls in SIMPLE_VEHICLE_CLASSES else
+                "Person" if cls in _PERSON_CLASSES else None)
+        if word is None or float(det.get("confidence") or 0.0) < SIMPLE_OBJECT_MIN_CONF:
+            continue
+        try:
+            x1, _y1, x2, _y2 = (float(v) for v in det.get("bbox") or ())
+        except (TypeError, ValueError):
+            continue
+        off = abs(math.degrees(math.atan(((x1 + x2) / 2.0 - _QUAD_W / 2.0) / focal_px))
+                  - bearing_deg)
+        if off <= LIDAR_MOVERS_CAMERA_MATCH_DEG and (best is None or off < best[0]):
+            best = (off, word)
+    return best[1] if best else None
+
+
+def mover_sentence(threat: Optional[Dict[str, Any]],
+                   walk_decision: Optional[Dict[str, Any]],
+                   lidar_state: Optional[Dict[str, Any]], fresh: bool,
+                   camera_state: Optional[Dict[str, Any]], now: float
+                   ) -> Tuple[Optional[str], str]:
+    """(the sentence for the LiDAR's most urgent mover, why), or (None, "")."""
+    if not threat or threat.get("mode") not in ("crossing", "toward", "behind"):
+        return None, ""
+    seen = _camera_word(camera_state, now, float(threat.get("bearing_deg") or 0.0))
+    word = seen or threat.get("word")
+    if word not in _MOVER_WORDS:
+        return None, ""
+    mode, side = threat["mode"], threat.get("side")
+    ft = lambda key: float(threat.get(key) or 0.0) * _FT_PER_M      # metres -> feet
+    if threat.get("source") == "radar":
+        why = (f"{word.lower()}{' (camera)' if seen else ''} only the radar hears, closing "
+               f"{ft('closing_mps'):.1f} ft/s, {ft('distance_m'):.1f} ft away "
+               f"where the LiDAR sees nothing — reaches you in {threat.get('ttc_s', 0):.1f} s")
+    else:
+        why = (f"{word.lower()}{' (camera)' if seen else ''} moving {ft('own_speed_mps'):.1f} ft/s, "
+               f"{ft('distance_m'):.1f} ft away, passes within {ft('miss_m'):.1f} ft "
+               f"in {threat.get('ttc_s', 0):.1f} s")
+    if mode == "crossing":
+        return MOVER_CROSSING.get((word, side)), f"{why} — crossing from your {side}: stop, let it pass"
+    # Step away from the side it will pass on; when it comes dead centre, to the roomier side.
+    away = {"left": "right", "right": "left"}.get(threat.get("pass_side"))
+    options = ([away] if away else
+               sorted(("left", "right"),
+                      key=lambda s: -_side_room(walk_decision or {}, lidar_state, fresh, s)))
+    move = next((s for s in options
+                 if not _step_blocked(walk_decision, lidar_state, fresh, s)), None)
+    where = "ahead, coming at you" if mode == "toward" else "behind you"
+    room = f": step {move}" if move else ": no room to step aside"
+    if mode == "toward":
+        text = MOVER_TOWARD.get((word, move)) if move else MOVER_TOWARD_STOP.get(word)
+    else:
+        text = MOVER_BEHIND.get((word, move)) if move else MOVER_BEHIND_ONLY.get(word)
+    return text, f"{why} — {where}{room}"
 
 
 def _steer_text(steer: Optional[Dict[str, Any]], blocked: bool) -> Optional[str]:
@@ -934,6 +1078,10 @@ def _steer_text(steer: Optional[Dict[str, Any]], blocked: bool) -> Optional[str]
     if steer.get("kind") == "between":
         return (BETWEEN_LEFT if turn == "left" else BETWEEN_RIGHT if turn == "right"
                 else BETWEEN_STRAIGHT)
+    if steer.get("kind") == "route":
+        named = STEER_PAST.get((word, steer.get("where"), turn)) if word else None
+        return named or (TURN_SLIGHT_LEFT if turn == "left" else
+                         TURN_SLIGHT_RIGHT if turn == "right" else None)
     return STEER_PAST.get((word, steer.get("where"), turn))
 
 
@@ -964,12 +1112,15 @@ def _sentence(blocked: bool, near: bool, glass: bool, wall: bool,
               vehicle: Optional[str] = None, vehicle_ahead: bool = False,
               steer: Optional[Dict[str, Any]] = None,
               vehicle_no_room: bool = False,
-              glass_side: Optional[str] = None) -> str:
+              glass_side: Optional[str] = None,
+              mover: Optional[str] = None) -> str:
     """A vehicle coming at the user, above everything."""
     if vehicle:
         if vehicle_no_room:
             return VEHICLE_APPROACHING
         return VEHICLE_FROM_LEFT if vehicle == "left" else VEHICLE_FROM_RIGHT
+    if mover:                       # already a sentence (mover_sentence)
+        return mover
     if blocked:
         if glass:
             return BLOCKED_GLASS
@@ -986,6 +1137,8 @@ def _sentence(blocked: bool, near: bool, glass: bool, wall: bool,
             return past
         if obj in OBJECT_IN_FRONT:
             return OBJECT_IN_FRONT[obj]
+        if side == "around":
+            return TURN_AROUND
         return TURN_LEFT if side != "right" else TURN_RIGHT
     if vehicle_ahead:
         return VEHICLE_AHEAD
@@ -1017,7 +1170,8 @@ def decide(walk_decision: Optional[Dict[str, Any]] = None,
            approach: Optional[_Approach] = None,
            motion: Optional[Dict[str, Any]] = None,
            vehicles: Optional[_Vehicles] = None,
-           previous_steer: Optional[str] = None) -> Dict[str, Any]:
+           previous_steer: Optional[str] = None,
+           movers: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """What this one poll's readings say, and the sentence they map to."""
     walk_decision = walk_decision or {}
     now = time.time() if now is None else now
@@ -1146,6 +1300,28 @@ def decide(walk_decision: Optional[Dict[str, Any]] = None,
     if tight_turn:
         side = tight_turn
 
+    # The route planner (advisory): the way through everything sensed, now and as things move.
+    kalman = (movers or {}).get("kalman") or {}
+    route = None
+    if ROUTE_PLANNER_ENABLED and fresh:
+        try:
+            from utils.route_planner import get_planner
+            g: Dict[str, Any] = {}
+            if glass and isinstance(front.get("radar_ft"), (int, float)):
+                g["ahead_m"] = float(front["radar_ft"]) * MM_PER_FT / 1000.0
+            elif beside and isinstance(beside_ft, (int, float)):
+                g = {"side": beside, "side_m": float(beside_ft) * MM_PER_FT / 1000.0}
+            route = get_planner().plan(lidar_state, radar_state, camera_state, kalman,
+                                       motion, g, now)
+        except Exception as e:
+            route = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    route_ok = bool(route and route.get("ok"))
+    route_turn = (("around" if route["around"] else route["side"])
+                  if route_ok and blocked else None)
+    device_side = side
+    if ROUTE_PLANNER_SPEAK and route_turn and not tight_turn:
+        side = route_turn
+
     views = walk_decision.get("directions") or {}
     side_room: Dict[str, Optional[float]] = {}
     for s in ("left", "right"):
@@ -1160,12 +1336,82 @@ def decide(walk_decision: Optional[Dict[str, Any]] = None,
     steer = camera_path(camera_state, now, previous_steer) if not (glass or wall) else None
     if steer and not _steer_allowed(steer, side_room, blocked, front_ft, side):
         steer = None
+    # Past something on the way that a small turn clears (or a moving thing that will be there).
+    route_steer = None
+    if (route_ok and not blocked and not glass and route["side"] and route["speed"] != "wait"
+            and abs(route["head_deg"]) <= ROUTE_STEER_MAX_DEG
+            and (route["straight_m"] < ROUTE_NEED_M or route["by_mover"])):
+        word, where = None, "ahead"
+        blk = str(route.get("blocker") or "")
+        cause = route.get("cause") or {}
+        if route["by_mover"] and cause:
+            word = cause.get("word") if cause.get("word") in _WORDS else None
+            y = float(cause.get("y_m") or 0.0)
+            where = "right" if y > 0.2 else "left" if y < -0.2 else "ahead"
+        elif blk.startswith("camera:"):
+            word = blk.split(":", 1)[1]
+        if (where, route["side"]) in (("left", "left"), ("right", "right")):
+            where = "ahead"                    # passing it on its own side: "X ahead, turn slightly"
+        route_steer = {"kind": "route", "turn": route["side"], "word": word, "where": where,
+                       "range_m": route["straight_m"], "cut": False}
+        if not _steer_allowed(route_steer, side_room, blocked, front_ft, side):
+            route_steer = None
+    if ROUTE_PLANNER_SPEAK and steer is None and route_steer is not None:
+        steer = route_steer
     no_room_by_side = {s: vehicle_move_blocked(walk_decision, lidar_state, fresh, s)
                        for s in ("left", "right")}
     vehicle_no_room = bool(vehicle and no_room_by_side.get(vehicle))
+    # The soonest of the LiDAR's mover and the radar's (where the LiDAR cannot see it). The
+    # Kalman tracker (utils/motion_tracker), when it runs, stands in for lidar_movers.
+    radar = (movers or {}).get("radar") or {}
+    kalman_live = bool(MOTION_TRACKER_WARN and kalman and not kalman.get("stale")
+                       and kalman.get("t") is not None)
+    lidar_threat = (kalman.get("threat") if kalman_live else
+                    (movers or {}).get("threat") if not (movers or {}).get("stale") else None)
+    threats = [t for t in (lidar_threat,
+                           radar.get("threat") if not radar.get("stale") else None) if t]
+    # The planner says wait (something will cross the way), step aside (something is coming
+    # at the spot the user stands on) or, for a vehicle, slow down: the mover sentence for it
+    # ("... approaching from ..., stop"), if no closest approach already gives one.
+    cause_word = ((route or {}).get("cause") or {}).get("word")
+    if (route_ok and not threats and route.get("cause")
+            and (route["speed"] == "wait" or route["step_aside"]
+                 or (route["speed"] == "slow" and cause_word == "Vehicle"))):
+        c = route["cause"]
+        brg = float(c.get("bearing_deg") or 0.0)
+        speed = max(0.1, float(c.get("own_speed_mps") or 0.0))
+        if route["step_aside"]:
+            mode = "behind" if abs(brg) > 135.0 else "toward"
+            away = route["side"]
+            passing = "left" if away == "right" else "right" if away == "left" else None
+        else:
+            mode, passing = "crossing", None
+        threats = [{**c, "source": "route", "mode": mode,
+                    "side": "left" if brg < 0 else "right", "pass_side": passing,
+                    "ttc_s": round(float(c.get("distance_m") or 0.0) / speed, 1), "miss_m": 0.0}]
+    threat = min(threats, key=lambda t: float(t.get("ttc_s") or 1e9)) if fresh and threats else None
+    would_say, mover_why = mover_sentence(threat, walk_decision, lidar_state, fresh,
+                                          camera_state, now)
+    mover = would_say if LIDAR_MOVERS_SPEAK else None
+    route_would, route_why = None, ""
+    if route_ok and not ROUTE_PLANNER_SPEAK:
+        if blocked and route_turn and route_turn != device_side and not tight_turn:
+            route_would = TURN_AROUND if route_turn == "around" else (
+                TURN_LEFT if route_turn == "left" else TURN_RIGHT)
+            route_why = (f"route: the way {route['side'] or 'ahead'} is clear "
+                         f"{route['dist_m']:.1f} m (the device turns {device_side})"
+                         if route_turn != "around" else "route: no way 1 m clear anywhere ahead")
+        elif route_steer is not None and steer is not route_steer:
+            route_would = _steer_text(route_steer, False)
+            route_why = (f"route: {route.get('blocker') or 'something'} "
+                         f"{route['straight_m']:.1f} m ahead in the way; "
+                         f"{abs(route['head_deg'])} deg {route['side']} is clear "
+                         f"{route['dist_m']:.1f} m")
     text = _sentence(blocked, near, glass, wall, side, drift, obj, close,
-                     vehicle, vehicle_ahead, steer, vehicle_no_room, glass_side)
-    if text in _VEHICLE_APPROACH:
+                     vehicle, vehicle_ahead, steer, vehicle_no_room, glass_side, mover)
+    if text in _MOVER_SENTENCES:
+        rule, why = "mover_approaching", mover_why
+    elif text in _VEHICLE_APPROACH:
         rule = "vehicle_approaching"
         why = f"{seen['class']} approaching from your {vehicle}" + (
             f", contact in ~{seen['ttc_s']:.0f} s" if seen.get("ttc_s") else "") + (
@@ -1222,6 +1468,27 @@ def decide(walk_decision: Optional[Dict[str, Any]] = None,
             "vehicle_no_room_by_side": no_room_by_side,
             "glass_side": glass_side, "glass_side_ft": beside_ft,
             "object": obj, "front_ft": front_ft, "on_line_ft": on_line_ft,
+            "mover": ({**threat, "distance_ft": _in_ft(threat.get("distance_m")),
+                       "would_say": would_say, "spoken": bool(LIDAR_MOVERS_SPEAK)}
+                      if threat else None),
+            "mover_text": mover, "mover_reason": mover_why,
+            # For the dashboard, in FEET like every figure a person reads there.
+            "movers": [{**{k: m.get(k) for k in ("word", "x_m", "y_m", "vx_mps", "vy_mps", "alert")},
+                        "distance_ft": _in_ft(m.get("distance_m")),
+                        "speed_ft_s": _in_ft(m.get("own_speed_mps"))}
+                       for m in (movers or {}).get("tracks") or []] if fresh else [],
+            "radar_movers": [{**{k: m.get(k) for k in ("bearing_deg", "distance_m", "lidar_sees", "alert")},
+                              "distance_ft": _in_ft(m.get("distance_m")),
+                              "closing_ft_s": _in_ft(m.get("closing_mps"))}
+                             for m in radar.get("tracks") or [] if m.get("confirmed")] if fresh else [],
+            "route": route, "route_would_say": route_would, "route_reason": route_why,
+            # The Kalman tracks (utils/motion_tracker): own speed and how sure, in FEET.
+            "tracks": [{"id": m.get("id"), "word": m.get("word"), "x_m": m.get("x_m"),
+                        "y_m": m.get("y_m"), "distance_ft": _in_ft(m.get("distance_m")),
+                        "speed_ft_s": _in_ft(m.get("speed")),
+                        "speed_sd_ft_s": _in_ft(m.get("speed_sd")),
+                        "sources": m.get("sources"), "alert": m.get("alert")}
+                       for m in kalman.get("tracks") or []] if fresh and kalman_live else [],
             "reason": why}
 
 
@@ -1287,6 +1554,9 @@ class _World:
         self.vehicle_side: Optional[str] = None
         self.vehicle_careful = _Hold(SIMPLE_ALERT_CONFIRM_S, SIMPLE_OBJECT_RELEASE_S,
                                      SIMPLE_ALERT_GAP_S)
+        # A LiDAR mover's sentence, kept while its hold lasts (LIDAR_MOVERS_SPEAK).
+        self.mover = _Hold(*timing)
+        self.mover_text: Optional[str] = None
         self.steer = _Hold(SIMPLE_ALERT_CONFIRM_S, SIMPLE_OBJECT_RELEASE_S,
                            SIMPLE_ALERT_GAP_S)
         self.steer_plan: Optional[Dict[str, Any]] = None
@@ -1351,6 +1621,11 @@ class _World:
             self.vehicle_side = None if not self.vehicle.active else self.vehicle_side
         vehicle_ahead = (self.vehicle_careful.update(bool(raw.get("vehicle_ahead")), now)
                          and vehicle is None)
+        if raw.get("mover_text"):
+            self.mover_text = raw["mover_text"]
+        mover = self.mover_text if self.mover.update(bool(raw.get("mover_text")), now) else None
+        if not self.mover.active:
+            self.mover_text = None
         side_seen = bool(raw.get("close") or raw.get("drift") or raw.get("close_band"))
         on_line = raw.get("on_line_ft")
         line_blocked = on_line is not None and on_line < WALK_BLOCK_FT + SIMPLE_BAND_MARGIN_FT
@@ -1383,7 +1658,7 @@ class _World:
         if blocked:
             if self._blocked_since is None:
                 self._blocked_since = now
-            if raw["blocked"] and raw.get("side") in ("left", "right"):
+            if raw["blocked"] and raw.get("side") in ("left", "right", "around"):
                 self.side = raw["side"]
         else:
             self.side = None
@@ -1400,7 +1675,7 @@ class _World:
                          vehicle, vehicle_ahead, steer,
                          vehicle_no_room=bool((raw.get("vehicle_no_room_by_side")
                                                or {}).get(vehicle)),
-                         glass_side=glass_side)
+                         glass_side=glass_side, mover=mover)
         self._last_text = text
         hazard = _LEVEL.get(text, 0) >= 1
         if hazard and not self._in_episode:
@@ -1433,10 +1708,20 @@ class _World:
         self.__init__()
 
 
-class _GlassNotice:
-    """Whether the wearer has been told the front radar is lost, or back."""
+class _SensorNotice:
+    """Whether the wearer has been told a sensor is lost, or back ("Glass sensor off",
+    "Camera off", ...): a loss is told once it has lasted `loss_s`, a recovery once it has
+    held `recover_s` (doubling with each loss told, up to `recover_max_s`), and nothing is
+    told inside `grace_s` of start-up while the sensor is still coming up."""
 
-    def __init__(self):
+    def __init__(self, off: str, on: str, loss_s: float, recover_s: float,
+                 recover_max_s: float, grace_s: float):
+        self._off, self._on = off, on
+        self._loss_s, self._recover_s = loss_s, recover_s
+        self._recover_max_s, self._grace_s = recover_max_s, grace_s
+        self._clear()
+
+    def _clear(self) -> None:
         self.announced_ok = True
         self._since: Optional[float] = None
         self._first: Optional[float] = None     # first poll judged
@@ -1445,11 +1730,10 @@ class _GlassNotice:
         self._ok_since: Optional[float] = None  # coverage unbroken since
 
     def _recover_need(self) -> float:
-        return min(SIMPLE_GLASS_RECOVER_CONFIRM_S * 2 ** max(self._losses - 1, 0),
-                   SIMPLE_GLASS_RECOVER_MAX_S)
+        return min(self._recover_s * 2 ** max(self._losses - 1, 0), self._recover_max_s)
 
     def pending(self, ok: bool, now: float, settling: bool = True) -> Optional[str]:
-        """`settling`: the radar is still coming up (front_glass_coverage) — discovery has not reported, or an owed front board is starting or calibrating."""
+        """`settling`: the sensor is still coming up (e.g. front_glass_coverage: discovery has not reported, or an owed front board is starting or calibrating)."""
         if self._first is None or now < self._first:
             self._first = now
         if ok:
@@ -1457,7 +1741,7 @@ class _GlassNotice:
             if self._ok_since is None or now < self._ok_since:
                 self._ok_since = now
             if (self.announced_ok and self._losses
-                    and now - self._ok_since >= SIMPLE_GLASS_RECOVER_MAX_S):
+                    and now - self._ok_since >= self._recover_max_s):
                 self._losses = 0                # a long quiet run: start afresh
         else:
             self._ok_since = None
@@ -1469,17 +1753,17 @@ class _GlassNotice:
         if ok:
             need = self._recover_need()
         else:
-            need = SIMPLE_GLASS_LOSS_CONFIRM_S
+            need = self._loss_s
             if (not self._ever_ok and settling
-                    and now - self._first < SIMPLE_GLASS_STARTUP_GRACE_S - 1e-6):
-                return None                     # the boards are still coming up
+                    and now - self._first < self._grace_s - 1e-6):
+                return None                     # still coming up
         if now - self._since >= need - 1e-6:
-            return GLASS_SENSOR_ON if ok else GLASS_SENSOR_OFF
+            return self._on if ok else self._off
         return None
 
     def said(self, text: str) -> None:
-        self.announced_ok = text == GLASS_SENSOR_ON
-        if text == GLASS_SENSOR_OFF:
+        self.announced_ok = text == self._on
+        if text == self._off:
             self._losses += 1
         self._since = None
 
@@ -1487,6 +1771,32 @@ class _GlassNotice:
         return {"announced": "on" if self.announced_ok else "off",
                 "changing_since": self._since,
                 "recover_after_s": self._recover_need()}
+
+    def reset(self) -> None:
+        self._clear()
+
+
+class _MoverShadow:
+    """What the LiDAR mover warning WOULD say while it is not spoken (LIDAR_MOVERS_SPEAK False): held as a spoken one is, logged once when an approach is confirmed, then at most every LIDAR_MOVERS_REPEAT_S while it lasts."""
+
+    def __init__(self):
+        self.hold = _Hold(SIMPLE_ALERT_CONFIRM_S, SIMPLE_CLEAR_CONFIRM_S, SIMPLE_ALERT_GAP_S)
+        self.text: Optional[str] = None
+        self.logged_at: Optional[float] = None
+
+    def update(self, text: Optional[str], now: float) -> Optional[str]:
+        """The sentence to log as "would say" on this poll, or None."""
+        if text:
+            self.text = text
+        if not self.hold.update(bool(text), now):
+            if not self.hold.active:
+                self.text, self.logged_at = None, None   # that approach is over
+            return None
+        if (self.logged_at is not None
+                and 0.0 <= now - self.logged_at < LIDAR_MOVERS_REPEAT_S):
+            return None
+        self.logged_at = now
+        return self.text
 
     def reset(self) -> None:
         self.__init__()
@@ -1542,10 +1852,11 @@ class _Gate:
 
         arrived = (self._spoken in (DRIFT_LEFT, DRIFT_RIGHT)
                    and text in (NEAR_LEFT, NEAR_RIGHT))
-        vehicle_news = (text in _VEHICLE_SENTENCES
-                        and self._spoken not in _VEHICLE_SENTENCES)
-        after_vehicle = (self._spoken in _VEHICLE_SENTENCES
-                         and text not in _VEHICLE_SENTENCES and level >= _BLOCKED)
+        # A camera vehicle or a LiDAR mover coming at the user is news, and so is its passing.
+        vehicle_news = (text in _APPROACHING
+                        and self._spoken not in _APPROACHING)
+        after_vehicle = (self._spoken in _APPROACHING
+                         and text not in _APPROACHING and level >= _BLOCKED)
         offline_news = text == SENSORS_OFFLINE and self._spoken != SENSORS_OFFLINE
         # Something on the path after a wall beside you is news, said once that sentence ends (2026-10-01).
         path_news = self._spoken in _SIDE_WALL + _GLASS_BESIDE and text in _PATH_AHEAD
@@ -1566,8 +1877,8 @@ class _Gate:
             upgrade = (self._spoken in (TURN_LEFT, TURN_RIGHT)
                        and text not in (TURN_LEFT, TURN_RIGHT)
                        and level == self._level)
-            upgrade = upgrade or flipped or (self._spoken in _VEHICLE_SENTENCES
-                                             and text not in _VEHICLE_SENTENCES)
+            upgrade = upgrade or flipped or (self._spoken in _APPROACHING
+                                             and text not in _APPROACHING)
             upgrade = upgrade or self._spoken == SENSORS_OFFLINE
             if not upgrade:
                 need = SIMPLE_SETTLE_S
@@ -1591,7 +1902,7 @@ class _Gate:
             self._status_busy_until = now
 
     def admit_status(self, text: str, now: float) -> Tuple[bool, int, str]:
-        """Admit a STATUS notice ("Glass sensor off/on"): its own cue_seq, and nothing else about the gate changes (audit pass 2, NEW-028)."""
+        """Admit a STATUS notice ("Glass sensor off/on", "Camera off/on"): its own cue_seq, and nothing else about the gate changes (audit pass 2, NEW-028)."""
         if self._has_spoken and now < self._spoken_at:
             self._busy_until = min(self._busy_until, now)      # clock stepped back
         self._unstep_status(now)
@@ -1654,7 +1965,14 @@ class _Gate:
 _lock = threading.Lock()
 _world = _World()
 _gate = _Gate()
-_glass = _GlassNotice()
+_glass = _SensorNotice(GLASS_SENSOR_OFF, GLASS_SENSOR_ON, SIMPLE_GLASS_LOSS_CONFIRM_S,
+                       SIMPLE_GLASS_RECOVER_CONFIRM_S, SIMPLE_GLASS_RECOVER_MAX_S,
+                       SIMPLE_GLASS_STARTUP_GRACE_S)
+_camera = _SensorNotice(CAMERA_OFF, CAMERA_ON, SIMPLE_CAMERA_LOSS_CONFIRM_S,
+                        SIMPLE_CAMERA_RECOVER_CONFIRM_S, SIMPLE_CAMERA_RECOVER_MAX_S,
+                        SIMPLE_CAMERA_STARTUP_GRACE_S)
+_shadow = _MoverShadow()
+_route_shadow = _MoverShadow()      # the route planner's would-say (ROUTE_PLANNER_SPEAK False)
 
 
 def _steer_reason(text: str, steer: Optional[Dict[str, Any]]) -> str:
@@ -1672,10 +1990,12 @@ def _steer_reason(text: str, steer: Optional[Dict[str, Any]]) -> str:
 def _reason(text: str, raw: Dict[str, Any]) -> str:
     """The reason for the sentence actually chosen."""
     if (not text or text == raw.get("instruction") or text == SENSORS_OFFLINE
-            or text in _GLASS_NOTICES):
+            or text in _STATUS_NOTICES):
         return raw.get("reason", "")
     if text in _STEER_INFO:
         return _steer_reason(text, raw.get("steer"))
+    if text in _MOVER_SENTENCES:
+        return raw.get("mover_reason") or "something moving is coming at you"
     if text == VEHICLE_APPROACHING:
         return "vehicle approaching — no room to step aside"
     if text in _VEHICLE_APPROACH:
@@ -1696,6 +2016,8 @@ def _reason(text: str, raw: Dict[str, Any]) -> str:
         return "path ahead is clear"
     if text in (TURN_LEFT, TURN_RIGHT):
         return "front blocked by an obstacle"
+    if text == TURN_AROUND:
+        return "front blocked, and no way 1 m clear anywhere ahead"
     thing = ("glass" if "glass" in text.lower() and text in (BLOCKED_GLASS, GLASS_AHEAD)
              else "wall" if text in (BLOCKED_WALL, WALL_AHEAD)
              else text.rsplit(" ", 2 if text.endswith("in front") else 1)[0].lower())
@@ -1711,14 +2033,16 @@ def guidance(walk_decision: Optional[Dict[str, Any]] = None,
              radar_state: Optional[Dict[str, Any]] = None,
              camera_state: Optional[Dict[str, Any]] = None,
              motion: Optional[Dict[str, Any]] = None,
-             hold_lidar_absent: bool = False) -> Dict[str, Any]:
+             hold_lidar_absent: bool = False,
+             movers: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The sentence AND whether to announce it."""
     now = time.time() if now is None else now
     with _lock:
         raw = decide(walk_decision, lidar_state, now, previous_side=_world.side,
                      radar_state=radar_state, camera_state=camera_state,
                      approach=_world.approach, motion=motion,
-                     vehicles=_world.vehicles, previous_steer=_world.steer_turn)
+                     vehicles=_world.vehicles, previous_steer=_world.steer_turn,
+                     movers=movers)
         naming = False
         offline = _world.offline(raw, lidar_state, now)
         stale = (not offline and lidar_state is not None
@@ -1745,15 +2069,26 @@ def guidance(walk_decision: Optional[Dict[str, Any]] = None,
             text = ""
         else:
             text, naming = _world.update(raw, now)
-        notice, cover = None, {}
+        notice, cover, notifier = None, {}, None
         if radar_state is not None:
             try:
                 from utils.sensor_fusion import front_glass_coverage
                 cover = front_glass_coverage(radar_state)
                 notice = _glass.pending(bool(cover["ok"]), now,
                                         settling=bool(cover.get("settling", True)))
+                notifier = _glass if notice else None
             except Exception:
                 notice, cover = None, {}
+        if camera_state is not None:
+            try:
+                from utils.sensor_fusion import front_camera_coverage
+                cam_cover = front_camera_coverage(camera_state, now)
+                cam_notice = _camera.pending(bool(cam_cover["ok"]), now,
+                                             settling=bool(cam_cover.get("settling", True)))
+                if cam_notice and not notice:           # the glass notice goes first
+                    notice, cover, notifier = cam_notice, cam_cover, _camera
+            except Exception:
+                pass
         if text and text not in ALLOWED:
             text = ""               # never hand the delivery layer a stray line
         if text:
@@ -1768,16 +2103,18 @@ def guidance(walk_decision: Optional[Dict[str, Any]] = None,
         elif status:
             speak, cue_seq, quiet = _gate.admit_status(status, now)
             if speak:
-                _glass.said(status)
+                notifier.said(status)
                 text = status
                 raw = {**raw, "rule": "status",
-                       "reason": (cover.get("reason") or "front radar coverage restored")}
+                       "reason": (cover.get("reason")
+                                  or ("front camera can see again" if notifier is _camera
+                                      else "front radar coverage restored"))}
         elif raw["rule"] == "stale":
             speak, cue_seq, quiet = False, _gate.state()["cue_seq"], raw["reason"]
         elif text in _WALK_ON and (
                 raw.get("blocked")
                 or (raw.get("near") and raw.get("instruction") not in _WALK_ON)
-                or raw.get("instruction") in _VEHICLE_SENTENCES):
+                or raw.get("instruction") in _APPROACHING):
             speak, cue_seq = False, _gate.state()["cue_seq"]
             quiet = "confirming — the newest reading is not clear"
         elif _world.at_crossing(at_crossing, now) and text in _WALK_ON:
@@ -1792,13 +2129,18 @@ def guidance(walk_decision: Optional[Dict[str, Any]] = None,
         if raw["rule"] in ("waiting", "stale"):
             quiet = quiet if (hold and not through_hold) else raw["reason"]
         announced = _gate.counted
+        shadow = (_shadow.update((raw.get("mover") or {}).get("would_say"), now)
+                  if not LIDAR_MOVERS_SPEAK and not hold else None)
+        route_shadow = (_route_shadow.update(raw.get("route_would_say"), now)
+                        if not ROUTE_PLANNER_SPEAK and not hold else None)
 
     level = _LEVEL.get(text, -1)
     return {
         "instruction": text,
         "action": _ACTION.get(text, "unknown"),
         "rule": ("offline" if text == SENSORS_OFFLINE else
-                 "status" if text in _GLASS_NOTICES else
+                 "status" if text in _STATUS_NOTICES else
+                 "mover_approaching" if text in _MOVER_SENTENCES else
                  "vehicle_approaching" if text in _VEHICLE_APPROACH else
                  "vehicle_ahead" if text == VEHICLE_AHEAD else
                  "steering" if _LEVEL.get(text) == 1 and text in _STEER_INFO else
@@ -1810,10 +2152,12 @@ def guidance(walk_decision: Optional[Dict[str, Any]] = None,
                  "clear" if text else raw["rule"]),
         "side": (_world.side if text in (TURN_LEFT, TURN_RIGHT) else
                  _STEER_INFO[text]["turn"] if text in _STEER_INFO else
+                 _MOVER_INFO[text]["move"] if text in _MOVER_INFO else
                  "left" if text in (DRIFT_LEFT, NEAR_LEFT, VEHICLE_FROM_LEFT, GLASS_LEFT) else
                  "right" if text in (DRIFT_RIGHT, NEAR_RIGHT, VEHICLE_FROM_RIGHT, GLASS_RIGHT)
                  else None),
         "obstacle": ("vehicle" if text in _VEHICLE_APPROACH + (VEHICLE_AHEAD,) else
+                     _MOVER_INFO[text]["word"].lower() if text in _MOVER_INFO else
                      (_STEER_INFO[text]["word"] or "").lower() or None
                      if text in _STEER_INFO else
                      "glass" if text in (BLOCKED_GLASS, GLASS_AHEAD) + _GLASS_BESIDE else
@@ -1824,9 +2168,16 @@ def guidance(walk_decision: Optional[Dict[str, Any]] = None,
                                     "wall", "drift", "close", "beside",
                                     "closing", "converging", "vehicle",
                                     "vehicle_ahead", "vehicles", "steer", "user_still", "glass_side",
-                                    "object", "front_ft")},
+                                    "object", "front_ft", "mover", "movers", "radar_movers",
+                                    "route", "route_would_say", "tracks")},
         "speak": speak, "cue_seq": cue_seq, "quiet_reason": quiet,
         "announced": announced,
+        # A LiDAR mover warning held and new on this poll, not spoken (LIDAR_MOVERS_SPEAK).
+        "mover_shadow": shadow,
+        "mover_shadow_reason": raw.get("mover_reason", "") if shadow else "",
+        # The route planner's turn or steer, held and new on this poll, not spoken (ROUTE_PLANNER_SPEAK).
+        "route_shadow": route_shadow,
+        "route_shadow_reason": raw.get("route_reason", "") if route_shadow else "",
     }
 
 
@@ -1836,9 +2187,17 @@ def reset() -> None:
         _gate.reset()
         _world.reset()
         _glass.reset()
+        _camera.reset()
+        _shadow.reset()
+        _route_shadow.reset()
+    try:
+        from utils.route_planner import get_planner
+        get_planner().reset()
+    except Exception:
+        pass
 
 
 def state() -> Dict[str, Any]:
     with _lock:
         return {**_gate.state(), "counted": _gate.counted,
-                "glass_sensor": _glass.state()}
+                "glass_sensor": _glass.state(), "camera": _camera.state()}

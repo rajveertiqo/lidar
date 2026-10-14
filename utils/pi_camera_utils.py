@@ -33,6 +33,14 @@ from config import (
     CAMERA_FRAME_TIMEOUT_S, CAMERA_STOP_TIMEOUT_S, CAMERA_RETRY_BACKOFF_S,
     HAILO_RETRY_BACKOFF_S, HAILO_INFER_FAIL_RESET_S,
     SIMPLE_CAMERA_FRESH_S,
+    CAMERA_SINGLE_CHANNEL, CAMERA_HAT_ADDRESS, CAMERA_HAT_CHANNEL, CAMERA_HAT_I2C_BUS,
+    CAMERA_CORRUPT_PCT, CAMERA_CORRUPT_RESTART_S, CAMERA_CORRUPT_RESTART_SHARE,
+    CAMERA_CORRUPT_WINDOW_S, CAMERA_FALLBACK_RESTARTS, CAMERA_FALLBACK_WINDOW_S,
+    CAMERA_FRONT_RESTART_S, CAMERA_CYCLE, CAMERA_CYCLE_FRONT_FRAMES,
+    CAMERA_VIEW_CHECK_S, CAMERA_DARK_LEVEL, CAMERA_DARK_CONFIRM_S,
+    CAMERA_BLUR_VAR, CAMERA_BLUR_CONFIRM_S,
+    CAMERA_STALL_REOPEN_S, CAMERA_STALL_REOPEN_MAX_S,
+    TOF_ENABLED,
 )
 
 from utils.freshness import is_fresh
@@ -50,6 +58,7 @@ current_frame_t = 0.0         # time.time() when current_frame was captured
 current_frame_simulated = False  # current_frame was FABRICATED (_simulate_thread);
                               # written with the frame, under frame_lock
 capture_stalled = False       # no frame for CAMERA_FRAME_TIMEOUT_S (see _capture_thread)
+_stall_reopens = 0            # times a stuck stream was closed and reopened
 _camera_source = "not started"  # "hardware", "simulated" or "unavailable: <why>"
 frame_lock = threading.Lock()
 running = True
@@ -98,9 +107,23 @@ detection_stats = {
 
 _VALID = ("front", "right", "left", "back")
 
+# The camera in use alone, or None for all four: CAMERA_SINGLE_CHANNEL, until the
+# 4-in-1 picture proves unusable and the front camera is fallen back to (_is_corrupt).
+_single = CAMERA_SINGLE_CHANNEL
+_fell_back = False
+# Cycling one camera at a time (CAMERA_CYCLE): which cameras the board has (found
+# once, at the first camera start) and the order they are visited in.
+_cycle = bool(CAMERA_CYCLE) and not CAMERA_SINGLE_CHANNEL
+_cycle_present = None
+_cycle_order = []                  # [(sector, frames), ...]
+current_quad_meta = {}             # cycling: sector -> {"t", "id"} of its newest frame
+_quad_times = {s: deque(maxlen=60) for s in ("front", "right", "left", "back")}
+
 
 def _pass_sectors(pass_no: int) -> tuple:
     """The cameras one detection pass runs, in order."""
+    if _single:
+        return (_single,)          # the other quadrants are black
     if not DETECTION_FRONT_EVERY_PASS:
         return _VALID
     others = tuple(s for s in _VALID if s != "front")
@@ -221,6 +244,14 @@ def stop_camera():
         cam, picam2 = picam2, None
     if cam is not None:
         _close_camera(cam)
+    # Leave the board showing all four cameras, as other tools (rpicam-hello,
+    # camera_web.py) expect; cycling or single mode left it on one.
+    try:
+        _write_board(0x00)
+        print("[CAMERA] board left showing all four cameras (2x2)")
+    except Exception as e:
+        print(f"[WARN] Camera board not reset to 2x2 ({type(e).__name__}: {e}) — "
+              f"run: i2cset -y -f {CAMERA_HAT_I2C_BUS} 0x24 0x24 0x00")
 
 
 def _close_camera(cam):
@@ -255,20 +286,261 @@ def _bounded(fn, timeout_s: float, what: str) -> bool:
 # ============== FRAME CAPTURE ==============
 
 _camera_lock = threading.Lock()
+_QUAD = (CAMERA_WIDTH // FRAME_GRID_COLS, CAMERA_HEIGHT // FRAME_GRID_ROWS)
+
+
+_hat = None                         # smbus2.SMBus to the board, kept open while cycling
+
+
+def _board_value(sector) -> int:
+    """The board register value that shows this camera alone."""
+    return 0x02 | CAMERA_HAT_CHANNEL[sector] << 4
+
+
+def _write_board(value) -> None:
+    """One write to the board's mode register (capture thread only)."""
+    global _hat
+    if _hat is None:
+        from smbus2 import SMBus
+        _hat = SMBus(CAMERA_HAT_I2C_BUS)
+    try:
+        _hat.write_byte_data(CAMERA_HAT_ADDRESS, 0x24, value)
+    except Exception:
+        _hat.close()
+        _hat = None
+        raise
+
+
+def _set_board_mode() -> None:
+    """Put the camera board in the mode the camera opens in (it forgets it on a power cycle)."""
+    if _single:
+        value, what = _board_value(_single), f"only the {_single} camera"
+    elif _cycle:
+        value = _board_value(_cycle_order[0][0])
+        what = "one camera at a time: " + ", ".join(s for s, _ in _cycle_order)
+    else:
+        value, what = 0x00, "all four cameras (2x2)"
+    try:
+        _write_board(value)
+        time.sleep(0.3)                          # let it switch before streaming
+        print(f"[CAMERA] board set to {what} (0x{value:02x})")
+    except Exception as e:
+        print(f"[WARN] Camera board mode not set ({type(e).__name__}: {e}) — wanted "
+              f"{what}; the picture may be the wrong layout")
+
+
+def _find_cameras(Picamera2) -> tuple:
+    """Which channels have a camera, from the 2x2 picture: a tile that is not black in a
+    clean picture, or bright on average (scrambled data spills ~25 into an empty tile).
+    Unsure means absent: visiting an empty channel stops the stream for good."""
+    _write_board(0x00)
+    time.sleep(0.3)
+    clean = {s: [] for s in _VALID}
+    seen = {s: [] for s in _VALID}
+    cam = Picamera2()
+    try:
+        cam.configure(cam.create_video_configuration(
+            main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"},
+            raw={"size": (CAMERA_WIDTH, CAMERA_HEIGHT)}, buffer_count=4))
+        cam.start()
+        time.sleep(1.0)
+        for _ in range(20):
+            frame = cam.capture_array("main")
+            for s in _VALID:
+                quad = _sector_slice(frame, s)
+                level = float(quad[::4, ::4].mean())
+                seen[s].append(level)
+                if _corrupt_pct(quad) <= CAMERA_CORRUPT_PCT:
+                    clean[s].append(level)
+    finally:
+        _close_camera(cam)
+    present = tuple(s for s in _VALID
+                    if (clean[s] and max(clean[s]) > 3.0)
+                    or (seen[s] and float(np.median(seen[s])) > 40.0))
+    print(f"[CAMERA] cameras on the board: {', '.join(present) or 'none'}"
+          + (f" (no camera: {', '.join(s for s in _VALID if s not in present)})"
+             if len(present) < len(_VALID) else ""))
+    return present
+
+
+def _schedule(present) -> list:
+    """The cycle: the front's CAMERA_CYCLE_FRONT_FRAMES frames before each other camera's one."""
+    others = [s for s in ("right", "left", "back") if s in present]
+    if "front" not in present:
+        return [(s, 1) for s in others]
+    if not others:
+        return [("front", 1)]
+    return [slot for s in others for slot in (("front", CAMERA_CYCLE_FRONT_FRAMES), (s, 1))]
+
+
+def _store_quad(sector, arr) -> None:
+    """Put one camera's new frame in its quadrant of a copy of the mosaic (readers may
+    still hold the old one), with its own capture time for the detector's freshness."""
+    global current_frame, current_frame_id, current_frame_t, current_frame_simulated
+    global current_quad_meta
+    now = time.time()
+    prev = current_frame                         # the capture thread is the only writer
+    if prev is None or prev.shape != (CAMERA_HEIGHT, CAMERA_WIDTH, 3):
+        mosaic = np.zeros((CAMERA_HEIGHT, CAMERA_WIDTH, 3), dtype=arr.dtype)
+    else:
+        mosaic = prev.copy()
+    row, col = FRAME_SECTOR_LAYOUT[sector]
+    qw, qh = _QUAD
+    mosaic[row * qh:(row + 1) * qh, col * qw:(col + 1) * qw] = arr[:qh, :qw]
+    meta = dict(current_quad_meta)
+    meta[sector] = {"t": now, "id": (meta.get(sector) or {}).get("id", 0) + 1}
+    with frame_lock:
+        current_frame = mosaic
+        current_frame_id += 1
+        current_frame_t = now
+        current_frame_simulated = False
+        current_quad_meta = meta
+    _quad_times[sector].append(time.monotonic())
+
+
+def _in_mosaic(arr):
+    """A single camera's frame, in its own quadrant of an otherwise black mosaic."""
+    mosaic = np.zeros((CAMERA_HEIGHT, CAMERA_WIDTH, 3), dtype=arr.dtype)
+    row, col = FRAME_SECTOR_LAYOUT[_single]
+    qw, qh = _QUAD
+    mosaic[row * qh:(row + 1) * qh, col * qw:(col + 1) * qw] = arr[:qh, :qw]
+    return mosaic
+
+
+_corrupt_lock = threading.Lock()
+_corrupt_hist = {s: deque() for s in ("front", "right", "left", "back")}   # (mono, bad)
+_reopen = threading.Event()         # set: the capture thread restarts the camera
+_want_single = None                 # ...as this camera alone ("front"), if set
+_front_restarts = deque()           # monotonic times the front camera forced a restart
+_last_reopen = float("-inf")        # monotonic
+
+
+def _corrupt_pct(quad) -> float:
+    """Speckle in one camera's picture, %: pixels (every 2nd) differing by more than 70
+    from BOTH neighbours, which a real scene, even blurred, almost never has and the
+    board's scrambled 4-in-1 data is full of. ~12 ms on a 960x540 quadrant."""
+    s = quad[::2, ::2]
+    if _cv2 is not None:
+        dx = _cv2.absdiff(s[:, 1:], s[:, :-1]).max(axis=2)
+        dy = _cv2.absdiff(s[1:, :], s[:-1, :]).max(axis=2)
+    else:
+        a = s.astype(np.int16)
+        dx = np.abs(np.diff(a, axis=1)).max(axis=2)
+        dy = np.abs(np.diff(a, axis=0)).max(axis=2)
+    return float(((dx[:-1, :] > 70) & (dy[:, :-1] > 70)).mean() * 100.0)
+
+
+def _is_corrupt(sector, quad) -> bool:
+    """Is this picture scrambled board data? Kept per camera; one corrupted most of the
+    time asks the capture thread to restart the camera (CAMERA_CORRUPT_RESTART_*)."""
+    global _last_reopen, _want_single
+    bad = _corrupt_pct(quad) > CAMERA_CORRUPT_PCT
+    now = time.monotonic()
+    with _corrupt_lock:
+        hist = _corrupt_hist[sector]
+        hist.append((now, bad))
+        while hist and now - hist[0][0] > CAMERA_CORRUPT_WINDOW_S:
+            hist.popleft()
+        share = sum(b for _, b in hist) / len(hist)
+        if (len(hist) < 10 or share < CAMERA_CORRUPT_RESTART_SHARE
+                or now - _last_reopen < (CAMERA_FRONT_RESTART_S if sector == "front"
+                                         else CAMERA_CORRUPT_RESTART_S)):
+            return bad
+        _last_reopen = now
+        for h in _corrupt_hist.values():
+            h.clear()
+        if sector == "front":
+            _front_restarts.append(now)
+            while _front_restarts and now - _front_restarts[0] > CAMERA_FALLBACK_WINDOW_S:
+                _front_restarts.popleft()
+        if _single is None and len(_front_restarts) >= CAMERA_FALLBACK_RESTARTS:
+            _front_restarts.clear()
+            _want_single = "front"
+            print(f"[CAMERA] the front camera needed {CAMERA_FALLBACK_RESTARTS} restarts in "
+                  f"{CAMERA_FALLBACK_WINDOW_S:.0f} s and is still corrupted — falling back to "
+                  f"the front camera alone until the app restarts")
+        else:
+            print(f"[CAMERA] {sector} camera corrupted in {share:.0%} of its pictures — "
+                  f"restarting the camera (the board's 4-in-1 merge)")
+        _reopen.set()
+    return bad
+
+
+_view_lock = threading.Lock()
+_views = {}                         # sector -> what _view_check last measured
+
+
+def _view_check(sector, quad) -> dict:
+    """Can this camera see? Picture level and sharpness, measured at most every
+    CAMERA_VIEW_CHECK_S; "dark" / "blurred" only once they have lasted their
+    CAMERA_*_CONFIRM_S. ~2 ms on a 960x540 quadrant."""
+    now = time.monotonic()
+    with _view_lock:
+        v = _views.get(sector)
+        if v is not None and 0.0 <= now - v["mono"] < CAMERA_VIEW_CHECK_S:
+            return dict(v)
+    s = quad[::4, ::4].astype(np.float32)
+    level = float(s.mean())
+    g = s.mean(axis=2) if s.ndim == 3 else s
+    lap = 4.0 * g[1:-1, 1:-1] - g[:-2, 1:-1] - g[2:, 1:-1] - g[1:-1, :-2] - g[1:-1, 2:]
+    sharpness = float(lap.var())
+    with _view_lock:
+        v = _views.get(sector) or {"dark_since": None, "blur_since": None}
+        dark_now = level < CAMERA_DARK_LEVEL
+        blur_now = not dark_now and sharpness < CAMERA_BLUR_VAR
+        dark_since = (v["dark_since"] or now) if dark_now else None
+        blur_since = (v["blur_since"] or now) if blur_now else None
+        v = {"mono": now, "at": time.time(),
+             "brightness": round(level, 1), "sharpness": round(sharpness, 1),
+             "dark_since": dark_since, "blur_since": blur_since,
+             "dark": dark_since is not None and now - dark_since >= CAMERA_DARK_CONFIRM_S,
+             "blurred": blur_since is not None and now - blur_since >= CAMERA_BLUR_CONFIRM_S}
+        _views[sector] = v
+        return dict(v)
+
+
+def camera_views() -> dict:
+    """What each camera's picture looked like at its last check (see _view_check)."""
+    with _view_lock:
+        return {s: {k: v[k] for k in ("at", "brightness", "sharpness", "dark", "blurred")}
+                for s, v in _views.items()}
+
+
+def corruption() -> dict:
+    """Each camera's share of corrupted pictures over the last CAMERA_CORRUPT_WINDOW_S."""
+    now = time.monotonic()
+    with _corrupt_lock:
+        return {s: {"share": round(sum(b for t, b in h if now - t <= CAMERA_CORRUPT_WINDOW_S)
+                                   / max(1, sum(1 for t, _ in h if now - t <= CAMERA_CORRUPT_WINDOW_S)), 2),
+                    "pictures": sum(1 for t, _ in h if now - t <= CAMERA_CORRUPT_WINDOW_S)}
+                for s, h in _corrupt_hist.items()}
 
 
 def _open_camera():
     """Open, configure and start the camera, retrying until it works or we are stopped."""
-    global picam2
+    global picam2, _cycle, _cycle_present, _cycle_order
     from picamera2 import Picamera2
 
+    if _cycle and not _single and _cycle_present is None:
+        try:
+            _cycle_present = _find_cameras(Picamera2)
+            _cycle_order = _schedule(_cycle_present)
+        except Exception as e:
+            print(f"[WARN] Could not tell which cameras the board has ({type(e).__name__}: "
+                  f"{e}) — using the 2x2 picture")
+            _cycle_order = []
+        if not _cycle_order:
+            _cycle = False
+    _set_board_mode()
+    # One camera at a time: the ISP halves it to a quadrant's size, to drop into the mosaic.
+    main_size = _QUAD if (_single or _cycle) else (CAMERA_WIDTH, CAMERA_HEIGHT)
     failures = 0
     while running:
         cam = None
         try:
             cam = Picamera2()
             cam.configure(cam.create_video_configuration(
-                main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"},
+                main={"size": main_size, "format": "RGB888"},
                 raw={"size": (CAMERA_WIDTH, CAMERA_HEIGHT)},
                 buffer_count=4,          # small buffer -> low latency, always-newest
                 controls={"FrameRate": float(CAMERA_CAPTURE_FPS)},
@@ -290,7 +562,9 @@ def _open_camera():
             if running:
                 picam2 = cam
                 print(f"✅ Camera (Picamera2): {CAMERA_WIDTH}x{CAMERA_HEIGHT}, "
-                      f"raw numpy capture")
+                      f"raw numpy capture"
+                      + (f" — {_single} camera only" if _single else
+                         " — cycling the cameras" if _cycle else ""))
                 return True
         _close_camera(cam)                  # stopped while it opened
         return False
@@ -300,17 +574,46 @@ def _open_camera():
 def _capture_thread():
     """Pull raw mosaic frames from Picamera2 into the shared numpy buffer."""
     global current_frame, current_frame_id, current_frame_t, capture_stalled
-    global current_frame_simulated
+    global current_frame_simulated, picam2, _single, _fell_back, _want_single
+    global _cycle, current_quad_meta, _cycle_present, _stall_reopens
 
     if picam2 is None and not _open_camera():
         return
     job = None
     asked_at = 0.0
     last_error_at = None
+    stall_wait = CAMERA_STALL_REOPEN_S      # no frame this long: reopen (doubles each time)
+
+    def cycle_start():
+        """(slot, camera, frames still wanted from it, when it was switched to)."""
+        return 0, _cycle_order[0][0], _cycle_order[0][1], time.monotonic_ns()
+
+    slot, sector, wanted, switched = cycle_start() if _cycle else (0, None, 0, 0)
     while running:
+        if _reopen.is_set():                # its pictures kept arriving corrupted
+            _reopen.clear()
+            job = None
+            with _corrupt_lock:
+                if _want_single:
+                    _single, _fell_back, _want_single = _want_single, True, None
+                    for h in _corrupt_hist.values():
+                        h.clear()
+                    with frame_lock:
+                        current_quad_meta = {}
+            with _camera_lock:
+                cam, picam2 = picam2, None
+            if cam is not None:
+                _close_camera(cam)
+            if not _open_camera():
+                return
+            if _cycle and not _single:
+                slot, sector, wanted, switched = cycle_start()
+            continue
+        cycling = _cycle and not _single
         try:
             if job is None:
-                job = picam2.capture_array("main", wait=False)
+                job = (picam2.capture_request(wait=False) if cycling
+                       else picam2.capture_array("main", wait=False))
                 asked_at = time.monotonic()
             arr = picam2.wait(job, timeout=0.25)
         except TimeoutError:
@@ -319,6 +622,16 @@ def _capture_thread():
                 capture_stalled = True
                 print(f"[WARN] Camera: no frame for {waited:.0f}s — the camera is not "
                       f"delivering (still waiting on it; health reports it lost)")
+            if waited > stall_wait:
+                # A stuck stream does not come back by itself (2026-10-09): start it again.
+                _stall_reopens += 1
+                print(f"[CAMERA] no frame for {waited:.0f}s — closing and reopening the "
+                      f"camera (reopen {_stall_reopens}; next after "
+                      f"{min(stall_wait * 2.0, CAMERA_STALL_REOPEN_MAX_S):.0f}s)")
+                stall_wait = min(stall_wait * 2.0, CAMERA_STALL_REOPEN_MAX_S)
+                if _cycle and not _single:
+                    _cycle_present = None       # look again for which cameras answer
+                _reopen.set()
             continue
         except Exception as e:
             job = None
@@ -330,9 +643,43 @@ def _capture_thread():
             continue
 
         job = None
+        stall_wait = CAMERA_STALL_REOPEN_S
         if capture_stalled:
             capture_stalled = False
             print(f"[OK] Camera delivering again after {time.monotonic() - asked_at:.1f}s")
+        if cycling:
+            request = arr
+            try:
+                stamp = request.get_metadata().get("SensorTimestamp", 0)
+                arr = request.make_array("main")
+            finally:
+                request.release()
+            if stamp <= switched:
+                continue                      # exposed before the switch: the last camera's
+            _store_quad(sector, arr)
+            wanted -= 1
+            if wanted <= 0:
+                slot = (slot + 1) % len(_cycle_order)
+                nxt, wanted = _cycle_order[slot]
+                if nxt != sector:
+                    try:
+                        _write_board(_board_value(nxt))
+                    except Exception as e:
+                        print(f"[WARN] Camera switch failed ({type(e).__name__}: {e}) — "
+                              f"using the 2x2 picture instead")
+                        _cycle = False
+                        with frame_lock:
+                            current_quad_meta = {}
+                        _reopen.set()
+                        continue
+                    switched, sector = time.monotonic_ns(), nxt
+            fps_stats["capture_times"].append(time.monotonic())
+            if len(fps_stats["capture_times"]) >= 2:
+                t = list(fps_stats["capture_times"])
+                fps_stats["capture_fps"] = (len(t) - 1) / (t[-1] - t[0])
+            continue
+        if _single:
+            arr = _in_mosaic(arr)
 
         with frame_lock:
             current_frame = arr
@@ -381,6 +728,8 @@ _WARN_REPEAT_S = 5.0
 # detection_coverage() reasons
 _COVERAGE_FULL = ""
 _COVERAGE_SEG_VIEW = "seg_view_priority"
+_COVERAGE_SINGLE = "single_camera"              # CAMERA_SINGLE_CHANNEL set
+_COVERAGE_MISSING = "cameras_missing"           # cycling, some channels empty
 _COVERAGE_NOT_READY = "detector_not_ready"
 _coverage = {"reason": _COVERAGE_NOT_READY, "sectors": (), "since": time.time()}
 
@@ -410,6 +759,16 @@ def _new_generation(reset_status=False):
             seg_error, seg_init_attempts = None, 0
         _note_coverage(_COVERAGE_NOT_READY, ())
         return _generation
+
+
+def _all_coverage():
+    """(reason, sectors) when detection runs on every camera there is."""
+    if _single:
+        return ("camera_fallback" if _fell_back else _COVERAGE_SINGLE, (_single,))
+    if _cycle and _cycle_present is not None:
+        return ((_COVERAGE_FULL if set(_cycle_present) == set(_VALID) else _COVERAGE_MISSING),
+                tuple(_cycle_present))
+    return (_COVERAGE_FULL, _VALID)
 
 
 def _note_coverage(reason, sectors):
@@ -566,7 +925,7 @@ def _detector_up(engine):             # under _gen_lock, generation current
     hailo_init_attempts += 1
     hailo_error = None
     hailo_ready = True
-    _note_coverage(_COVERAGE_FULL, _VALID)
+    _note_coverage(*_all_coverage())
 
 
 def _detector_failed(error):          # under _gen_lock, generation current
@@ -621,6 +980,7 @@ def _detect(engine, gen):
 
     last_id = -1
     pass_no = 0
+    detected_id = {}                  # cycling: the quad_meta id each camera was last detected at
     streak = _FailStreak(HAILO_INFER_FAIL_RESET_S)
     warn = _WarnThrottle()
     _track_streak(gen, "detector", streak)
@@ -634,6 +994,7 @@ def _detect(engine, gen):
                 fid = current_frame_id
                 frame_t = current_frame_t
                 simulated = current_frame_simulated
+                quad_meta = current_quad_meta
 
             if mosaic is None or fid == last_id:
                 time.sleep(0.002)
@@ -650,6 +1011,10 @@ def _detect(engine, gen):
             try:
                 total_inference_ms = 0.0
                 sectors = ("front",) if seg_viewing else _pass_sectors(pass_no)
+                if quad_meta:                 # cycling: each camera's new frame, once
+                    sectors = [s for s in _VALID
+                               if s in quad_meta and quad_meta[s]["id"] != detected_id.get(s)
+                               and (s == "front" or not seg_viewing)][:2]
                 pass_no += 1
                 with _gen_lock:
                     if not _live(gen):
@@ -657,10 +1022,15 @@ def _detect(engine, gen):
                     if seg_viewing:
                         _note_coverage(_COVERAGE_SEG_VIEW, ("front",))
                     else:
-                        _note_coverage(_COVERAGE_FULL, _VALID)
+                        _note_coverage(*_all_coverage())
 
                 for sector in sectors:
                     quad = _sector_slice(mosaic, sector)      # view, free
+                    # Scrambled board data (2026-10-08) never reaches the detector; this
+                    # camera's last detections just age out.
+                    if not simulated and _is_corrupt(sector, quad):
+                        continue
+                    view = _view_check(sector, quad)
                     npu_started = time.monotonic()
                     try:
                         detections, inference_ms = engine.infer_array(quad, bgr=SWAP_RB)
@@ -669,11 +1039,25 @@ def _detect(engine, gen):
                         raise
                     npu_ok = True
 
+                    if quad_meta:
+                        detected_id[sector] = quad_meta[sector]["id"]
+                    shot_t = quad_meta[sector]["t"] if quad_meta else frame_t
+                    if TOF_ENABLED and sector == "front" and not simulated:
+                        try:              # each box's measured distance (utils/depth_fusion.py)
+                            from utils.depth_fusion import annotate
+                            annotate(detections, shot_t)
+                        except Exception as e:
+                            warn(f"[WARN] ToF depth: {type(e).__name__}: {e}")
                     entry = {
                         "detections":  detections,
                         "num_objects": len(detections),
-                        "frame_time":  frame_t,
+                        "frame_time":  shot_t,
                         "simulated":   simulated,
+                        # Can this camera see at all (a black or blurred picture still
+                        # gets a detection pass — it just names nothing)?
+                        "view": {"brightness": view["brightness"],
+                                 "sharpness": view["sharpness"],
+                                 "dark": view["dark"], "blurred": view["blurred"]},
                     }
                     total_inference_ms += inference_ms
                     with _gen_lock:
@@ -690,14 +1074,15 @@ def _detect(engine, gen):
                 with _gen_lock:
                     if not _live(gen):
                         return None
-                    detection_stats["inference_time"] = total_inference_ms
+                    if npu_ok:                    # every picture corrupted: not a pass
+                        detection_stats["inference_time"] = total_inference_ms
 
-                    fps_stats["detection_times"].append(time.monotonic())
-                    if len(fps_stats["detection_times"]) >= 2:
-                        t = list(fps_stats["detection_times"])
-                        fps_stats["detection_fps"] = (len(t) - 1) / (t[-1] - t[0])
+                        fps_stats["detection_times"].append(time.monotonic())
+                        if len(fps_stats["detection_times"]) >= 2:
+                            t = list(fps_stats["detection_times"])
+                            fps_stats["detection_fps"] = (len(t) - 1) / (t[-1] - t[0])
 
-                    update_camera_state({"inference_time": total_inference_ms})
+                        update_camera_state({"inference_time": total_inference_ms})
                 _refresh_environment(mosaic)
 
             except Exception as e:
@@ -1129,6 +1514,14 @@ def get_camera_stats():
         "camera_source":  _camera_source,
         "capture_stalled": capture_stalled,
         "detection_coverage": detection_coverage(),
+        "corrupt": corruption(),
+        "views": camera_views(),
+        "stall_reopens": _stall_reopens,
+        "camera_mode": ("single" if _single else "cycle" if _cycle else "2x2"),
+        "cycle_cameras": list(_cycle_present or []) if _cycle else [],
+        "camera_fps": {s: (round((len(t) - 1) / (t[-1] - t[0]), 1)
+                           if len(t) >= 2 and t[-1] > t[0] else 0.0)
+                       for s, t in ((k, list(v)) for k, v in _quad_times.items())},
         "front":          detection_stats["front"],
         "right":          detection_stats["right"],
         "left":           detection_stats["left"],

@@ -14,8 +14,10 @@ from typing import Any, Dict, List, Optional
 
 from config import (
     RADAR_MIN_RATE_FRACTION,
-    RADAR_BAUDRATE, RADAR_END_MM, RADAR_ENABLED, RADAR_MAX_LAG_S, RADAR_PORT_EXCLUDE,
+    RADAR_BAUDRATE, RADAR_CALIBRATE_STALL_S, RADAR_END_MM, RADAR_ENABLED,
+    RADAR_MAX_LAG_S, RADAR_PORT_EXCLUDE,
     RADAR_PROFILE, RADAR_READY_TIMEOUT_S, RADAR_RESTART_WAIT_S, RADAR_SECTORS,
+    RADAR_STALL_S,
     RADAR_REFLECTOR_SHAPE, RADAR_SIGNAL_QUALITY, RADAR_THRESHOLD_SENSITIVITY,
     RADAR_START_MM,
     RADAR_UPDATE_RATE, radar_board_key,
@@ -472,12 +474,49 @@ def _run_board(entry: Dict[str, Any], stop: threading.Event) -> None:
                 return
 
 
+class _StallGuard:
+    """Ends a board session that stops making progress, so _run_board reconnects it."""
+
+    def __init__(self, entry: Dict[str, Any], client: Any, limit_s: float):
+        self._entry, self._client = entry, client
+        self._done = threading.Event()
+        self.fired = ""                 # why the session was ended, once it was
+        self.progress(limit_s)
+        threading.Thread(target=self._watch, daemon=True,
+                         name=f"radar-{entry.get('position')}-guard").start()
+
+    def progress(self, limit_s: Optional[float] = None) -> None:
+        """The session moved on; the next step may take `limit_s` (default: as the last)."""
+        limit = self._window[0] if limit_s is None else limit_s
+        self._window = (limit, time.monotonic() + limit)    # one assignment: read whole
+
+    def close(self) -> None:
+        self._done.set()
+
+    def _watch(self) -> None:
+        while not self._done.wait(1.0):
+            limit, deadline = self._window
+            if time.monotonic() <= deadline:
+                continue
+            # The client's link raises "recv timeout" on its next read, closes the
+            # port and reraises. Re-applied each second: starting a session resets it.
+            link = getattr(self._client, "_link", None)
+            try:
+                link.timeout = float("-inf")
+            except Exception:
+                continue
+            if not self.fired:
+                self.fired = f"no progress for {limit:.0f} s"
+                print(f"[RADAR] {self._entry.get('position')}: {self.fired} — "
+                      f"ending the session")
+
+
 def _stream_board(entry: Dict[str, Any], stop: threading.Event) -> None:
     """One connect-and-stream cycle. Raises if the link fails."""
     from acconeer.exptool import a121
     from acconeer.exptool.a121.algo.distance import Detector
 
-    client = detector = None
+    client = detector = guard = None
     recent = deque(maxlen=60)
     try:
         device = _node_for(entry, stop)
@@ -494,6 +533,7 @@ def _stream_board(entry: Dict[str, Any], stop: threading.Event) -> None:
         baud = min(RADAR_BAUDRATE, max_baud) if max_baud else RADAR_BAUDRATE
 
         client = a121.Client.open(serial_port=device, override_baudrate=baud)
+        guard = _StallGuard(entry, client, RADAR_CALIBRATE_STALL_S)
         detector = Detector(client=client, sensor_ids=[1], detector_config=_detector_config())
 
         _publish_for(entry, stop, {"phase": "calibrating", "online": False, "error": None,
@@ -502,6 +542,7 @@ def _stream_board(entry: Dict[str, Any], stop: threading.Event) -> None:
         if stop.is_set():
             return
         detector.start()
+        guard.progress(RADAR_STALL_S)
         print(f"[RADAR] {entry.get('position')}: streaming on {device} @ {baud} baud")
 
         started = time.monotonic()
@@ -511,6 +552,7 @@ def _stream_board(entry: Dict[str, Any], stop: threading.Event) -> None:
 
         while not stop.is_set():
             result = detector.get_next()[1]
+            guard.progress()
             frames += 1
             entry["streamed"] = True
             recent.append(time.monotonic())
@@ -523,6 +565,7 @@ def _stream_board(entry: Dict[str, Any], stop: threading.Event) -> None:
                 while lag > RADAR_MAX_LAG_S and time.monotonic() < budget:
                     call_started = time.monotonic()
                     result = detector.get_next()[1]
+                    guard.progress()
                     frames += 1
                     recent.append(time.monotonic())
                     lag = (time.monotonic() - started) - frames * period
@@ -543,6 +586,7 @@ def _stream_board(entry: Dict[str, Any], stop: threading.Event) -> None:
 
             # Temperature drift eventually invalidates the recorded threshold.
             if result.calibration_needed:
+                guard.progress(RADAR_CALIBRATE_STALL_S)
                 detector.stop()
                 _publish_for(entry, stop, {"phase": "recalibrating", "online": False,
                                            "reconnects": entry.get("reconnects", 0)})
@@ -550,6 +594,7 @@ def _stream_board(entry: Dict[str, Any], stop: threading.Event) -> None:
                 if stop.is_set():                    # retired meanwhile: see above
                     return
                 detector.start()
+                guard.progress(RADAR_STALL_S)
                 started, frames = time.monotonic(), 0    # restart the lag baseline
                 recent.clear()                           # and the rate window
                 continue
@@ -585,6 +630,10 @@ def _stream_board(entry: Dict[str, Any], stop: threading.Event) -> None:
                 "online": True,
                 "error": None,
             })
+    except Exception as exc:
+        if guard is not None and guard.fired:
+            raise RuntimeError(f"{guard.fired} — session ended, reconnecting") from exc
+        raise
     finally:
         for closer in (getattr(detector, "stop", None), getattr(client, "close", None)):
             if closer is None:
@@ -593,6 +642,8 @@ def _stream_board(entry: Dict[str, Any], stop: threading.Event) -> None:
                 closer()
             except Exception:
                 pass
+        if guard is not None:
+            guard.close()           # after the closers, so they are bounded too
 
 
 def _log_inventory(found: List[Dict[str, Any]]) -> List[Dict[str, str]]:

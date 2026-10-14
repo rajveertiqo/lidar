@@ -28,6 +28,64 @@ CAMERA_STOP_TIMEOUT_S = 5.0
 
 CAMERA_RETRY_BACKOFF_S = (2.0, 5.0, 10.0)
 
+# The camera board (CamArray HAT): register 0x24 of controller 0x24 on I2C bus 11, set
+# at every camera start (it forgets it on a power cycle). None: all four cameras merged
+# into the 2x2 mosaic (0x00). A sector name: only that camera (0x02 + 0x10 x channel),
+# put in its own quadrant with the other three black — same field of view as in the
+# mosaic (both crop 3840 of the sensor's 4656 px), halved to the quadrant's size.
+# "front" is the fallback if the board's 4-in-1 merge stays corrupted (2026-10-08: it
+# comes and goes; every camera alone is clean). In 4-in-1, pictures are checked instead.
+CAMERA_SINGLE_CHANNEL = None
+CAMERA_HAT_I2C_BUS = 11
+CAMERA_HAT_ADDRESS = 0x24
+CAMERA_HAT_CHANNEL = {"right": 0, "front": 1, "left": 2, "back": 3}  # measured 2026-10-08
+
+# Cycle through the cameras one at a time (when CAMERA_SINGLE_CHANNEL is None): the
+# board's one-camera path is clean even while its 4-in-1 merge is not. It switches camera
+# between frames, and a frame is the new camera's when its sensor timestamp is after the
+# switch (72/72 frames at 60 fps, 2026-10-09). The front gets CAMERA_CYCLE_FRONT_FRAMES
+# frames before each other camera's one. Only cameras seen at start (in the 2x2 picture)
+# are visited: switching to an empty channel stops the camera stream for good.
+# False: the 2x2 picture, with scrambled tiles skipped (CAMERA_CORRUPT_*).
+CAMERA_CYCLE = True
+CAMERA_CYCLE_FRONT_FRAMES = 2
+
+# A camera picture whose speckle (pixels, sampled every 2nd, differing by more than 70
+# from both neighbours) exceeds this % is scrambled board data and never reaches the
+# detector. Measured 2026-10-08: corrupted >= 0.51%, clean mostly < 0.25%; a clean one
+# skipped costs one pass, a corrupted one let through costs phantom objects.
+CAMERA_CORRUPT_PCT = 0.25
+# A camera corrupted in at least this share of its pictures over the window restarts the
+# camera stream (which often clears it), no more than once per CAMERA_CORRUPT_RESTART_S.
+CAMERA_CORRUPT_WINDOW_S = 5.0
+CAMERA_CORRUPT_RESTART_SHARE = 0.5
+CAMERA_CORRUPT_RESTART_S = 60.0
+CAMERA_FRONT_RESTART_S = 10.0  # the front camera: its pictures are lost anyway
+# The front camera needing this many restarts inside the window (the first pictures
+# after a restart are often clean, then it scrambles again): fall back to it alone
+# (CAMERA_SINGLE_CHANNEL "front") until the app restarts, which tries 4-in-1 again.
+CAMERA_FALLBACK_RESTARTS = 3
+CAMERA_FALLBACK_WINDOW_S = 60.0
+
+# Can each camera actually see? Checked on the detector's pictures, at most once per
+# CAMERA_VIEW_CHECK_S per camera (2026-10-07: the right and back cameras gave black
+# pictures for a whole road test while /health said the camera was fine).
+CAMERA_VIEW_CHECK_S = 1.0
+# Mean picture level (0-255) below which a camera sees only black — a covered lens, an
+# unplugged sensor (measured 0.0-0.1 on 2026-10-07), or a truly dark place.
+CAMERA_DARK_LEVEL = 12.0
+CAMERA_DARK_CONFIRM_S = 3.0
+# Variance of the picture's Laplacian (grey, every 4th pixel) below which it is blurred:
+# a film, dirt or a loose lens. NEEDS VALIDATION on the device — a blank wall close up
+# is smooth too, hence the long confirmation; it is shown on /health, never spoken.
+CAMERA_BLUR_VAR = 20.0
+CAMERA_BLUR_CONFIRM_S = 60.0
+# No frame at all for this long: close and reopen the camera, which a stuck stream
+# sometimes needs (2026-10-09: the capture froze and never recovered by itself). Each
+# further reopen waits twice as long, up to CAMERA_STALL_REOPEN_MAX_S.
+CAMERA_STALL_REOPEN_S = 15.0
+CAMERA_STALL_REOPEN_MAX_S = 120.0
+
 CAMERA_SIMULATION_ALLOWED = (
     os.environ.get("SHAPPE_SIMULATE_CAMERA", "") == "1"
 )  # development only; simulated frames are never evidence
@@ -193,6 +251,12 @@ RADAR_READY_TIMEOUT_S = 140.0
 
 RADAR_RESTART_WAIT_S = 30.0
 
+# A board session with no progress for this long is ended and reconnects. The
+# exptool client's own 2 s link timeout runs on the wall clock, and it waits with
+# no deadline for a result while a board sends anything else.
+RADAR_STALL_S = 5.0  # streaming: no frame
+RADAR_CALIBRATE_STALL_S = 30.0  # opening and calibrating; assumed, not timed
+
 RADAR_CALIBRATE_MAX_ENTRIES = 32
 RADAR_CALIBRATE_MAX_BODY_BYTES = 16384
 
@@ -279,6 +343,9 @@ WALK_GLASS_GAP_FT = 2.0  # LiDAR farther than radar by this much = glass (~0.6 m
 
 HEADING_ENABLED = True
 HEADING_BIN_DEG = 1.0  # range profile resolution used for scan matching
+HEADING_INTERP_MAX_GAP_DEG = 3.0  # never interpolate a bin across a wider gap in the scan
+HEADING_INTERP_MAX_JUMP_MM = 300.0  # ...nor across a range step this big (two objects)
+HEADING_FIT_MAX_RESEEDS = 4  # times the yaw + translation fit may restart from its own answer
 HEADING_MAX_YAW_STEP_DEG = 25.0  # widest rotation searched between two scans
 # (25 deg at 15 Hz = 375 deg/s — far beyond a walk)
 HEADING_MATCH_MIN_BINS = 40  # too few overlapping bins = no honest estimate
@@ -514,6 +581,165 @@ BEV_SHAPE_MATCH_MM = 400.0
 
 BEV_EXTRACT_HZ = 5.0
 
+# ---- Moving things in the LiDAR scan (utils/lidar_movers.py, added 2026-10-07)
+LIDAR_MOVERS_ENABLED = True
+LIDAR_MOVERS_SPEAK = False  # False: shown and logged as "would say", not spoken
+LIDAR_MOVERS_MIN_RANGE_MM = 300  # nearer is the wearer's own arm or cane
+LIDAR_MOVERS_MAX_RANGE_MM = 8000
+# Neighbouring returns farther apart than BREAK_MM + BREAK_PER_M x range are two things.
+LIDAR_MOVERS_BREAK_MM = 200.0
+LIDAR_MOVERS_BREAK_PER_M = 0.06
+LIDAR_MOVERS_MAX_GAP_DEG = 3.0  # an angular gap wider than this also splits
+LIDAR_MOVERS_MIN_POINTS = 3
+LIDAR_MOVERS_MAX_WIDTH_M = 2.0  # wider is a wall: not followed
+LIDAR_MOVERS_PERSON_MAX_WIDTH_M = 0.9  # wider, or faster than VEHICLE_SPEED: "Vehicle"
+LIDAR_MOVERS_VEHICLE_SPEED_MPS = 3.0
+LIDAR_MOVERS_GATE_M = 0.5  # a blob this far from where a track was heading is another
+LIDAR_MOVERS_WINDOW_S = 1.2  # each track's speed is fitted over this
+LIDAR_MOVERS_MIN_SAMPLES = 6
+LIDAR_MOVERS_MIN_SPAN_S = 0.6
+LIDAR_MOVERS_LOST_S = 0.5  # a track unseen this long is dropped
+# Moving = its own speed (the user's taken off) is at least MIN_SPEED, raised by
+# NOISE_PER_M per metre of range (scan jitter and turn error grow with range).
+LIDAR_MOVERS_MIN_SPEED_MPS = 0.4
+LIDAR_MOVERS_NOISE_PER_M = 0.07
+LIDAR_MOVERS_CONFIRM_SCANS = 3
+# The user's own motion comes from the still things around them: at least this many,
+# agreeing within EGO_MAX_RMS. Without that, any walk up to WALK_MAX is allowed for.
+LIDAR_MOVERS_EGO_MIN_TRACKS = 4
+LIDAR_MOVERS_EGO_MAX_RMS_MPS = 0.2
+LIDAR_MOVERS_WALK_MAX_MPS = 1.8
+# Warn when it will pass within MISS_M (vehicles: SIMPLE_VEHICLE_MISS_M) inside HORIZON_S.
+LIDAR_MOVERS_HORIZON_S = 5.0
+LIDAR_MOVERS_MISS_M = 1.0
+LIDAR_MOVERS_HEAD_ON_DEG = (
+    30.0  # ahead and heading this straight at the user: "coming toward you"
+)
+LIDAR_MOVERS_CAMERA_MATCH_DEG = 10.0  # front camera box this close in bearing names it
+LIDAR_MOVERS_REPEAT_S = 6.0  # the same "would say" is not logged again inside this
+
+# ---- Moving things only the radar hears (utils/radar_movers.py, added 2026-10-07)
+# Fills the LiDAR's gaps: its blind arc, and things above or below its plane. An echo
+# the LiDAR also ranges (RADAR_AGREE_MM, in that board's beam) is left to the LiDAR.
+RADAR_MOVERS_ENABLED = True
+RADAR_MOVERS_GATE_M = 0.3  # an echo this far from where a track was heading is another
+RADAR_MOVERS_WINDOW_S = 1.5  # closing speed is fitted over this
+RADAR_MOVERS_MIN_SAMPLES = 5
+RADAR_MOVERS_MIN_SPAN_S = (
+    0.6  # with CONFIRM_FRAMES: ~1.1 s to a warning, inside a 4 m reach
+)
+RADAR_MOVERS_LOST_S = 0.7  # an echo unheard this long is dropped
+RADAR_MOVERS_MIN_CLOSING_MPS = 0.4  # its own closing speed, the user's walk taken off
+RADAR_MOVERS_CONFIRM_FRAMES = 2
+RADAR_MOVERS_MAX_TURN_DPS = 10.0  # turning faster sweeps the beams across walls: paused
+
+# ---- Moving things followed with a Kalman filter (utils/motion_tracker.py, added 2026-10-13)
+# The LiDAR blobs lidar_movers.segment cuts cleanly, and each person or vehicle the front
+# camera names (range from its box height, bearing from its place in the frame), join the
+# track they most likely came from. A track is a constant-velocity Kalman filter on the
+# ground: position, velocity and how sure of both. It feeds the route planner and the
+# mover warning (spoken only with LIDAR_MOVERS_SPEAK, as before).
+MOTION_TRACKER_ENABLED = True
+MOTION_TRACKER_WARN = True  # its closest-approach warning stands in for lidar_movers'
+MOTION_GATE_CHI2 = 9.21  # 99 % for two degrees of freedom
+MOTION_GATE_M = 1.0  # and no farther than this from where a track should be...
+MOTION_GATE_VEHICLE_M = 2.0  # ...or this for a vehicle (a camera's range is rough)
+MOTION_GATE_NEW_EXTRA_M = 1.0  # a track with under CONFIRM_HITS sightings: this much more
+MOTION_LOST_S = 0.8  # a track unseen this long is dropped
+MOTION_ACCEL_PERSON = 1.2  # m/s^2 of random acceleration a person's model allows
+MOTION_ACCEL_ALONG = 1.5  # a moving vehicle's, along its heading...
+MOTION_ACCEL_ACROSS = 0.4  # ...and across it: a car brakes, it does not slide sideways
+MOTION_CONFIRM_HITS = 6
+MOTION_CONFIRM_S = 0.6
+MOTION_SIGNIFICANCE = 3.0  # moving: speed at least this many sigma, in its own direction
+MOTION_VEHICLE_STEADY_S = 0.8  # a vehicle's heading must hold within STEADY_DEG this long
+MOTION_VEHICLE_STEADY_DEG = 20.0  # (a track that swapped between two cars swings)
+MOTION_VEHICLE_MIN_TRAVEL_M = 1.0  # and it must have gone this far in the last second
+MOTION_CAMERA_SECTORS = ("front",)  # the cameras whose people and vehicles are followed
+MOTION_CAMERA_RANGE_FRAC = 0.15  # a box-size range is this far off (1 sigma)...
+MOTION_CAMERA_BEARING_DEG = 2.0  # ...its bearing this
+MOTION_CAMERA_MAX_AGE_S = 0.4  # a detector frame older than this is not used
+MOTION_EGO_SD_MPS = 0.6  # the user's own pace when nothing measures it: this unsure
+MOTION_PREDICT_DRIFT_PERSON = 0.1  # m/s: how fast doubt about a prediction grows
+MOTION_PREDICT_DRIFT_VEHICLE = 0.3
+MOTION_PREDICT_MAX_SD_M = 0.8  # past this a prediction says too little to act on
+
+# ---- The route: the best way through what is around the user (utils/route_planner.py,
+# added 2026-10-13). Everything sensed becomes points on the ground; for each direction
+# from 90 deg left to 90 deg right the planner measures how far a lane as wide as the user
+# stays clear, now and against where moving things will be, and picks the smallest turn
+# that gives ROUTE_NEED_M — at walking pace, at half pace, or not at all (wait, or step
+# aside from something coming at the user).
+ROUTE_PLANNER_ENABLED = True
+ROUTE_PLANNER_SPEAK = False  # False: its turn side and steering are shown and logged as "would say"
+ROUTE_LANE_HALF_M = 0.30  # half the lane: the user's half-width and a margin
+ROUTE_LANE_TIGHT_M = 0.22  # the user's half-width alone, when nothing wider fits
+ROUTE_REACH_M = 4.5
+ROUTE_NEED_M = 2.4  # clear walking wanted at walking pace (half pace: half, at least 1.2)
+ROUTE_STEP_DEG = 5
+ROUTE_MAX_TURN_DEG = 90
+ROUTE_STEER_MAX_DEG = 35  # a way this far off straight is "turn slightly"
+ROUTE_AROUND_M = 1.0  # no way 1 m clear anywhere ahead: turn around
+ROUTE_LOOKAHEAD_S = 4.0
+ROUTE_STEP_ASIDE_M = 0.6  # room needed to step aside from something coming
+ROUTE_HOLD_S = 3.0  # the way chosen is kept this long while it stays clear
+# Arcs (clockwise degrees) the LiDAR cannot see from where it is worn: no return there
+# is NOT open space. Measured on the rig as the back-left arc (tools/movers_sim.BLIND);
+# re-measure after moving the LiDAR (a head on the shoulder hides ~245-295).
+LIDAR_BLIND_ARCS_DEG = ((170.0, 290.0),)
+
+# ---- The ToF depth camera (Arducam, 240 x 180 distances) merged with the front camera
+# (utils/tof_camera.py, utils/depth_fusion.py; added 2026-10-13, before the sensor is
+# bought). Both are pinhole cameras with their own numbers, so each depth pixel is placed
+# on the front camera's picture with its own distance:
+#   1. P  = d * K_tof^-1 [u, v, 1]   the point the ToF pixel (u, v) measured
+#   2. P' = R * P + t                that point as the camera sees it
+#   3. [u', v'] = K_cam * P' / Z'    the camera pixel it lands on
+# Then every front detection takes the distance of the nearest surface inside its box.
+# Off: nothing starts and nothing changes. The ToF goes on the Pi 5's CAM0 port (the
+# CamArray is on CAM1): /boot/firmware/config.txt needs dtoverlay=arducam-pivariety,cam0
+# there instead of dtoverlay=imx519,cam0, and the SDK: pip install ArducamDepthCamera.
+TOF_ENABLED = False
+TOF_USE_DISTANCE = False  # False: the ToF's distance is only shown beside the box-size one
+TOF_CSI_PORT = 0
+TOF_RANGE_MM = 4000  # the SDK's range setting (2000 or 4000)
+TOF_FRAME_TIMEOUT_MS = 500
+TOF_RETRY_BACKOFF_S = (2.0, 5.0, 10.0)
+TOF_MIN_CONFIDENCE = 30.0  # depth pixels the sensor is less sure of than this are dropped
+TOF_MIN_MM = 150.0
+TOF_MAX_MM = 4000.0
+# Is the SDK's distance along each pixel's ray (True) or along the lens axis? Bench check:
+# tools/tof_calibrate.py wall, pointed square-on at a flat wall.
+TOF_DEPTH_IS_RADIAL = True
+TOF_PAIR_MAX_S = 0.06  # a camera picture uses the ToF frame captured nearest it, within this
+TOF_BUFFER_FRAMES = 8
+# Until tools/tof_calibrate.py writes TOF_CALIBRATION_FILE (checkerboard on the bench),
+# both lenses are taken as ideal and placed as in the 3D design ("aimed apart").
+TOF_CALIBRATION_FILE = os.path.join(_APP_DIR, "calibration", "tof_calibration.json")
+TOF_CALIBRATION_PAIRS_DIR = os.path.join(_APP_DIR, "calibration", "tof_pairs")
+TOF_SIZE_PX = (240, 180)
+TOF_DIAGONAL_FOV_DEG = 70.0  # Arducam's figure; on the 4:3 sensor about 58.5 x 45.6 deg
+# The detector's front picture: the IMX519's 66 deg across all 4656 px, centre-cropped to
+# 3840 x 2160 (ScalerCrop, measured 2026-10-08) and halved twice to the 960 x 540 quadrant:
+# about 56.4 x 33.5 deg. (SIMPLE_CAMERA_HFOV_DEG still assumes 70 for box sizes.)
+FUSION_CAMERA_LENS_HFOV_DEG = 66.0
+FUSION_CAMERA_SENSOR_PX = (4656, 3496)
+FUSION_CAMERA_CROP_PX = (3840, 2160)
+# Where the ToF sits against the camera, in the camera's frame (x right, y down, z ahead):
+FUSION_TOF_OFFSET_M = (0.0, 0.038, 0.006)  # 3.8 cm below, 6 mm ahead
+FUSION_TOF_DOWN_DEG = 20.0  # aimed this much further down (camera 10, ToF 30)
+FUSION_CAMERA_DOWN_DEG = 10.0  # the camera below level: turns a 3D point into a distance along the ground
+# A box's distance: the nearest surface inside it (not the wall behind a person). The box
+# is first trimmed (sides, top, bottom: the ground at its feet), then the depth points are
+# grouped where they are no more than GROUP_M apart; the nearest group holding at least
+# MIN_SHARE of them (and MIN_POINTS) is the thing.
+TOF_BOX_TRIM = (0.15, 0.10, 0.20)
+TOF_BOX_GROUP_M = 0.30
+TOF_BOX_MIN_POINTS = 6
+TOF_BOX_MIN_SHARE = 0.20
+TOF_RANGE_SD_M = 0.05  # how far off a ToF distance is (1 sigma), plus...
+TOF_RANGE_SD_FRAC = 0.02  # ...this much of it (the motion tracker's camera error ellipse)
+
 TRAFFIC_SIGN_STALE_S = 5.0
 
 ENV_TRUST_ENABLED = False  # off: it called a lit office and a dead camera "fog"
@@ -533,6 +759,12 @@ SPEECH_LOG_DIR = "logs"
 SPEECH_LOG_MAX_BYTES = 2_000_000
 
 SPEECH_LOG_KEEP_LINES = 400
+
+# Walk recording (utils/walk_recorder.py): every guidance tick's inputs and what was said,
+# for tools/walk_replay.py. Off unless SHAPPE_RECORD_WALK=1 or POST /guidance/record.
+WALK_RECORD = os.environ.get("SHAPPE_RECORD_WALK", "") == "1"
+WALK_RECORD_DIR = os.path.join(_APP_DIR, "logs", "walks")
+WALK_RECORD_MAX_MB = 500  # uncompressed; a recording stops itself here (~1 h of walking)
 
 SPEECH_LOG_KEEP_RUNS = 200
 
@@ -663,6 +895,11 @@ SIMPLE_NAMED_OBJECTS = {
     "stone": "Stone",
 }
 
+# The detector reports ONLY these classes. Everything else a model knows (chairs,
+# tables, laptops, bottles ...) is dropped inside the engine and reaches nothing:
+# not the voice, the hazard list, the BEV labels or the dashboard boxes.
+DETECTION_CLASSES = frozenset(SIMPLE_NAMED_OBJECTS)
+
 SIMPLE_STEER_RANGE_M = 5.0
 SIMPLE_STEER_GAP_M = 0.8
 SIMPLE_STEER_STICKY = 0.10  # 0.05 flipped sides on 1% box jitter, dead ahead
@@ -706,6 +943,21 @@ SIMPLE_OBJECT_HEIGHT_M = {
     "pothole": 0.3,
     "stone": 0.3,
 }
+
+# ---- How far away a detection is (sensor_fusion.detection_distance, the dashboard).
+# Each camera's 960 px quadrant is a centre crop of its 1164 px view (sensor mode
+# 1920x1080, ScalerCrop 3840x2160 of 4656x3496; measured 2026-10-08), so its field of
+# view is narrower than the lens's and is not measured: the laser is searched across
+# the bearings the box would cover for any of these.
+DETECTION_DISTANCE_HFOV_DEG = (55.0, 75.0)
+# The laser's range is the thing's only within these multiples of the box-size estimate.
+# A thing shorter than its class (sitting, half hidden) makes that estimate too FAR, so
+# the laser may be much nearer; hardly ever much farther (that is the wall behind it).
+DETECTION_DISTANCE_AGREE = (0.5, 1.4)
+DETECTION_SEATED_ASPECT = (
+    0.5  # a person box at least this wide for its height is sitting
+)
+DETECTION_SEATED_HEIGHT_M = 1.3
 
 SIMPLE_CAMERA_FRESH_S = 2.0
 SIMPLE_OBJECT_MIN_CONF = 0.5
@@ -769,6 +1021,14 @@ SIMPLE_GLASS_RECOVER_CONFIRM_S = 10.0
 SIMPLE_GLASS_RECOVER_MAX_S = 160.0
 SIMPLE_GLASS_STARTUP_GRACE_S = 30.0  # assumed; set it from a timed cold boot
 
+# "Camera off" / "Camera on": told once, the same way as the glass sensor, when the front
+# camera can no longer name what is ahead (sensor_fusion.front_camera_coverage) — the
+# LiDAR still guides, but nothing will be called a person, a car or a pole.
+SIMPLE_CAMERA_LOSS_CONFIRM_S = 5.0  # longer than a corrupted-picture camera restart
+SIMPLE_CAMERA_RECOVER_CONFIRM_S = 10.0
+SIMPLE_CAMERA_RECOVER_MAX_S = 160.0
+SIMPLE_CAMERA_STARTUP_GRACE_S = 45.0  # the detector takes a while to load; assumed
+
 SIMPLE_LIDAR_FRESH_S = 2.0
 
 CONSOLE_ENABLED = True
@@ -778,6 +1038,8 @@ CONSOLE_HEARTBEAT_S = 60.0
 AUDIO_ENABLED = False  # every sound off: Pi voice, sink probe, dashboard speech; guidance still shown and logged
 PI_VOICE_ENABLED = True
 PI_VOICE_TICK_HZ = 5.0
+# /guidance/walk serves the loop's newest result; older than this, it says so.
+GUIDANCE_RESULT_STALE_S = 2.0
 PI_VOICE_REPORT_QUEUE_MAX = 256
 PI_VOICE_REAP_WAIT_S = 2.0
 PI_VOICE_ALLOW_HDMI = False

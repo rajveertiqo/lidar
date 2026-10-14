@@ -24,7 +24,7 @@ from config import (
     LIDAR_MAX_BACKLOG_S, LIDAR_KEEP_BACKLOG_S, LIDAR_MEAS_RATE_HZ,
     LIDAR_SCAN_MAX_GAP_DEG, LIDAR_RETRY_BACKOFF_S, LIDAR_SIMULATION_ALLOWED,
     HEADING_ENABLED, DRIFT_ENABLED, DRIFT_ANALYZE_HZ,
-    BEV_ENABLED,
+    BEV_ENABLED, LIDAR_MOVERS_ENABLED, MOTION_TRACKER_ENABLED,
 )
 from utils.shared_state import (
     update_lidar_state, update_drift_state, get_radar_state, get_camera_state,
@@ -558,6 +558,7 @@ def _publish_scan(loop, scan, scan_index, hz, health, captured_at=None, swept=No
                        captured_at=captured_at)
 
     heading = _step_heading(points, captured_at)
+    _update_movers(points, heading, captured_at)
     _update_drift(heading)
     _update_bev(points, heading, captured_at)
 
@@ -586,6 +587,26 @@ def _step_heading(points, captured_at, trusted=True):
     except Exception as e:
         print(f"[WARN] heading tracker failed: {e}")
         return None
+
+
+def _update_movers(points, heading, captured_at):
+    """Follow the moving things in this scan (utils/lidar_movers, then utils/motion_tracker)."""
+    ego = None
+    if LIDAR_MOVERS_ENABLED:
+        try:
+            from utils.lidar_movers import get_movers
+            movers = get_movers()
+            movers.update(points, captured_at, heading)
+            ego = movers.snapshot().get("ego")
+        except Exception as e:
+            print(f"[WARN] LiDAR movers failed: {e}")
+    if MOTION_TRACKER_ENABLED:
+        try:
+            from utils.motion_tracker import get_motion_tracker
+            get_motion_tracker().update(points, captured_at, heading,
+                                        camera_state=get_camera_state(), ego=ego)
+        except Exception as e:
+            print(f"[WARN] motion tracker failed: {e}")
 
 
 def _update_drift(heading):

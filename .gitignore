@@ -14,3 +14,7 @@ Shappe_Spatial_Experiment_Plan.pdf
 .vscode/
 
 tests/
+
+# The ToF bench calibration: captured pictures, and this unit's result (device-specific, like radar_bearings.json).
+calibration/tof_pairs/
+calibration/tof_calibration.json

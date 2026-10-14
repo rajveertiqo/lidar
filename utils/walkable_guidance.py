@@ -3,13 +3,15 @@
 WALKABLE_IDS: tuple = ()
 
 WALKABLE_NAMES = frozenset({
-    "path", "road", "hallway", "corridor", "doorway",
+    "path", "hallway", "corridor", "doorway",
     "floor", "floo", "floos", "woodfloor", "floor tile", "floor marble",
     "tile floor", "ground", "pavement", "sidewalk",
     "carpet", "floor carpet", "rug", "wall to wall carpet",
 })
 
 HAZARD_NAMES = frozenset({
+    # traffic: a road or a crossing is never walkable ground (training/ adds these classes)
+    "road", "street", "crosswalk",
     # fall hazards
     "stairs", "staircase", "spiral staircase", "step", "steps",
     "escalator", "escalator crop", "ladder", "platform",

@@ -1,0 +1,29 @@
+# PROTOTYPE — not installed. The Shappe BLE bridge as a systemd USER service, next to
+# deploy/shappe-guide.service. Install only after the supervised first run in
+# docs/04-bluetooth-communication-architecture.md §8 (Phase 5 in docs/09):
+#
+#   sudo rfkill unblock bluetooth                 # the adapter is soft-blocked on this Pi
+#   install -Dm644 ble_bridge/shappe-ble.service ~/.config/systemd/user/shappe-ble.service
+#   systemctl --user daemon-reload && systemctl --user enable --now shappe-ble
+#   journalctl --user -u shappe-ble -f
+#
+# It is deliberately a separate unit: if it crashes, restarts or is never installed,
+# the guidance loop (shappe-guide) does not notice.
+
+[Unit]
+Description=Shappe BLE bridge (prototype) — companion-app link
+After=shappe-guide.service
+Wants=shappe-guide.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Documents/lidar
+ExecStart=%h/Documents/lidar/venv/bin/python -m ble_bridge.gatt_server --security encrypt --pair-window 180
+Restart=always
+RestartSec=3
+# The bridge is not safety-critical: lower its priority below the guidance loop.
+Nice=5
+LimitCORE=0
+
+[Install]
+WantedBy=default.target

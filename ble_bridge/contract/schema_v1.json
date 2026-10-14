@@ -1,0 +1,90 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://shappe.invalid/ble/schema_v1.json",
+ "title": "Shappe BLE protocol v1 - JSON messages (PROTOCOL_INFO, COMMAND, RESPONSE, EVENT)",
+ "description": "Normative text: docs/06-interface-control-document.md. Binary ALERT / STATE / ALERT_TEXT records are specified there, not here. Unknown fields MUST be ignored by receivers (forward compatibility).",
+ "$defs": {
+  "protocol_info": {
+   "type": "object",
+   "required": ["v", "protocol", "min_protocol", "device_id", "mock", "vocab", "epoch", "units", "limits", "commands"],
+   "properties": {
+    "v": {"const": 1},
+    "protocol": {"type": "integer", "minimum": 1},
+    "min_protocol": {"type": "integer", "minimum": 1},
+    "device_id": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+    "mock": {"type": "boolean"},
+    "model": {"type": "string"},
+    "software": {"type": "string"},
+    "vocab": {"type": "object", "required": ["version", "revision", "sha"],
+              "properties": {"version": {"type": "integer"}, "revision": {"type": "integer"}, "sha": {"type": "string"}}},
+    "epoch": {"type": "integer", "minimum": 0, "maximum": 65535},
+    "units": {"type": "object", "properties": {"distance": {"const": "ft"}}},
+    "limits": {"type": "object", "required": ["max_message_bytes", "alert_max_age_ms", "heartbeat_ms"],
+               "properties": {"max_message_bytes": {"type": "integer"}, "alert_max_age_ms": {"type": "integer"},
+                              "heartbeat_ms": {"type": "integer"}}},
+    "commands": {"type": "array", "items": {"type": "string"}}
+   }
+  },
+  "command": {
+   "type": "object",
+   "required": ["v", "id", "cmd"],
+   "properties": {
+    "v": {"const": 1},
+    "id": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+    "cmd": {"enum": ["hello", "ping", "get_status", "get_current", "get_surroundings", "get_speech_log",
+                     "get_diagnostics", "session_start", "session_stop", "alert_ack", "mark",
+                     "set_device_settings"]},
+    "args": {"type": "object"}
+   },
+   "allOf": [
+    {"if": {"properties": {"cmd": {"const": "hello"}}}, "then": {"properties": {"args": {"type": "object",
+      "properties": {"protocol": {"type": "integer"}, "app": {"type": "string"}, "app_version": {"type": "string"},
+                     "att_mtu": {"type": "integer", "minimum": 23, "maximum": 517}}}}}},
+    {"if": {"properties": {"cmd": {"const": "ping"}}}, "then": {"properties": {"args": {"type": "object",
+      "properties": {"t": {"type": "integer"}}}}}},
+    {"if": {"properties": {"cmd": {"const": "get_speech_log"}}}, "then": {"properties": {"args": {"type": "object",
+      "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 20}}}}}},
+    {"if": {"properties": {"cmd": {"const": "alert_ack"}}}, "then": {"required": ["args"], "properties": {"args": {"type": "object",
+      "required": ["epoch", "cue_seq", "outcome"],
+      "properties": {"epoch": {"type": "integer"}, "cue_seq": {"type": "integer"},
+                     "outcome": {"enum": ["spoken", "haptic", "shown", "suppressed", "expired", "duplicate"]},
+                     "app_latency_ms": {"type": "integer", "minimum": 0}}}}}},
+    {"if": {"properties": {"cmd": {"const": "mark"}}}, "then": {"properties": {"args": {"type": "object",
+      "properties": {"kind": {"enum": ["right", "wrong", "missed", "note"]}, "note": {"type": "string", "maxLength": 200}}}}}}
+   ]
+  },
+  "response": {
+   "type": "object",
+   "required": ["v", "id", "ok"],
+   "properties": {
+    "v": {"const": 1},
+    "id": {"type": ["integer", "null"], "description": "null when the command could not be parsed"},
+    "ok": {"type": "boolean"},
+    "result": {"type": "object"},
+    "error": {"type": "object", "required": ["code", "message"],
+              "properties": {"code": {"enum": ["BAD_FRAME", "BAD_JSON", "PROTOCOL_MISMATCH", "UNKNOWN_COMMAND", "BAD_ARGS",
+                                               "NOT_SUPPORTED", "NOT_AUTHORIZED", "TOO_LARGE", "BUSY",
+                                               "DEVICE_UNAVAILABLE", "INTERNAL"]},
+                             "message": {"type": "string", "maxLength": 200}}}
+   },
+   "oneOf": [
+    {"properties": {"ok": {"const": true}}, "required": ["result"]},
+    {"properties": {"ok": {"const": false}}, "required": ["error"]}
+   ]
+  },
+  "event": {
+   "type": "object",
+   "required": ["v", "event", "ts", "uptime_ms", "data"],
+   "properties": {
+    "v": {"const": 1},
+    "event": {"enum": ["device_ready", "health_changed", "sensor_degraded", "sensor_recovered", "guidance_stalled",
+                       "guidance_resumed", "thermal_warning", "thermal_ok", "power_warning", "service_unreachable",
+                       "service_restarted", "session_started", "session_stopped", "shutting_down"]},
+    "ts": {"type": "string", "description": "device wall clock, ISO 8601 UTC; may be wrong when the Pi has no time source - use uptime_ms for ordering"},
+    "uptime_ms": {"type": "integer", "minimum": 0},
+    "session_id": {"type": ["string", "null"]},
+    "data": {"type": "object"}
+   }
+  }
+ }
+}

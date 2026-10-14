@@ -86,6 +86,12 @@ def spoken(text: str, reason: str = "", urgent: bool = False,
           f"{_DIM}{_evidence(raw)}  ({reason})  {who}{_RESET}")
 
 
+def would_say(text: str, reason: str = "") -> None:
+    """A LiDAR mover warning that is held but not spoken (LIDAR_MOVERS_SPEAK False)."""
+    _emit(f"{_DIM}{_now()}{_RESET}  👁 {_CYN}would say: {text:<35}{_RESET} "
+          f"{_DIM}LiDAR movers, silent  ({reason}){_RESET}")
+
+
 def mark(kind: str, note: str = "") -> None:
     """A tester's verdict from the dashboard."""
     from utils.speech_log import _one_line

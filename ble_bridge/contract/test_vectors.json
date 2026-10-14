@@ -1,0 +1,445 @@
+{
+ "protocol": 1,
+ "vocab_revision": 3,
+ "vocab_sha": "690108ffa2ae7139",
+ "vectors": [
+  {
+   "name": "alert_blocked_glass_mtu23.0",
+   "note": "urgent alert + its text at the smallest MTU (text spans fragments)",
+   "characteristic": "alert",
+   "att_mtu": 23,
+   "frames_hex": [
+    "01100000000103002a0000006e000500020b2400"
+   ],
+   "expect": {
+    "kind": "alert",
+    "epoch": 3,
+    "cue_seq": 42,
+    "age_ms": 110,
+    "phrase_id": 5,
+    "level": 2,
+    "announce": true,
+    "urgent": true,
+    "device_voice": false,
+    "audio_enabled": true,
+    "replay": false,
+    "loop_stale": false,
+    "front_ft": 3.6
+   }
+  },
+  {
+   "name": "alert_blocked_glass_mtu23.1",
+   "note": "urgent alert + its text at the smallest MTU (text spans fragments)",
+   "characteristic": "alert",
+   "att_mtu": 23,
+   "frames_hex": [
+    "01110100000203002a000000426c6f636b656420",
+    "011101000102627920676c617373"
+   ],
+   "expect": {
+    "kind": "alert_text",
+    "epoch": 3,
+    "cue_seq": 42,
+    "text": "Blocked by glass"
+   }
+  },
+  {
+   "name": "alert_blocked_glass_mtu185.0",
+   "note": "the same alert at a typical iOS MTU",
+   "characteristic": "alert",
+   "att_mtu": 185,
+   "frames_hex": [
+    "01100200000103002a0000006e000500020b2400"
+   ],
+   "expect": {
+    "kind": "alert",
+    "epoch": 3,
+    "cue_seq": 42,
+    "age_ms": 110,
+    "phrase_id": 5,
+    "level": 2,
+    "announce": true,
+    "urgent": true,
+    "device_voice": false,
+    "audio_enabled": true,
+    "replay": false,
+    "loop_stale": false,
+    "front_ft": 3.6
+   }
+  },
+  {
+   "name": "alert_blocked_glass_mtu185.1",
+   "note": "the same alert at a typical iOS MTU",
+   "characteristic": "alert",
+   "att_mtu": 185,
+   "frames_hex": [
+    "01110300000103002a000000426c6f636b656420627920676c617373"
+   ],
+   "expect": {
+    "kind": "alert_text",
+    "epoch": 3,
+    "cue_seq": 42,
+    "text": "Blocked by glass"
+   }
+  },
+  {
+   "name": "alert_device_already_spoke.0",
+   "note": "DEVICE_VOICE set: the Pi's own voice accepted this cue — the app must not repeat it",
+   "characteristic": "alert",
+   "att_mtu": 23,
+   "frames_hex": [
+    "01100400000103002b0000005a000100000dffff"
+   ],
+   "expect": {
+    "kind": "alert",
+    "epoch": 3,
+    "cue_seq": 43,
+    "age_ms": 90,
+    "phrase_id": 1,
+    "level": 0,
+    "announce": true,
+    "urgent": false,
+    "device_voice": true,
+    "audio_enabled": true,
+    "replay": false,
+    "loop_stale": false,
+    "front_ft": null
+   }
+  },
+  {
+   "name": "alert_device_already_spoke.1",
+   "note": "DEVICE_VOICE set: the Pi's own voice accepted this cue — the app must not repeat it",
+   "characteristic": "alert",
+   "att_mtu": 23,
+   "frames_hex": [
+    "01110500000203002b00000057616c6b20737472",
+    "0111050001026169676874"
+   ],
+   "expect": {
+    "kind": "alert_text",
+    "epoch": 3,
+    "cue_seq": 43,
+    "text": "Walk straight"
+   }
+  },
+  {
+   "name": "state_heartbeat.0",
+   "note": "STATE heartbeat (1 Hz minimum)",
+   "characteristic": "state",
+   "att_mtu": 23,
+   "frames_hex": [
+    "01200600000103002b000000a60401000000ff00"
+   ],
+   "expect": {
+    "kind": "state",
+    "epoch": 3,
+    "cue_seq": 43,
+    "age_ms": 1190,
+    "phrase_id": 1,
+    "level": 0,
+    "status": "ok",
+    "health": {
+     "guiding": true,
+     "lidar_ok": true,
+     "radar_ok": true,
+     "camera_ok": true,
+     "hailo_ok": true,
+     "front_glass_ok": true,
+     "audio_enabled": true,
+     "device_voice_usable": true,
+     "simulated_input": false,
+     "thermal_warn": false,
+     "undervoltage": false,
+     "loop_stale": false
+    }
+   }
+  },
+  {
+   "name": "events_radar_lost.0",
+   "note": "sensor_degraded x2 + health_changed, JSON, fragmented at MTU 23",
+   "characteristic": "events",
+   "att_mtu": 23,
+   "frames_hex": [
+    "0131070000097b2276223a312c226576656e7422",
+    "0131070001093a2273656e736f725f6465677261",
+    "013107000209646564222c227473223a22323032",
+    "013107000309362d31302d30395430303a30303a",
+    "01310700040930302e3030305a222c2275707469",
+    "0131070005096d655f6d73223a323530302c2273",
+    "013107000609657373696f6e5f6964223a6e756c",
+    "0131070007096c2c2264617461223a7b2273656e",
+    "013107000809736f72223a227261646172227d7d"
+   ],
+   "expect": {
+    "kind": "event",
+    "v": 1,
+    "event": "sensor_degraded",
+    "ts": "2026-10-09T00:00:00.000Z",
+    "uptime_ms": 2500,
+    "session_id": null,
+    "data": {
+     "sensor": "radar"
+    }
+   }
+  },
+  {
+   "name": "events_radar_lost.1",
+   "note": "sensor_degraded x2 + health_changed, JSON, fragmented at MTU 23",
+   "characteristic": "events",
+   "att_mtu": 23,
+   "frames_hex": [
+    "01310800000a7b2276223a312c226576656e7422",
+    "01310800010a3a2273656e736f725f6465677261",
+    "01310800020a646564222c227473223a22323032",
+    "01310800030a362d31302d30395430303a30303a",
+    "01310800040a30302e3030305a222c2275707469",
+    "01310800050a6d655f6d73223a323530302c2273",
+    "01310800060a657373696f6e5f6964223a6e756c",
+    "01310800070a6c2c2264617461223a7b2273656e",
+    "01310800080a736f72223a2266726f6e745f676c",
+    "01310800090a617373227d7d"
+   ],
+   "expect": {
+    "kind": "event",
+    "v": 1,
+    "event": "sensor_degraded",
+    "ts": "2026-10-09T00:00:00.000Z",
+    "uptime_ms": 2500,
+    "session_id": null,
+    "data": {
+     "sensor": "front_glass"
+    }
+   }
+  },
+  {
+   "name": "events_radar_lost.2",
+   "note": "sensor_degraded x2 + health_changed, JSON, fragmented at MTU 23",
+   "characteristic": "events",
+   "att_mtu": 23,
+   "frames_hex": [
+    "0131090000147b2276223a312c226576656e7422",
+    "0131090001143a226865616c74685f6368616e67",
+    "0131090002146564222c227473223a2232303236",
+    "0131090003142d31302d30395430303a30303a30",
+    "013109000414302e3030305a222c22757074696d",
+    "013109000514655f6d73223a323530302c227365",
+    "0131090006147373696f6e5f6964223a6e756c6c",
+    "0131090007142c2264617461223a7b2273746174",
+    "0131090008147573223a22646567726164656422",
+    "0131090009142c2267756964696e67223a747275",
+    "013109000a14652c2273656e736f7273223a7b22",
+    "013109000b146c69646172223a747275652c2272",
+    "013109000c1461646172223a66616c73652c2263",
+    "013109000d14616d657261223a747275652c2268",
+    "013109000e1461696c6f223a747275657d2c2277",
+    "013109000f1461726e696e6773223a5b22526164",
+    "0131090010146172206f66666c696e6520e28094",
+    "01310900111420676c617373206d6179206e6f74",
+    "013109001214206265206465746563746564225d",
+    "0131090013147d7d"
+   ],
+   "expect": {
+    "kind": "event",
+    "v": 1,
+    "event": "health_changed",
+    "ts": "2026-10-09T00:00:00.000Z",
+    "uptime_ms": 2500,
+    "session_id": null,
+    "data": {
+     "status": "degraded",
+     "guiding": true,
+     "sensors": {
+      "lidar": true,
+      "radar": false,
+      "camera": true,
+      "hailo": true
+     },
+     "warnings": [
+      "Radar offline — glass may not be detected"
+     ]
+    }
+   }
+  },
+  {
+   "name": "service_unreachable.0",
+   "note": "the navigation service stopped answering",
+   "characteristic": "events",
+   "att_mtu": 23,
+   "frames_hex": [
+    "01310a00000d7b2276223a312c226576656e7422",
+    "01310a00010d3a22736572766963655f756e7265",
+    "01310a00020d61636861626c65222c227473223a",
+    "01310a00030d22323032362d31302d3039543030",
+    "01310a00040d3a30303a30302e3030305a222c22",
+    "01310a00050d757074696d655f6d73223a333530",
+    "01310a00060d302c2273657373696f6e5f696422",
+    "01310a00070d3a6e756c6c2c2264617461223a7b",
+    "01310a00080d22726561736f6e223a22436f6e6e",
+    "01310a00090d656374696f6e5265667573656445",
+    "01310a000a0d72726f723a205b4572726e6f2031",
+    "01310a000b0d31315d20436f6e6e656374696f6e",
+    "01310a000c0d2072656675736564227d7d"
+   ],
+   "expect": {
+    "kind": "event",
+    "v": 1,
+    "event": "service_unreachable",
+    "ts": "2026-10-09T00:00:00.000Z",
+    "uptime_ms": 3500,
+    "session_id": null,
+    "data": {
+     "reason": "ConnectionRefusedError: [Errno 111] Connection refused"
+    }
+   }
+  },
+  {
+   "name": "service_unreachable.1",
+   "note": "the navigation service stopped answering",
+   "characteristic": "state",
+   "att_mtu": 23,
+   "frames_hex": [
+    "01200b00000103002b000000760c0000ff030000"
+   ],
+   "expect": {
+    "kind": "state",
+    "epoch": 3,
+    "cue_seq": 43,
+    "age_ms": 3190,
+    "phrase_id": 0,
+    "level": -1,
+    "status": "unreachable",
+    "health": {
+     "guiding": false,
+     "lidar_ok": false,
+     "radar_ok": false,
+     "camera_ok": false,
+     "hailo_ok": false,
+     "front_glass_ok": false,
+     "audio_enabled": false,
+     "device_voice_usable": false,
+     "simulated_input": false,
+     "thermal_warn": false,
+     "undervoltage": false,
+     "loop_stale": false
+    }
+   }
+  },
+  {
+   "name": "command.0",
+   "note": "app -> device COMMAND write",
+   "characteristic": "command",
+   "att_mtu": 23,
+   "frames_hex": [
+    "0140000000057b2276223a312c226964223a312c",
+    "01400000010522636d64223a2268656c6c6f222c",
+    "0140000002052261726773223a7b2270726f746f",
+    "014000000305636f6c223a312c226174745f6d74",
+    "01400000040575223a3138357d7d"
+   ],
+   "expect": {
+    "kind": "command",
+    "v": 1,
+    "id": 1,
+    "cmd": "hello",
+    "args": {
+     "protocol": 1,
+     "att_mtu": 185
+    }
+   }
+  },
+  {
+   "name": "response.0.0",
+   "note": "device -> app RESPONSE",
+   "characteristic": "events",
+   "att_mtu": 185,
+   "frames_hex": [
+    "01300d0000047b2276223a312c226964223a312c226f6b223a747275652c22726573756c74223a7b2276223a312c2270726f746f636f6c223a312c226d696e5f70726f746f636f6c223a312c226465766963655f6964223a2230313233343536373839616263646566222c226d6f636b223a66616c73652c22766f636162223a7b2276657273696f6e223a312c227265766973696f6e223a332c22736861223a2236393031303866666132616537313339227d2c2265",
+    "01300d000104706f6368223a332c22756e697473223a7b2264697374616e6365223a226674227d2c226c696d697473223a7b226d61785f6d6573736167655f6279746573223a343039362c22616c6572745f6d61785f6167655f6d73223a323030302c226865617274626561745f6d73223a313030307d2c22636f6d6d616e6473223a5b22616c6572745f61636b222c226765745f63757272656e74222c226765745f646961676e6f7374696373222c226765745f73",
+    "01300d00020470656563685f6c6f67222c226765745f737461747573222c226765745f737572726f756e64696e6773222c2268656c6c6f222c226d61726b222c2270696e67222c2273657373696f6e5f7374617274222c2273657373696f6e5f73746f70222c227365745f6465766963655f73657474696e6773225d2c226d6f64656c223a227465737420766563746f7273222c22736f667477617265223a2274657374222c2273657373696f6e223a6e756c6c2c22",
+    "01300d000304737461747573223a22756e726561636861626c65222c226174745f6d7475223a3138357d7d"
+   ],
+   "expect": {
+    "kind": "response",
+    "v": 1,
+    "id": 1,
+    "ok": true,
+    "result": {
+     "v": 1,
+     "protocol": 1,
+     "min_protocol": 1,
+     "device_id": "0123456789abcdef",
+     "mock": false,
+     "vocab": {
+      "version": 1,
+      "revision": 3,
+      "sha": "690108ffa2ae7139"
+     },
+     "epoch": 3,
+     "units": {
+      "distance": "ft"
+     },
+     "limits": {
+      "max_message_bytes": 4096,
+      "alert_max_age_ms": 2000,
+      "heartbeat_ms": 1000
+     },
+     "commands": [
+      "alert_ack",
+      "get_current",
+      "get_diagnostics",
+      "get_speech_log",
+      "get_status",
+      "get_surroundings",
+      "hello",
+      "mark",
+      "ping",
+      "session_start",
+      "session_stop",
+      "set_device_settings"
+     ],
+     "model": "test vectors",
+     "software": "test",
+     "session": null,
+     "status": "unreachable",
+     "att_mtu": 185
+    }
+   }
+  },
+  {
+   "name": "command.1",
+   "note": "app -> device COMMAND write",
+   "characteristic": "command",
+   "att_mtu": 23,
+   "frames_hex": [
+    "0140010000037b2276223a312c226964223a322c",
+    "01400100010322636d64223a226c61756e636822",
+    "0140010002037d"
+   ],
+   "expect": {
+    "kind": "command",
+    "v": 1,
+    "id": 2,
+    "cmd": "launch"
+   }
+  },
+  {
+   "name": "response.1.0",
+   "note": "device -> app RESPONSE",
+   "characteristic": "events",
+   "att_mtu": 185,
+   "frames_hex": [
+    "01300f0000017b2276223a312c226964223a322c226f6b223a66616c73652c226572726f72223a7b22636f6465223a22554e4b4e4f574e5f434f4d4d414e44222c226d657373616765223a22756e6b6e6f776e20636f6d6d616e6420276c61756e636827227d7d"
+   ],
+   "expect": {
+    "kind": "response",
+    "v": 1,
+    "id": 2,
+    "ok": false,
+    "error": {
+     "code": "UNKNOWN_COMMAND",
+     "message": "unknown command 'launch'"
+    }
+   }
+  }
+ ]
+}

@@ -23,6 +23,9 @@ from config import (
     GYRO_STRIDE_MAX_M,
     GYRO_STRIDE_MIN_M,
     HEADING_BIN_DEG,
+    HEADING_FIT_MAX_RESEEDS,
+    HEADING_INTERP_MAX_GAP_DEG,
+    HEADING_INTERP_MAX_JUMP_MM,
     HEADING_MATCH_MAX_RANGE_MM,
     HEADING_MATCH_MIN_BINS,
     HEADING_MAX_LATERAL_MPS,
@@ -48,7 +51,12 @@ from config import HEADING_MAX_INCIDENCE_SEC, HEADING_SENS_JUMP_FRACTION  # noqa
 
 
 def build_profile(points: Sequence[Tuple[float, float]]) -> np.ndarray:
-    """Reduce a scan to one NEAREST range per bearing bin, NaN where nothing hit."""
+    """Resample a scan to the range at each bin's CENTRE bearing, NaN where nothing hit.
+
+    Each centre is linearly interpolated between the two samples either side of it.
+    Taking whichever sample fell in the bin instead made the profile depend on where
+    the samples landed: the A2M12's bearings creep ~0.32 deg per revolution, and that
+    read as a steady false turn (about -116 deg/min standing still, 2026-10-06)."""
     profile = np.full(N_BINS, np.nan, dtype=np.float64)
     if not len(points):
         return profile
@@ -62,11 +70,27 @@ def build_profile(points: Sequence[Tuple[float, float]]) -> np.ndarray:
     if not ok.any():
         return profile
 
-    idx = (np.mod(angles[ok], 360.0) / HEADING_BIN_DEG).astype(np.int64)
-    np.clip(idx, 0, N_BINS - 1, out=idx)
-    filled = np.full(N_BINS, np.inf, dtype=np.float64)
-    np.minimum.at(filled, idx, dists[ok])
-    profile[np.isfinite(filled)] = filled[np.isfinite(filled)]
+    a = np.mod(angles[ok], 360.0)
+    d = dists[ok]
+    order = np.argsort(a, kind="stable")
+    a, d = a[order], d[order]
+    # Wrap: the last sample before 0 deg and the first after 360 deg.
+    a = np.concatenate(([a[-1] - 360.0], a, [a[0] + 360.0]))
+    d = np.concatenate(([d[-1]], d, [d[0]]))
+
+    centres = (np.arange(N_BINS) + 0.5) * HEADING_BIN_DEG
+    hi = np.searchsorted(a, centres, side="right")     # a[hi-1] <= centre < a[hi]
+    a0, a1, d0, d1 = a[hi - 1], a[hi], d[hi - 1], d[hi]
+    gap = a1 - a0
+    w = (centres - a0) / gap
+    # Never bridge a gap in the scan, nor the step from one object to another.
+    bridge = (gap <= HEADING_INTERP_MAX_GAP_DEG) & (np.abs(d1 - d0) <= HEADING_INTERP_MAX_JUMP_MM)
+    # Unbridged: the nearer-in-bearing sample, if it lies within this bin.
+    left_nearer = (centres - a0) <= (a1 - centres)
+    near_d = np.where(left_nearer, d0, d1)
+    near_off = np.where(left_nearer, centres - a0, a1 - centres)
+    profile = np.where(bridge, d0 + w * (d1 - d0),
+                       np.where(near_off <= HEADING_BIN_DEG / 2.0, near_d, np.nan))
     return profile
 
 
@@ -260,10 +284,13 @@ def estimate_motion(prev: np.ndarray, cur: np.ndarray,
 
     se = _standard_errors(kept_design, rms)
 
-    refine_deg = float(np.clip(math.degrees(sol[0]), -HEADING_BIN_DEG, HEADING_BIN_DEG))
+    wanted_deg = math.degrees(sol[0])
+    refine_deg = float(np.clip(wanted_deg, -HEADING_BIN_DEG, HEADING_BIN_DEG))
 
     return {
         "yaw_deg": shift * HEADING_BIN_DEG + refine_deg,
+        # The fit wanted to move further than one bin from its seed.
+        "clipped": abs(wanted_deg) > HEADING_BIN_DEG,
         "dx_mm": float(sol[1]),
         "dy_mm": float(sol[2]),
         "dx_se_mm": se[1],
@@ -272,6 +299,25 @@ def estimate_motion(prev: np.ndarray, cur: np.ndarray,
         "quality": quality,
         "bins": n,
     }
+
+
+def fit_motion(prev: np.ndarray, cur: np.ndarray, coarse_yaw_deg: float) -> Dict[str, Any]:
+    """estimate_motion, re-seeded from its own answer until it stops at the edge of its reach.
+
+    The rotation-only search reads forward walking as a turn of a degree or two (the side
+    walls' bearings slide back), and the yaw + translation fit can only move +-1 bin from
+    its seed — so from a wrong seed it stopped at the edge, one bin off, every scan."""
+    motion = estimate_motion(prev, cur, coarse_yaw_deg)
+    seen = {int(round(coarse_yaw_deg / HEADING_BIN_DEG))}
+    for _ in range(HEADING_FIT_MAX_RESEEDS):
+        if not motion.get("clipped"):
+            break
+        shift = int(round(motion["yaw_deg"] / HEADING_BIN_DEG))
+        if shift in seen:
+            break
+        seen.add(shift)
+        motion = estimate_motion(prev, cur, motion["yaw_deg"])
+    return motion
 
 
 def _standard_errors(design: np.ndarray, rms: float) -> List[float]:
@@ -359,15 +405,17 @@ class HeadingTracker:
             use_gyro = gyro_yaw is not None and gyro_trusted
 
             gyro_seeded = use_gyro and GYRO_SEED_MOTION_FIT
-            seed = (gyro_yaw if gyro_seeded
-                    else (coarse["yaw_deg"] if trusted_yaw else 0.0))
-            motion = estimate_motion(prev_profile, profile, seed)
+            if gyro_seeded:
+                motion = estimate_motion(prev_profile, profile, gyro_yaw)
+            else:
+                motion = fit_motion(prev_profile, profile,
+                                    coarse["yaw_deg"] if trusted_yaw else 0.0)
 
             lidar_yaw = None
             if trusted_yaw:
                 if gyro_seeded:
-                    lidar_yaw = estimate_motion(prev_profile, profile,
-                                                coarse["yaw_deg"])["yaw_deg"]
+                    lidar_yaw = fit_motion(prev_profile, profile,
+                                           coarse["yaw_deg"])["yaw_deg"]
                 else:
                     lidar_yaw = motion["yaw_deg"]
 

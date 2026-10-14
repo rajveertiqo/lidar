@@ -1,9 +1,12 @@
 """Sensor fusion for collaborative blind-navigation guidance."""
 
+import math
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from config import (
+    CAMERA_SECTORS, CAMERA_WIDTH, DETECTION_DISTANCE_HFOV_DEG, FRAME_GRID_COLS,
+    GUIDANCE_CONE_CENTRES,
     BEV_SHAPE_IN_HAZARDS, BEV_SHAPE_MATCH_DEG, BEV_SHAPE_MATCH_MM,
     ENV_IDENTITY_MIN_VISIBILITY, ENV_STALE_S, ENV_TRUST_ENABLED,
     GUIDANCE_DANGER_MM, GUIDANCE_WARNING_MM, GUIDANCE_SAFE_MM, GUIDANCE_AWARE_MM,
@@ -313,6 +316,159 @@ def front_glass_coverage(radar_state: Optional[Dict[str, Any]] = None
             "expected": [f"{b:g}" for b in expected], "settling": settling}
 
 
+def front_camera_coverage(camera_state: Optional[Dict[str, Any]],
+                          now: Optional[float] = None) -> Dict[str, Any]:
+    """Can the front camera name what is ahead right now? {"ok", "reason", "settling"} —
+    the definition the voice's "Camera off" notice uses. Judged from the camera state
+    alone: fresh front detections (so a lost feed, a stopped detector or pictures all
+    skipped as corrupted all count), from a real picture that is not black."""
+    from utils.freshness import is_fresh
+    now = time.time() if now is None else now
+    front = (camera_state or {}).get("front")
+    if not isinstance(front, dict) or not front.get("frame_time"):
+        return {"ok": False, "reason": "no front camera pictures yet", "settling": True}
+    if front.get("simulated"):
+        return {"ok": False, "reason": "the front camera is simulated", "settling": False}
+    if not is_fresh(front.get("frame_time"), SIMPLE_CAMERA_FRESH_S, now):
+        return {"ok": False, "settling": False,
+                "reason": "no new front camera pictures (feed lost, detector stopped or "
+                          "every picture corrupted)"}
+    if (front.get("view") or {}).get("dark"):
+        return {"ok": False, "settling": False,
+                "reason": "the front camera sees only black (lens covered, unplugged "
+                          "or no light)"}
+    return {"ok": True, "reason": "", "settling": False}
+
+
+_QUAD_W = CAMERA_WIDTH / FRAME_GRID_COLS          # one camera's frame in the mosaic
+
+
+def _box_bearings(sector: str, x1: float, x2: float) -> Optional[Tuple[float, float]]:
+    """The bearings a box's left and right edges could be at, for any field of view in
+    DETECTION_DISTANCE_HFOV_DEG (each camera faces its cardinal; image right is
+    clockwise for every one)."""
+    centre = GUIDANCE_CONE_CENTRES.get(sector)
+    if centre is None:
+        return None
+    edges = [centre + math.degrees(math.atan(
+                 (x - _QUAD_W / 2.0) * math.tan(math.radians(h) / 2.0) / (_QUAD_W / 2.0)))
+             for x in (x1, x2) for h in DETECTION_DISTANCE_HFOV_DEG]
+    return min(edges[:2]) - 1.0, max(edges[2:]) + 1.0
+
+
+def _laser_ranges_mm(lidar_state: Optional[Dict[str, Any]], lo: float, hi: float) -> List[float]:
+    """The distinct things the laser ranges between two bearings: each the nearest
+    return of a run of at least LIDAR_CLUSTER_MIN_POINTS returns no more than
+    LIDAR_CLUSTER_WINDOW_MM apart in range (a lone reflection is not a thing)."""
+    from config import LIDAR_CLUSTER_MIN_POINTS, LIDAR_CLUSTER_WINDOW_MM
+    mid, half = (lo + hi) / 2.0, (hi - lo) / 2.0
+    pts = (lidar_state or {}).get("points") or {}
+    ds = sorted(float(d) for a, d in zip(pts.get("angles") or [], pts.get("distances") or [])
+                if isinstance(d, (int, float)) and d > 0 and _angular_gap(float(a), mid) <= half)
+    groups: List[List[float]] = []
+    for d in ds:
+        if groups and d - groups[-1][-1] <= LIDAR_CLUSTER_WINDOW_MM:
+            groups[-1].append(d)
+        else:
+            groups.append([d])
+    return [g[0] for g in groups if len(g) >= LIDAR_CLUSTER_MIN_POINTS]
+
+
+def detection_distance(sector: str, det: Dict[str, Any],
+                       lidar_state: Optional[Dict[str, Any]] = None,
+                       now: Optional[float] = None,
+                       explain: bool = False):
+    """How far away one camera detection is, in feet, and how that is known:
+    (feet, "lidar" | "camera" | "camera_cut" | ""), or with `explain`, a dict saying why.
+
+    "camera": the box's height against its class's typical height (a person whose box
+    is wide for its height is sitting: DETECTION_SEATED_HEIGHT_M) through the assumed
+    lens; "camera_cut" when the frame cuts the box off, which makes that an upper bound.
+    "lidar": of the things the laser ranges inside the box's bearings, the one nearest
+    that estimate, if within DETECTION_DISTANCE_AGREE of it — never simply the nearest
+    (a desk in front of someone) or whatever is there (the wall behind someone the
+    laser's plane passes over).
+    "tof": with TOF_USE_DISTANCE, the ToF's distance of the nearest surface in the box
+    (utils/depth_fusion.py), ahead of all of these; without it, that is only shown
+    (`tof_ft`) beside them."""
+    from config import (DETECTION_DISTANCE_AGREE, DETECTION_SEATED_ASPECT,
+                        DETECTION_SEATED_HEIGHT_M, SIMPLE_NAMED_OBJECTS, TOF_USE_DISTANCE)
+    from utils.simple_guidance import _object_height_m, _size_range
+
+    def result(ft, source, **why):
+        if not explain:
+            return ft, source
+        return {"sector": sector, "class": det.get("class_name"), "bbox": det.get("bbox"),
+                "distance_ft": ft, "source": source, **why}
+
+    try:
+        x1, y1, x2, y2 = (float(v) for v in det.get("bbox") or ())
+    except (TypeError, ValueError):
+        return result(None, "", why="no box")
+    bearings = _box_bearings(sector, x1, x2)
+    if bearings is None or x2 <= x1 or y2 <= y1:
+        return result(None, "", why="no box")
+    cls = str(det.get("class_name", "")).lower()
+    metres, cut = _size_range(cls, (x1, y1, x2, y2))
+    seated = (SIMPLE_NAMED_OBJECTS.get(cls) == "Person" and not cut
+              and (x2 - x1) >= DETECTION_SEATED_ASPECT * (y2 - y1))
+    if seated:
+        metres *= DETECTION_SEATED_HEIGHT_M / _object_height_m(cls)   # it assumed standing
+    est_mm = metres * 1000.0
+    estimate = {"estimate_ft": round(est_mm / 304.8, 1),
+                "estimate_basis": "sitting person" if seated else "class height",
+                "cut": cut, "bearings_deg": [round(bearings[0], 1), round(bearings[1], 1)]}
+    depth = det.get("depth")
+    if isinstance(depth, dict) and isinstance(depth.get("distance_m"), (int, float)):
+        estimate["tof_ft"] = round(float(depth["distance_m"]) / 0.3048, 1)
+        if TOF_USE_DISTANCE:
+            return result(estimate["tof_ft"], "tof", why="measured by the ToF: the nearest "
+                          "surface in the box", tof=depth, **estimate)
+    if not lidar_is_fresh(lidar_state, now):
+        return result(estimate["estimate_ft"], "camera_cut" if cut else "camera",
+                      laser_ft=[], why="the LiDAR is not current", **estimate)
+    lo_k, hi_k = DETECTION_DISTANCE_AGREE
+    seen = _laser_ranges_mm(lidar_state, *bearings)
+    fits = [mm for mm in seen if (cut or lo_k * est_mm <= mm) and mm <= hi_k * est_mm]
+    laser_ft = [round(mm / 304.8, 1) for mm in seen]
+    if fits:
+        best = min(fits, key=lambda mm: abs(math.log(mm / est_mm)))
+        # The lens angle this box implies, if the laser is right and it stands at its
+        # class height: a few of these from a real walk measure SIMPLE_CAMERA_HFOV_DEG.
+        implied = (None if cut or seated else round(math.degrees(2.0 * math.atan(
+            (_QUAD_W / 2.0) / ((y2 - y1) * best / 1000.0 / _object_height_m(cls)))), 1))
+        return result(round(best / 304.8, 1), "lidar", laser_ft=laser_ft,
+                      why="the laser range that fits the box's size",
+                      implied_hfov_deg=implied, **estimate)
+    return result(estimate["estimate_ft"], "camera_cut" if cut else "camera", laser_ft=laser_ft,
+                  why=("nothing the laser ranges there fits the box's size"
+                       if seen else "the laser ranges nothing there"), **estimate)
+
+
+def with_distances(stats: Dict[str, Any],
+                   lidar_state: Optional[Dict[str, Any]] = None,
+                   explain: bool = False) -> Dict[str, Any]:
+    """A copy of camera stats/state with `distance_ft` and `distance_source` on every
+    detection (with `explain`: each detection's whole reasoning, for /camera/distances)."""
+    if lidar_state is None:
+        lidar_state = get_lidar_state()
+    now = time.time()
+    out = dict(stats or {})
+    for sector in CAMERA_SECTORS:
+        entry = out.get(sector)
+        if not isinstance(entry, dict):
+            continue
+        dets = []
+        for det in entry.get("detections") or []:
+            if explain:
+                dets.append(detection_distance(sector, det, lidar_state, now, explain=True))
+                continue
+            ft, source = detection_distance(sector, det, lidar_state, now)
+            dets.append({**det, "distance_ft": ft, "distance_source": source})
+        out[sector] = {**entry, "detections": dets}
+    return out
+
+
 def fresh_camera_state(camera_state: Optional[Dict[str, Any]],
                        now: Optional[float] = None) -> Dict[str, Any]:
     """A copy of the camera state with any quadrant's labels removed that were not captured within SIMPLE_CAMERA_FRESH_S."""
@@ -583,6 +739,54 @@ def get_system_health() -> Dict[str, Any]:
             detection_reduced = cover["reason"]
             warnings.append("Side and back object detection paused — a "
                             "segmentation debug view is open")
+        bad = sorted(s for s, c in (_pc.corruption() or {}).items()
+                     if c.get("pictures", 0) >= 5 and c.get("share", 0.0) >= 0.2)
+        if bad:
+            warnings.append(f"Camera picture corrupted ({', '.join(bad)}) — those frames "
+                            f"are skipped; the camera board's 4-in-1 merge is faulty")
+        views = _pc.camera_views() or {}
+        now = time.time()
+        looked = {c: v for c, v in views.items() if now - float(v.get("at") or 0.0) <= 10.0}
+        dark = [c for c in ("front", "right", "left", "back") if (looked.get(c) or {}).get("dark")]
+        if dark:
+            warnings.append(f"Camera sees only black ({', '.join(dark)}) — lens covered, "
+                            f"unplugged or no light; nothing is named "
+                            f"{'there' if len(dark) == 1 else 'in those directions'}")
+        blurred = [c for c in ("front", "right", "left", "back")
+                   if (looked.get(c) or {}).get("blurred")]
+        if blurred:
+            warnings.append(f"Camera picture blurred ({', '.join(blurred)}) — lens dirty, "
+                            f"covered or out of focus; objects may not be named")
+        if cover.get("reason") == "cameras_missing":
+            detection_reduced = cover["reason"]
+            missing = [c for c in ("front", "right", "left", "back")
+                       if c not in (cover.get("sectors_detected") or [])]
+            warnings.append(f"No camera connected: {', '.join(missing)} — no object "
+                            f"detection {'there' if len(missing) == 1 else 'in those directions'}")
+        elif cover.get("reason") == "camera_fallback":
+            detection_reduced = cover["reason"]
+            warnings.append("The 4-camera picture stayed corrupted — only the front camera "
+                            "is in use (automatic fallback until the app restarts)")
+        elif cover.get("reason") == "single_camera":
+            detection_reduced = cover["reason"]
+            only = ", ".join(cover.get("sectors_detected") or []) or "one"
+            warnings.append(f"Only the {only} camera is in use (CAMERA_SINGLE_CHANNEL) — "
+                            f"no object detection anywhere else")
+    except Exception:
+        pass
+    tof = None
+    try:
+        from config import TOF_ENABLED
+        if TOF_ENABLED:
+            from utils.tof_camera import tof_status
+            tof = tof_status()
+            if not tof.get("ok") or tof.get("age_s") is None or tof["age_s"] > 1.0:
+                warnings.append("Depth camera (ToF) not delivering — distances come from "
+                                "box sizes and the LiDAR"
+                                + (f" ({tof['error']})" if tof.get("error") else ""))
+            elif (tof.get("calibration") or {}).get("source") != "bench":
+                warnings.append("Depth camera not calibrated — its dots are placed by the "
+                                "design, not measured (tools/tof_calibrate.py)")
     except Exception:
         pass
     lagging = sorted(p for p in RADAR_SECTORS
@@ -620,6 +824,7 @@ def get_system_health() -> Dict[str, Any]:
         "radar_down": radar_down,
         "radar_lagging": lagging,
         "hailo_ok": hailo_ok,
+        "tof": tof,
         "warnings": warnings,
         "spoken": "All systems normal" if all_ok else ". ".join(warnings),
         "timestamp": time.time(),

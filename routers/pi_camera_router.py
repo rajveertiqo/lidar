@@ -59,8 +59,17 @@ async def seg_grid_feed():
 
 @router.get("/stats")
 async def stats():
-    """Get camera and detection statistics."""
-    return get_camera_stats()
+    """Camera and detection statistics; every detection carries how far away it is (`distance_ft`, `distance_source`: lidar / camera / camera_cut / tof; and `depth` when the ToF measured it)."""
+    from utils.sensor_fusion import with_distances
+    return with_distances(get_camera_stats())
+
+
+@router.get("/distances")
+async def distances():
+    """Why each detection's distance is what it is: the bearings searched, every thing the laser ranges there, the box-size estimate, and which was chosen."""
+    from utils.sensor_fusion import with_distances
+    stats = with_distances(get_camera_stats(), explain=True)
+    return {s: (stats.get(s) or {}).get("detections", []) for s in ("front", "right", "left", "back")}
 
 
 @router.get("/fps")

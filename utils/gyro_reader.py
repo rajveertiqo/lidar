@@ -55,11 +55,12 @@ _AXIS_KEYS = {"x": ("gx", "ax"), "y": ("gy", "ay"), "z": ("gz", "az")}
 
 class _Sample(NamedTuple):
     """One gyro sample, with the yaw integral evaluated at its timestamp."""
-    t: float        # WALL clock, matching the LiDAR's time.time() capture stamps
-    cum: float      # cumulative yaw since start, degrees, + = right
-    raw: float      # yaw-axis rate BEFORE this module's residual bias, deg/s
-    amag: float     # |a| in g — footfalls live here
-    a_up: float     # accel component along the mounting's up axis, for tilt
+
+    t: float  # WALL clock, matching the LiDAR's time.time() capture stamps
+    cum: float  # cumulative yaw since start, degrees, + = right
+    raw: float  # yaw-axis rate BEFORE this module's residual bias, deg/s
+    amag: float  # |a| in g — footfalls live here
+    a_up: float  # accel component along the mounting's up axis, for tilt
     m: float = 0.0  # time.monotonic() of the same instant — see _mono_of()
 
 
@@ -73,17 +74,19 @@ class GyroReader:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._buf: Deque[_Sample] = deque(maxlen=int(GYRO_SAMPLE_HZ * GYRO_BUFFER_S) + 64)
+        self._buf: Deque[_Sample] = deque(
+            maxlen=int(GYRO_SAMPLE_HZ * GYRO_BUFFER_S) + 64
+        )
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
 
         self._sensor = None
         self._chip = None
-        self._cum = 0.0             # running yaw integral, degrees
-        self._bias_dps = 0.0        # residual zero-rate offset, LiDAR-corrected
+        self._cum = 0.0  # running yaw integral, degrees
+        self._bias_dps = 0.0  # residual zero-rate offset, LiDAR-corrected
         self._bias_trusted = False
         self._trust_reason = "not calibrated"
-        self._agreements = 0        # consecutive small disagreements with LiDAR
+        self._agreements = 0  # consecutive small disagreements with LiDAR
         self._cal_std = None
         # The last calibration taken AT REST, reused when a later one is not.
         self._cal_bias: Optional[Tuple[float, float, float]] = None
@@ -92,17 +95,18 @@ class GyroReader:
         self._connects = 0
         self._dropouts = 0
         self._samples = 0
-        self._rejected = 0          # samples thrown out as implausible rates
+        self._rejected = 0  # samples thrown out as implausible rates
 
         # step detection — MONOTONIC stamps (F20, see _mono_of); None = no step yet
         self._steps = 0
         self._last_step_t: Optional[float] = None
         self._above_peak = False
         self._step_log: Deque[float] = deque(maxlen=512)
-        self._amag_ref: Optional[float] = None   # slow mean of |a|, see below
-        self._amag_n = 0            # samples folded into it, for the warm-up
+        self._amag_ref: Optional[float] = None  # slow mean of |a|, see below
+        self._amag_n = 0  # samples folded into it, for the warm-up
         self._exc_log: Deque[Tuple[float, float]] = deque(
-            maxlen=int(GYRO_SAMPLE_HZ * GYRO_BUFFER_S) + 64)
+            maxlen=int(GYRO_SAMPLE_HZ * GYRO_BUFFER_S) + 64
+        )
 
         # opportunistic re-zero — MONOTONIC stamps (F20); None = never re-zeroed
         self._still_since: Optional[float] = None
@@ -188,22 +192,23 @@ class GyroReader:
             return
         with self._lock:
             self._bias_dps -= GYRO_BIAS_GAIN * error_dps * dt
-            self._bias_dps = max(-GYRO_BIAS_MAX_DPS,
-                                 min(GYRO_BIAS_MAX_DPS, self._bias_dps))
+            self._bias_dps = max(
+                -GYRO_BIAS_MAX_DPS, min(GYRO_BIAS_MAX_DPS, self._bias_dps)
+            )
 
             if abs(error_dps) <= GYRO_TRUST_ERR_DPS:
                 self._agreements += 1
-                if (not self._bias_trusted
-                        and self._agreements >= GYRO_TRUST_SAMPLES):
+                if not self._bias_trusted and self._agreements >= GYRO_TRUST_SAMPLES:
                     self._bias_trusted = True
                     self._trust_reason = "agreed with scan matching"
-                    print("[GYRO] bias confirmed against the LiDAR — "
-                          "gyro is now the yaw source")
+                    print(
+                        "[GYRO] bias confirmed against the LiDAR — "
+                        "gyro is now the yaw source"
+                    )
             else:
                 self._agreements = 0
 
-    def note_still(self, still: bool, now: float,
-                   mono: Optional[float] = None) -> None:
+    def note_still(self, still: bool, now: float, mono: Optional[float] = None) -> None:
         """Tell the reader whether the LiDAR can SEE that the user is stationary."""
         if not GYRO_RECAL_ON_STILL:
             return
@@ -217,15 +222,17 @@ class GyroReader:
                 return
             if (mono - self._still_since) < GYRO_RECAL_STILL_S:
                 return
-            if (self._last_recal is not None
-                    and (mono - self._last_recal) < GYRO_RECAL_MIN_INTERVAL_S):
+            if (
+                self._last_recal is not None
+                and (mono - self._last_recal) < GYRO_RECAL_MIN_INTERVAL_S
+            ):
                 return
             window = [s.raw for s in self._buf if (mono - s.m) <= GYRO_RECAL_STILL_S]
             if len(window) < 10:
                 return
             offset = sum(window) / len(window)
             if abs(offset) > GYRO_BIAS_MAX_DPS:
-                return          # a fault, not an offset — see correct_bias
+                return  # a fault, not an offset — see correct_bias
             self._bias_dps = offset
             self._last_recal = mono
             self._still_since = None
@@ -234,8 +241,10 @@ class GyroReader:
             if not self._bias_trusted:
                 self._bias_trusted = True
                 self._trust_reason = "re-zeroed while confirmed still"
-                print("[GYRO] re-zeroed against a confirmed standstill — "
-                      "gyro is now the yaw source")
+                print(
+                    "[GYRO] re-zeroed against a confirmed standstill — "
+                    "gyro is now the yaw source"
+                )
 
     # ---- read ------------------------------------------------------------
 
@@ -328,7 +337,7 @@ class GyroReader:
 
     def excursions(self, seconds: float) -> Tuple[float, ...]:
         """Signed |a| excursions from the resting mean over the last `seconds`."""
-        now = time.monotonic()               # the log is stamped monotonic (F20)
+        now = time.monotonic()  # the log is stamped monotonic (F20)
         with self._lock:
             return tuple(e for t, e in self._exc_log if (now - t) <= seconds)
 
@@ -355,13 +364,16 @@ class GyroReader:
         def pct(p: float) -> float:
             return round(ups[min(len(ups) - 1, int(len(ups) * p))], 4)
 
-        out["percentiles_g"] = {"max": round(ups[0], 4), "p99": pct(0.01),
-                                "p95": pct(0.05), "p75": pct(0.25),
-                                "median": pct(0.50)}
+        out["percentiles_g"] = {
+            "max": round(ups[0], 4),
+            "p99": pct(0.01),
+            "p95": pct(0.05),
+            "p75": pct(0.25),
+            "median": pct(0.50),
+        }
         out["cleared_threshold"] = sum(1 for e in ups if e >= GYRO_STEP_PEAK_G)
         std = st.get("accel_std_g") or 0.0
-        out["looks_like_gait"] = bool(st.get("walking")
-                                      or std >= GYRO_STEP_STD_G)
+        out["looks_like_gait"] = bool(st.get("walking") or std >= GYRO_STEP_STD_G)
         if out["looks_like_gait"]:
             out["suggested_peak_g"] = round(pct(0.05) * 0.5, 2)
         return out
@@ -372,7 +384,7 @@ class GyroReader:
             return None
         mag = last.amag
         if mag < 0.3 or mag > 3.0:
-            return None         # under acceleration, gravity is not separable
+            return None  # under acceleration, gravity is not separable
         return round(math.degrees(math.acos(min(1.0, abs(last.a_up) / mag))), 1)
 
     # ---- device ----------------------------------------------------------
@@ -419,19 +431,27 @@ class GyroReader:
             self._agreements = 0
             self._cal_std = round(std, 3)
             self._bias_trusted = std <= GYRO_CAL_MAX_STD_DPS
-            self._trust_reason = ("calibrated at rest" if self._bias_trusted
-                                  else f"moving during calibration "
-                                       f"(spread {std:.2f} dps)")
-        print(f"[GYRO] {self._chip} on {sensor.describe()} — "
-              f"yaw axis {GYRO_YAW_AXIS}, sign {GYRO_YAW_SIGN:+.0f}")
+            self._trust_reason = (
+                "calibrated at rest"
+                if self._bias_trusted
+                else f"moving during calibration (spread {std:.2f} dps)"
+            )
+        print(
+            f"[GYRO] {self._chip} on {sensor.describe()} — "
+            f"yaw axis {GYRO_YAW_AXIS}, sign {GYRO_YAW_SIGN:+.0f}"
+        )
         if not GYRO_MOUNTING_CONFIRMED:
-            print("[GYRO] mounting NOT confirmed — reporting only, not steering. "
-                  "Heading stays on the LiDAR (see GYRO_MOUNTING_CONFIRMED).")
+            print(
+                "[GYRO] mounting NOT confirmed — reporting only, not steering. "
+                "Heading stays on the LiDAR (see GYRO_MOUNTING_CONFIRMED)."
+            )
         if self._bias_trusted:
             print(f"[GYRO] calibrated at rest (spread {std:.2f} dps)")
         else:
-            print(f"[GYRO] MOVING during calibration (spread {std:.2f} dps) — "
-                  f"yaw stays on the LiDAR until the offset is established")
+            print(
+                f"[GYRO] MOVING during calibration (spread {std:.2f} dps) — "
+                f"yaw stays on the LiDAR until the offset is established"
+            )
         return True
 
     def _calibrate(self, sensor) -> Tuple[Tuple[float, float, float], float]:
@@ -501,8 +521,9 @@ class GyroReader:
                 continue
 
             now, mono = time.time(), time.monotonic()
-            self._ingest(s, gyro_key, accel_key, now, last_t,
-                         mono=mono, last_mono=last_mono)
+            self._ingest(
+                s, gyro_key, accel_key, now, last_t, mono=mono, last_mono=last_mono
+            )
             last_t, last_mono = now, mono
 
             deadline += period
@@ -512,10 +533,16 @@ class GyroReader:
             else:
                 deadline = time.monotonic()  # fell behind; do not spiral
 
-    def _ingest(self, s: Dict[str, float], gyro_key: str, accel_key: str,
-                now: float, last_t: Optional[float],
-                mono: Optional[float] = None,
-                last_mono: Optional[float] = None) -> None:
+    def _ingest(
+        self,
+        s: Dict[str, float],
+        gyro_key: str,
+        accel_key: str,
+        now: float,
+        last_t: Optional[float],
+        mono: Optional[float] = None,
+        last_mono: Optional[float] = None,
+    ) -> None:
         """Fold one sample in."""
         raw = float(s[gyro_key]) * GYRO_YAW_SIGN
         ax, ay, az = float(s["ax"]), float(s["ay"]), float(s["az"])
@@ -534,7 +561,7 @@ class GyroReader:
             else:
                 dt = 0.0 if last_t is None else (now - last_t)
             if not (0.0 < dt < 1.0):
-                dt = 0.0        # first sample after a (re)connect, or a stall
+                dt = 0.0  # first sample after a (re)connect, or a stall
             self._cum += rate * dt
             if self._buf and now < self._buf[-1].t - CLOCK_FUTURE_TOLERANCE_S:
                 self._buf.clear()
@@ -559,8 +586,10 @@ class GyroReader:
         self._exc_log.append((now, signed))
         excursion = signed if GYRO_STEP_UPWARD_ONLY else abs(signed)
         if excursion >= GYRO_STEP_PEAK_G:
-            if not self._above_peak and (self._last_step_t is None
-                                         or (now - self._last_step_t) >= GYRO_STEP_REFRACTORY_S):
+            if not self._above_peak and (
+                self._last_step_t is None
+                or (now - self._last_step_t) >= GYRO_STEP_REFRACTORY_S
+            ):
                 self._steps += 1
                 self._last_step_t = now
                 self._step_log.append(now)
@@ -588,17 +617,19 @@ def stop_gyro() -> None:
 def print_tuning(tuning: Dict[str, Any]) -> None:
     """Human-readable form of gait_tuning(), for the terminal."""
     print("\n" + "-" * 60)
-    print(f"  TUNING  (last {tuning['window_s']:.0f} s, "
-          f"{tuning['samples']} samples)")
+    print(f"  TUNING  (last {tuning['window_s']:.0f} s, {tuning['samples']} samples)")
 
     tilt = tuning.get("tilt_deg")
     if tilt is not None:
         print(f"\n  up-axis tilt    {tilt:.1f} deg")
-        print(f"    pitch/roll leaking into yaw = sin(tilt) = "
-              f"{math.sin(math.radians(tilt)):.2f}")
+        print(
+            f"    pitch/roll leaking into yaw = sin(tilt) = "
+            f"{math.sin(math.radians(tilt)):.2f}"
+        )
         if tilt > 15.0:
-            print("    ^ this is the reason NOT to set "
-                  "GYRO_MOUNTING_CONFIRMED yet. Pad")
+            print(
+                "    ^ this is the reason NOT to set GYRO_MOUNTING_CONFIRMED yet. Pad"
+            )
             print("      the outboard edge of the strap to bring it level.")
         print("    (pace is unaffected — it comes from |a|, a magnitude)")
 
@@ -607,17 +638,24 @@ def print_tuning(tuning: Dict[str, Any]) -> None:
         print("\n  no upward excursions recorded")
         return
     print("\n  |a| upward excursion, g")
-    for label, key in (("largest ", "max"), ("99th pct", "p99"),
-                       ("95th pct", "p95"), ("75th pct", "p75"),
-                       ("median  ", "median")):
+    for label, key in (
+        ("largest ", "max"),
+        ("99th pct", "p99"),
+        ("95th pct", "p95"),
+        ("75th pct", "p75"),
+        ("median  ", "median"),
+    ):
         print(f"    {label}      {p[key]:.3f}")
     print(f"\n    GYRO_STEP_PEAK_G is {tuning['peak_g']}")
-    print(f"    {tuning['cleared_threshold']} of {tuning['samples']} "
-          f"samples cleared it")
+    print(
+        f"    {tuning['cleared_threshold']} of {tuning['samples']} samples cleared it"
+    )
 
     if not tuning.get("looks_like_gait"):
-        print(f"\n    NOT A WALK — the |a| spread never reached the "
-              f"{tuning['std_g']} g gate.")
+        print(
+            f"\n    NOT A WALK — the |a| spread never reached the "
+            f"{tuning['std_g']} g gate."
+        )
         print("    Those excursions are handling noise, not footfalls, so no")
         print("    threshold is suggested from them: scaling to noise would")
         print("    tune the detector to call stillness walking.")
@@ -628,15 +666,13 @@ def print_tuning(tuning: Dict[str, Any]) -> None:
     if sug is None:
         return
     if tuning["cleared_threshold"] == 0:
-        print("    NOTHING cleared it — footfalls are not reaching the "
-              "threshold on")
+        print("    NOTHING cleared it — footfalls are not reaching the threshold on")
         print(f"    this mounting. Try GYRO_STEP_PEAK_G = {sug}")
     elif abs(sug - tuning["peak_g"]) >= 0.02:
         print(f"    this walk suggests   {sug}")
     else:
         print("    consistent with this walk — leave it")
-    print("\n    Re-check false positives after changing it: sit still, "
-          "fidget, and")
+    print("\n    Re-check false positives after changing it: sit still, fidget, and")
     print("    ride in a vehicle, and confirm `walking` stays no.")
 
 
@@ -645,16 +681,26 @@ if __name__ == "__main__":
 
     ap = argparse.ArgumentParser(
         description="Gyro reader check. Reads the sensor DIRECTLY, so stop the "
-                    "guidance app first — one owner per SPI bus. While the app "
-                    "is running, use /guidance/gait/test instead.")
-    ap.add_argument("--check", action="store_true",
-                    help="live yaw readout — turn the harness RIGHT, "
-                         "yaw must go POSITIVE")
-    ap.add_argument("--tune", action="store_true",
-                    help="on exit, report the |a| excursions and tilt that "
-                         "set GYRO_STEP_PEAK_G for this mounting")
-    ap.add_argument("--seconds", type=float, default=0.0,
-                    help="stop after this long (0 = until Ctrl+C)")
+        "guidance app first — one owner per SPI bus. While the app "
+        "is running, use /guidance/gait/test instead."
+    )
+    ap.add_argument(
+        "--check",
+        action="store_true",
+        help="live yaw readout — turn the harness RIGHT, yaw must go POSITIVE",
+    )
+    ap.add_argument(
+        "--tune",
+        action="store_true",
+        help="on exit, report the |a| excursions and tilt that "
+        "set GYRO_STEP_PEAK_G for this mounting",
+    )
+    ap.add_argument(
+        "--seconds",
+        type=float,
+        default=0.0,
+        help="stop after this long (0 = until Ctrl+C)",
+    )
     args = ap.parse_args()
 
     start_gyro()
@@ -664,14 +710,21 @@ if __name__ == "__main__":
         while True:
             st = _reader.state()
             if st["healthy"]:
-                print(f"yaw {st['yaw_cumulative_deg']:+9.2f} deg   "
-                      f"bias {st['bias_dps']:+6.3f} dps   "
-                      f"tilt {st['tilt_deg']}   "
-                      f"walking {st['walking']}  cadence {st['cadence_spm']}   "
-                      f"{st['sample_rate_hz']} Hz", end="\r", flush=True)
+                print(
+                    f"yaw {st['yaw_cumulative_deg']:+9.2f} deg   "
+                    f"bias {st['bias_dps']:+6.3f} dps   "
+                    f"tilt {st['tilt_deg']}   "
+                    f"walking {st['walking']}  cadence {st['cadence_spm']}   "
+                    f"{st['sample_rate_hz']} Hz",
+                    end="\r",
+                    flush=True,
+                )
             else:
-                print(f"waiting — {st['last_error'] or 'no data'}"[:100],
-                      end="\r", flush=True)
+                print(
+                    f"waiting — {st['last_error'] or 'no data'}"[:100],
+                    end="\r",
+                    flush=True,
+                )
             if args.seconds and (time.time() - started) > args.seconds:
                 break
             time.sleep(0.1)

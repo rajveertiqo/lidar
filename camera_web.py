@@ -2,7 +2,6 @@
 """Live camera feed in a web browser (MJPEG over HTTP)."""
 
 from __future__ import annotations
-
 import argparse
 import fcntl
 import os
@@ -255,7 +254,6 @@ def make_handler(broker, views, page):
                 except (BrokenPipeError, ConnectionResetError):
                     pass                       # browser closed the tab
                 return
-            
 
             self.send_error(404)
 

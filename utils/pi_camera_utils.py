@@ -31,7 +31,9 @@ from config import (
     ENV_TRUST_ENABLED, ENV_ANALYZE_HZ,
     SEG_ALWAYS, DETECTION_FRONT_EVERY_PASS,
     CAMERA_FRAME_TIMEOUT_S, CAMERA_STOP_TIMEOUT_S, CAMERA_RETRY_BACKOFF_S,
-    HAILO_RETRY_BACKOFF_S, HAILO_INFER_FAIL_RESET_S,
+    HAILO_RETRY_BACKOFF_S, HAILO_INFER_FAIL_RESET_S, HAILO_SEG_RUN_TIMEOUT_MS,
+    HAILO_VDEVICE_RESET, HAILO_VDEVICE_RESET_AFTER, HAILO_VDEVICE_RESET_WAIT_S,
+    HAILO_PROBE_TIMEOUT_S,
     SIMPLE_CAMERA_FRESH_S,
     CAMERA_SINGLE_CHANNEL, CAMERA_HAT_ADDRESS, CAMERA_HAT_CHANNEL, CAMERA_HAT_I2C_BUS,
     CAMERA_CORRUPT_PCT, CAMERA_CORRUPT_RESTART_S, CAMERA_CORRUPT_RESTART_SHARE,
@@ -221,7 +223,7 @@ def start_camera():
             _start_thread(_simulate_thread)
     else:
         _camera_source = "hardware"
-        _start_thread(_capture_thread)
+        _start_thread(_capture_supervised)
 
     _start_thread(_inference_thread)
 
@@ -571,6 +573,36 @@ def _open_camera():
     return False
 
 
+def _capture_supervised():
+    """_capture_thread, started again whenever an error it did not expect ends it (2026-10-21): until then the thread died — e.g. on a failed get_metadata()/make_array() of a cycling request — and no picture came until the app restarted, while "Camera off" was all the wearer heard."""
+    # `running`, not the generation: an NPU restart (HAILO_VDEVICE_RESET) starts a new
+    # generation of NPU workers and must not end capture. stop_camera() joins this thread
+    # after clearing `running`, so a restart in progress sees it within 0.25 s.
+    global picam2
+    failures = 0
+    while running:
+        began = time.monotonic()
+        try:
+            _capture_thread()
+            return                          # it returns only when stopped
+        except Exception as e:
+            if time.monotonic() - began > 60.0:
+                failures = 0                # it had been running well: no long backoff
+            delay = CAMERA_RETRY_BACKOFF_S[min(failures, len(CAMERA_RETRY_BACKOFF_S) - 1)]
+            failures += 1
+            print(f"[WARN] Camera capture thread failed ({type(e).__name__}: {e}) — "
+                  f"restarting it in {delay:g}s (restart {failures})")
+            # Opened afresh, as at start: the board and the cycle start on the same camera,
+            # so no side camera's picture is filed as the front's.
+            with _camera_lock:
+                cam, picam2 = picam2, None
+            if cam is not None:
+                _close_camera(cam)
+            deadline = time.monotonic() + delay
+            while running and time.monotonic() < deadline:
+                time.sleep(0.25)
+
+
 def _capture_thread():
     """Pull raw mosaic frames from Picamera2 into the shared numpy buffer."""
     global current_frame, current_frame_id, current_frame_t, capture_stalled
@@ -582,6 +614,7 @@ def _capture_thread():
     job = None
     asked_at = 0.0
     last_error_at = None
+    unreadable_since = None                 # cycling pictures unreadable since, in a row
     stall_wait = CAMERA_STALL_REOPEN_S      # no frame this long: reopen (doubles each time)
 
     def cycle_start():
@@ -648,15 +681,36 @@ def _capture_thread():
             capture_stalled = False
             print(f"[OK] Camera delivering again after {time.monotonic() - asked_at:.1f}s")
         if cycling:
-            request = arr
+            request, arr = arr, None
             try:
                 stamp = request.get_metadata().get("SensorTimestamp", 0)
                 arr = request.make_array("main")
+            except Exception as e:
+                # One bad request is one lost picture, not the end of capture (2026-10-21).
+                if last_error_at is None or time.monotonic() - last_error_at > CAMERA_FRAME_TIMEOUT_S:
+                    last_error_at = time.monotonic()
+                    print(f"[WARN] Camera picture unreadable ({type(e).__name__}: {e}) — skipped")
             finally:
                 request.release()
-            if stamp <= switched:
-                continue                      # exposed before the switch: the last camera's
-            _store_quad(sector, arr)
+            if arr is None:
+                # It still counts as that camera's turn, so the board moves on and the other
+                # cameras keep coming; unreadable for as long as a stall, it is reopened.
+                if unreadable_since is None:
+                    unreadable_since = time.monotonic()
+                elif time.monotonic() - unreadable_since > stall_wait:
+                    _stall_reopens += 1
+                    print(f"[CAMERA] pictures unreadable for "
+                          f"{time.monotonic() - unreadable_since:.0f}s — closing and "
+                          f"reopening the camera (reopen {_stall_reopens})")
+                    unreadable_since = None
+                    _cycle_present = None
+                    _reopen.set()
+                    continue
+            else:
+                unreadable_since = None
+                if stamp <= switched:
+                    continue                  # exposed before the switch: the last camera's
+                _store_quad(sector, arr)
             wanted -= 1
             if wanted <= 0:
                 slot = (slot + 1) % len(_cycle_order)
@@ -803,6 +857,38 @@ def _retry_wait(gen, delay: float) -> bool:
     return False
 
 
+def _npu_answers() -> bool:
+    """Does the NPU answer a separate process (`hailortcli fw-control identify`)? A dead chip can block an in-process HailoRT call with the GIL held, freezing every thread (HAILO_PROBE_TIMEOUT_S); a probe that hangs costs only its own process."""
+    import shutil
+    import subprocess
+    cli = shutil.which("hailortcli")
+    if cli is None:
+        return True                 # nothing to ask with: rebuild as before
+    try:
+        return subprocess.run([cli, "fw-control", "identify"], capture_output=True,
+                              timeout=HAILO_PROBE_TIMEOUT_S).returncode == 0
+    except Exception:               # timed out (the child is killed), or could not run
+        return False
+
+
+def _wait_npu_answers(gen, what: str) -> bool:
+    """After `what`'s engine broke mid-run: wait, probing with the init backoff, until the NPU answers (True) or this worker is stopped or replaced (False). Detection stays off meanwhile; guidance goes on with the LiDAR and radar."""
+    tries = 0
+    while _live(gen):
+        if _npu_answers():
+            if tries:
+                print(f"[{what}] the NPU answers again — rebuilding the engine")
+            return True
+        delay = _backoff(tries)
+        tries += 1
+        print(f"[ERROR] {what}: the NPU does not answer (hailortcli fw-control identify, "
+              f"try {tries}) — not rebuilding the engine on it, which can freeze the whole "
+              f"app; detection off, guidance goes on; asking again in {delay:g}s")
+        if not _retry_wait(gen, delay):
+            return False
+    return False
+
+
 def _close_engine(engine, what: str):
     """Close an engine, reporting rather than raising a failure to."""
     try:
@@ -941,13 +1027,27 @@ def _inference_thread():
 
     gen = _my_generation()
     failures = 0                  # consecutive failures: the backoff index
+    was_up = False                # came up at least once in this generation
+    rebuild_fails = 0             # init failures in a row since it last broke
+    broke = False                 # broke mid-run and not up again since
     try:
         while True:
+            if broke and not _wait_npu_answers(gen, "Hailo"):
+                return
             engine, error, live = _attempt_init(gen, "Hailo", _make_detector,
                                                 _detector_up, _detector_failed)
             if not live:
                 return
             if engine is None:
+                rebuild_fails += 1
+                if (HAILO_VDEVICE_RESET and was_up
+                        and rebuild_fails >= HAILO_VDEVICE_RESET_AFTER):
+                    # It worked, broke, and cannot be rebuilt: the device under it is gone.
+                    print(f"[ERROR] Hailo detector would not come back ({rebuild_fails} tries: "
+                          f"{error}) — restarting the NPU on a fresh device")
+                    threading.Thread(target=_restart_npu, args=(gen, error),
+                                     name="npu-restart", daemon=True).start()
+                    return
                 delay = _backoff(failures)
                 failures += 1
                 print(f"[ERROR] Hailo engine init failed (attempt {hailo_init_attempts}): {error} "
@@ -957,10 +1057,12 @@ def _inference_thread():
                 continue
 
             failures = 0          # it came up: a later failure retries quickly
+            was_up, rebuild_fails, broke = True, 0, False
             reason = _detect(engine, gen)          # closes the engine on exit
             engine = None
             if reason is None:
                 return            # stopped, or superseded by a newer start
+            broke = True
             delay = _backoff(failures)
             failures += 1
             print(f"[ERROR] Hailo detector reset — {reason}; detection off, "
@@ -972,6 +1074,44 @@ def _inference_thread():
             if gen == _generation:      # a newer worker's flag is not ours
                 hailo_ready = False
                 _note_coverage(_COVERAGE_NOT_READY, ())
+
+
+_npu_restart_lock = threading.Lock()
+
+
+def _restart_npu(gen, why):
+    """Stop every NPU worker of generation `gen`, release the shared VDevice once none of them can still be inside it, and start fresh workers, which open a new one (HAILO_VDEVICE_RESET, 2026-10-21). Capture carries on throughout."""
+    from utils.hailo_device import release_shared_vdevice
+    with _npu_restart_lock:
+        with _gen_lock:
+            if not _live(gen):
+                return                       # stopped, or already restarted
+            fresh = _new_generation()        # the old detector and segmenter wind down
+        # Every NPU worker still alive, of any generation: one left stuck by an earlier
+        # restart is inside the same device too.
+        old = [t for t in list(_threads)
+               if t.name in ("inference_thread", "seg_thread") and t.is_alive()
+               and t is not threading.current_thread()]
+        deadline = time.monotonic() + HAILO_VDEVICE_RESET_WAIT_S
+        for t in old:
+            t.join(timeout=max(0.0, deadline - time.monotonic()))
+        stuck = [t.name for t in old if t.is_alive()]
+        if stuck:
+            print(f"[ERROR] NPU restart: {', '.join(stuck)} still inside a call after "
+                  f"{HAILO_VDEVICE_RESET_WAIT_S:g}s — NOT releasing the device (that could "
+                  f"crash the app); starting the workers on it again")
+        else:
+            # A segmentation run that outlived close() releases its model when it returns.
+            time.sleep(HAILO_SEG_RUN_TIMEOUT_MS / 1000.0)
+            ok = release_shared_vdevice()
+            print(f"[Hailo] NPU restart ({why}): device "
+                  f"{'released' if ok else 'release FAILED'} — opening a new one")
+        with _gen_lock:
+            if not running or _generation != fresh:
+                return
+            _threads[:] = [t for t in _threads if t.is_alive()]
+            _start_thread(_inference_thread)
+            _start_thread(_seg_thread)
 
 
 def _detect(engine, gen):
@@ -1192,7 +1332,10 @@ def _seg_thread():
 
     gen = _my_generation()
     failures = 0
+    broke = False                 # broke mid-run and not up again since
     while True:
+        if broke and not _wait_npu_answers(gen, "Seg"):
+            return
         eng, error, live = _attempt_init(gen, "Seg", _make_segmenter,
                                          _segmenter_up, _segmenter_failed)
         if not live:
@@ -1207,7 +1350,7 @@ def _seg_thread():
             continue
 
         print(f"[Seg] Walkable-surface guide ready: {SEG_HEF_PATH}")
-        failures = 0
+        failures, broke = 0, False
         try:
             reason = _segment(eng, gen)
         finally:
@@ -1215,6 +1358,7 @@ def _seg_thread():
             _retire_seg_engine(eng)
         if reason is None:
             return
+        broke = True
         if not _wait_seg_released(gen, eng):
             return
         eng = None                # closed and released: not kept through the backoff

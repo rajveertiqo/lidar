@@ -13,6 +13,7 @@ from utils.gait_calibration import get_stride, is_measured, note_learned
 from utils.gyro_reader import get_gyro
 
 from config import (
+    CLOCK_FUTURE_TOLERANCE_S,
     GYRO_ENABLED,
     GYRO_GAIT_CONFIRMED,
     GYRO_MOUNTING_CONFIRMED,
@@ -393,6 +394,12 @@ class HeadingTracker:
                 self._reference_time = timestamp
 
             dt = None if prev_time is None else timestamp - prev_time
+            if dt is not None and dt < -CLOCK_FUTURE_TOLERANCE_S:
+                # The wall clock stepped back: every sample now lies "in the future" and
+                # would count as recent for as long as the step (a still user read as
+                # veering 78 deg, fuzz test 2026-10-22). Start the history afresh.
+                self._history.clear()
+                self._reference_time = timestamp
             if prev_profile is None or dt is None or not (0.005 < dt < 1.0):
                 self._last, learned = self._summarise(timestamp, learn=trusted)
                 self._last.update(scan_yaw_deg=None, scan_fwd_mm=None, scan_right_mm=None)
@@ -520,7 +527,8 @@ class HeadingTracker:
             self._history.popleft()
 
     def _window(self, now: float, seconds: float) -> List["_Sample"]:
-        return [h for h in self._history if (now - h.t) <= seconds]
+        return [h for h in self._history
+                if -CLOCK_FUTURE_TOLERANCE_S <= (now - h.t) <= seconds]
 
     def _stamped(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """`state` with the age of the scan it rests on (NEW-026)."""

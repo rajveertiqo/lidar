@@ -24,6 +24,73 @@ def _warn(layer: str, exc: Exception) -> None:
 _turn_lock = threading.Lock()
 _last_turn = None
 
+# The simple-guidance step failing tick after tick (2026-10-21): until then each failure
+# was a log line, the wearer heard nothing, and /health and the watchdog saw a live loop.
+_fail_lock = threading.Lock()
+_fail_count = 0
+_fail_error = ""
+_fallback_said_at: Optional[float] = None
+
+
+def _current_seq() -> int:
+    """The newest cue_seq, unchanged, for a tick that announces nothing. Not 0: the phone
+    bridge reads a cue_seq that goes backwards as a restart of this service, and re-alerts
+    the last sentence (2026-10-22, fuzz test)."""
+    try:
+        from utils import simple_guidance
+        return int(simple_guidance.state()["cue_seq"])
+    except Exception:
+        return 0
+
+
+def _note_guidance(exc: Optional[Exception]) -> str:
+    """Count one tick of the guidance step; the fault once GUIDANCE_FAIL_TICKS fail in a row, else ""."""
+    from config import GUIDANCE_FAIL_TICKS
+    global _fail_count, _fail_error
+    with _fail_lock:
+        if exc is None:
+            _fail_count, _fail_error = 0, ""
+            return ""
+        _fail_count += 1
+        _fail_error = f"{type(exc).__name__}: {exc}"
+        return _fail_error if _fail_count >= GUIDANCE_FAIL_TICKS else ""
+
+
+def guidance_fault() -> str:
+    """Why the guidance step is failing, or "" — for the loop's heartbeat (pi_voice) and /health."""
+    from config import GUIDANCE_FAIL_TICKS
+    with _fail_lock:
+        return _fail_error if _fail_count >= GUIDANCE_FAIL_TICKS else ""
+
+
+def _fault_result(why: str) -> Dict[str, Any]:
+    """What to say while the guidance step is failing: "Guidance stopped, use your cane"."""
+    global _fallback_said_at
+    try:
+        from utils import simple_guidance
+        return simple_guidance.fault_notice(why)
+    except Exception as e:
+        _warn("fault notice", e)
+    # The gate itself is broken: straight to the Pi voice, without a cue for the phone.
+    from config import SIMPLE_OFFLINE_REPEAT_S
+    text = "Guidance stopped, use your cane"
+    try:
+        from utils.simple_guidance import SENSORS_OFFLINE as text
+    except Exception:
+        pass
+    mono = time.monotonic()
+    if _fallback_said_at is None or mono - _fallback_said_at >= SIMPLE_OFFLINE_REPEAT_S:
+        _fallback_said_at = mono
+        try:
+            from utils import pi_voice
+            pi_voice.speak(text, urgent=True, seq=None)
+        except Exception:
+            pass
+    return {"instruction": text, "action": "sensors_offline", "speak": False,
+            "cue_seq": _current_seq(), "quiet_reason": "said directly by the Pi voice",
+            "rule": "offline", "reason": f"the guidance step is failing: {why}",
+            "side": None, "raw": {}}
+
 # The guidance loop's newest result: (result, time.monotonic() when made).
 _latest_lock = threading.Lock()
 _latest: Optional[Tuple[Dict[str, Any], float]] = None
@@ -170,7 +237,7 @@ def get_unified_guidance() -> Dict[str, Any]:
         _warn("drift state", e)
 
     simple = {"instruction": "", "action": "unknown", "speak": False,
-              "cue_seq": 0, "quiet_reason": "", "rule": "unavailable",
+              "cue_seq": _current_seq(), "quiet_reason": "", "rule": "unavailable",
               "reason": "", "side": None}
     try:
         from utils import simple_guidance
@@ -208,6 +275,12 @@ def get_unified_guidance() -> Dict[str, Any]:
         except Exception as e:
             _warn("radar movers", e)
         radar_now = get_radar_state()
+        system = None
+        try:
+            from utils import pi_health
+            system = pi_health.read()
+        except Exception as e:
+            _warn("pi health", e)
         hold = None if ready["ready"] else (ready["quiet_reason"] or "scanning")
         tick_t, tick_mono = time.time(), time.monotonic()
         simple = simple_guidance.guidance(
@@ -219,7 +292,9 @@ def get_unified_guidance() -> Dict[str, Any]:
             radar_state=radar_now,
             camera_state=camera,
             motion=motion,
-            movers=movers)
+            movers=movers,
+            system=system)
+        _note_guidance(None)
         _record(tick_t, tick_mono, {
             "walk_decision": walk_decision, "lidar": lidar, "radar": radar_now,
             "camera": camera, "motion": motion, "movers": movers, "hold": hold,
@@ -227,6 +302,9 @@ def get_unified_guidance() -> Dict[str, Any]:
             "at_crossing": at_crossing}, simple)
     except Exception as e:
         _warn("simple guidance", e)
+        fault = _note_guidance(e)
+        if fault:
+            simple = _fault_result(fault)
 
     if simple.get("mover_shadow"):
         # Not spoken (LIDAR_MOVERS_SPEAK False): logged so a test walk can judge it.

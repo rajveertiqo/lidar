@@ -20,7 +20,7 @@ from config import (
     GUIDANCE_CONE_DEG, GUIDANCE_CONE_CENTRES,
     GUIDANCE_CORRIDOR_HALF_WIDTH_MM, GUIDANCE_CORRIDOR_MAX_MM,
     LIDAR_CLUSTER_MIN_POINTS, LIDAR_CLUSTER_WINDOW_MM,
-    LIDAR_PERSIST_DEG, LIDAR_PERSIST_MAX_AGE_S,
+    LIDAR_PERSIST_DEG, LIDAR_PERSIST_MAX_AGE_S, LIDAR_SELF_PERSIST_S, LIDAR_SELF_RANGE_MM,
     LIDAR_MAX_BACKLOG_S, LIDAR_KEEP_BACKLOG_S, LIDAR_MEAS_RATE_HZ,
     LIDAR_SCAN_MAX_GAP_DEG, LIDAR_RETRY_BACKOFF_S, LIDAR_SIMULATION_ALLOWED,
     HEADING_ENABLED, DRIFT_ENABLED, DRIFT_ANALYZE_HZ,
@@ -322,6 +322,8 @@ _SYNC_RUN = 4            # consecutive plausible packets required to re-lock
 _RATE_WARMUP_S = 2.0
 
 _SILENCE_TIMEOUT_S = 2.0
+_NO_SCAN_TIMEOUT_S = 5.0     # bytes arriving but no complete scan this long: reconnect
+_MAX_PACKETS_PER_SCAN = 10000   # ~2.5 s of packets: far more than one revolution holds
 
 
 def _plausible(buf, i: int) -> bool:
@@ -442,7 +444,14 @@ class _ScanStream:
         """Yield complete scans as lists of (quality, angle, distance)."""
         scan = []
         angles = []          # every packet's bearing, valid or not — coverage
+        last_scan = time.monotonic()
         while not stop_scanner.is_set():
+            if time.monotonic() - last_scan > _NO_SCAN_TIMEOUT_S:
+                # Bytes still arrive (silence is _refill's), but nothing that makes a scan:
+                # end the session so it reconnects (fuzz test 2026-10-22).
+                from rplidar import RPLidarException
+                raise RPLidarException(f"LiDAR data but no complete scan for "
+                                       f"{time.monotonic() - last_scan:.1f}s")
             if len(self._buf) - self._pos < _SYNC_RUN * _MEAS_LEN:
                 if not self._refill():
                     continue
@@ -475,6 +484,7 @@ class _ScanStream:
                     if _max_gap(angles) <= LIDAR_SCAN_MAX_GAP_DEG:
                         self.captured_at = time.time() - self._arrived_since()
                         self.swept = angles
+                        last_scan = time.monotonic()
                         yield scan
                     else:
                         self.partial_scans += 1
@@ -483,6 +493,13 @@ class _ScanStream:
                 angles = []
             if not self._synced:
                 continue                        # mid-scan after a drop; wait it out
+            if len(angles) >= _MAX_PACKETS_PER_SCAN:
+                # No start flag for far longer than a revolution: a lost flag, not a scan.
+                # Drop it rather than let the lists grow without end.
+                self.partial_scans += 1
+                self._synced = False
+                scan, angles = [], []
+                continue
 
             angle = ((self._buf[i + 1] >> 1) | (self._buf[i + 2] << 7)) / 64.0
             angles.append(angle)
@@ -532,11 +549,36 @@ def _mark_unswept(cones, swept):
     return out
 
 
+_SELF_BIN_DEG = 10.0
+_self_since = {}     # 10-degree slice -> first scan with a near return there, while it lasts
+
+
+def _drop_transient_self(points, captured_at):
+    """Returns nearer than LIDAR_SELF_RANGE_MM, dropped until they have held in one slice for LIDAR_SELF_PERSIST_S: the wearer's arm or cane handle swinging through the cones raised false "Turn" warnings (2026-10-21)."""
+    if LIDAR_SELF_RANGE_MM <= 0:
+        return points
+    near = {int((a % 360.0) // _SELF_BIN_DEG) for a, d in points if d < LIDAR_SELF_RANGE_MM}
+    for b in list(_self_since):
+        if b not in near or captured_at < _self_since[b]:       # gone, or a clock step
+            del _self_since[b]
+    for b in near:
+        _self_since.setdefault(b, captured_at)
+    held = {b for b in near if captured_at - _self_since[b] >= LIDAR_SELF_PERSIST_S - 1e-6}
+    if held == near:
+        return points
+    return [(a, d) for a, d in points
+            if d >= LIDAR_SELF_RANGE_MM or int((a % 360.0) // _SELF_BIN_DEG) in held]
+
+
 def _publish_scan(loop, scan, scan_index, hz, health, captured_at=None, swept=None):
     """Turn one raw scan into sector/cone stats and push it to state + clients."""
     global _previous_scan
     captured_at = time.time() if captured_at is None else captured_at
     points = [(correct_angle(angle), dist) for _q, angle, dist in scan if dist > 0]
+    if not points:
+        return
+    valid_fraction = round(len(points) / len(swept), 3) if swept else None
+    points = _drop_transient_self(points, captured_at)
     if not points:
         return
 
@@ -555,7 +597,7 @@ def _publish_scan(loop, scan, scan_index, hz, health, captured_at=None, swept=No
     }
 
     update_lidar_state(points_data, sector_stats, hz * 60.0, scan_index, cone_stats,
-                       captured_at=captured_at)
+                       captured_at=captured_at, valid_fraction=valid_fraction)
 
     heading = _step_heading(points, captured_at)
     _update_movers(points, heading, captured_at)

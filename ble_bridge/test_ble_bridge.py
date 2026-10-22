@@ -3,9 +3,14 @@
     venv/bin/python -m unittest ble_bridge.test_ble_bridge -v
 """
 
+import contextlib
+import io
 import json
 import os
 import sys
+import tempfile
+import threading
+import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -30,6 +35,20 @@ def frames_of(outs, mtu=23):
 
 def decoded(outs):
     return [(char, P.decode_message(t, payload)) for char, t, payload in outs]
+
+
+def strict_json(payload):
+    """Standard JSON only: NaN / Infinity are what a phone's decoder would reject."""
+    def refuse(constant):
+        raise ValueError(f"non-standard JSON {constant}")
+    return json.loads(payload.decode("utf-8"), parse_constant=refuse)
+
+
+def assert_sendable(outs, mtu=23):
+    for _c, t, payload in outs:
+        P.encode(t, payload, 0, mtu)                       # raises if too large for this MTU
+        if t in P.JSON_TYPES:
+            strict_json(payload)
 
 
 class FakeService:
@@ -121,6 +140,25 @@ class ProtocolTests(unittest.TestCase):
     def test_too_large(self):
         with self.assertRaises(P.ProtocolError):
             P.encode(P.T_EVENT, b"z" * (P.MAX_MESSAGE_BYTES + 1), 0, 517)
+        self.assertEqual(P.max_message_bytes(23), 255 * 14)
+        P.encode(P.T_EVENT, b"z" * P.max_message_bytes(23), 0, 23)
+        with self.assertRaises(P.ProtocolError):
+            P.encode(P.T_EVENT, b"z" * (P.max_message_bytes(23) + 1), 0, 23)
+
+    def test_huge_values_saturate_and_garbage_is_unknown(self):
+        """An OverflowError here ended the poll thread for good (loop.age_s = 1e306)."""
+        for big in (float("inf"), 1e306 * 1000.0, 1e308):
+            a = P.unpack_alert(P.pack_alert(1, 1, big, 1, 1, 0, big))
+            self.assertEqual((a["age_ms"], a["front_ft"]), (P.AGE_MAX_MS, 6553.4))
+            self.assertEqual(P.unpack_state(P.pack_state(1, 1, big, 1, 1, 0, 0))["age_ms"], P.AGE_MAX_MS)
+        for junk in (10 ** 400, "abc", [], float("-inf"), float("nan")):
+            a = P.unpack_alert(P.pack_alert(1, 1, junk, 1, 1, 0, junk))
+            self.assertEqual((a["age_ms"], a["front_ft"]), (None, None))
+
+    def test_json_is_strict_and_always_utf8(self):
+        with self.assertRaises(ValueError):
+            P.json_bytes({"t": float("inf")})              # never sent as non-standard JSON
+        self.assertEqual(strict_json(P.json_bytes({"t": "a\ud800b"})), {"t": "a?b"})
 
 
 class VocabTests(unittest.TestCase):
@@ -389,6 +427,203 @@ class CommandTests(unittest.TestCase):
                 P.encode(t, payload, 0, 23)                # must not raise at the smallest MTU
 
 
+class RobustnessTests(unittest.TestCase):
+    """The 2026-10-22 fuzzing pass: a bad value from the service, the app or the disk must
+    not stop alerts, end a thread, or leave a command without a sendable answer."""
+
+    def cmd(self, b, obj):
+        b.clock.t += 0.2                                   # stay under the command rate limit
+        outs = b.on_command(obj if isinstance(obj, bytes) else P.json_bytes(obj))
+        assert_sendable(outs, b.att_mtu)
+        return [d for c, d in decoded(outs)]
+
+    def test_unwritable_state_file_keeps_alerts_flowing(self):
+        """Full or read-only SD card: the bridge starts, a service restart still bumps the epoch
+        (in memory) and alerts go on. One log line, not one per failed save."""
+        with tempfile.TemporaryDirectory() as d:
+            blocker = os.path.join(d, "a_file")
+            open(blocker, "w").close()                     # its "directory" is a file: unwritable, even as root
+            clock = Clock()
+            with contextlib.redirect_stdout(io.StringIO()) as log:
+                b = Bridge(load_vocab(), {"mock": False}, clock=clock, wall=lambda: 0.0,
+                           state_path=os.path.join(blocker, "state.json"))
+                b.on_walk(make_walk(50))
+                epoch = b.epoch
+                clock.t += 0.1
+                restarted = decoded(b.on_walk(make_walk(2)))           # the service restarted
+                clock.t += 0.1
+                alerts = [d for c, d in decoded(b.on_walk(make_walk(3, "Wall ahead", "Wall ahead")))
+                          if d["kind"] == "alert"]
+        self.assertIn("service_restarted", [d.get("event") for c, d in restarted])
+        self.assertEqual(b.epoch, epoch + 1)
+        self.assertEqual((alerts[0]["epoch"], alerts[0]["cue_seq"]), (epoch + 1, 3))
+        self.assertEqual(log.getvalue().count("cannot save"), 1)
+
+    def test_unusable_state_file_counts_as_absent(self):
+        bad = ["[1,2]", "null", '{"epoch":"x"}', '{"epoch":null}', "", '{"epoch":',
+               '{"device_id":"0123456789abcdef","epoch":NaN}',
+               '{"device_id":"0123456789abcdef","epoch":1e400}',
+               '{"device_id":"' + "d" * 600 + '","epoch":3}', '{"device_id":5,"epoch":3}']
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "state.json")
+            for content in bad:
+                with open(path, "w") as fh:
+                    fh.write(content)
+                with contextlib.redirect_stdout(io.StringIO()) as log:
+                    b = Bridge(load_vocab(), {"mock": False}, clock=Clock(), wall=lambda: 0.0,
+                               state_path=path)
+                self.assertEqual(b.epoch, 1, content)
+                self.assertRegex(b.device_id, "^[0-9a-f]{16}$")
+                self.assertIn("ignored", log.getvalue())
+                info = P.encode(P.T_PROTOCOL_INFO, P.json_bytes(b.protocol_info()), 0, 517)
+                self.assertEqual(len(info), 1)             # _read_info serves frame 0 only
+            with open(path, "w") as fh:                    # ... and a good one is still kept
+                json.dump({"device_id": "0123456789abcdef", "epoch": 41}, fh)
+            b = Bridge(load_vocab(), {"mock": False}, clock=Clock(), wall=lambda: 0.0, state_path=path)
+            self.assertEqual((b.device_id, b.epoch), ("0123456789abcdef", 42))
+
+    def test_bad_walk_values_are_unknown_not_fatal(self):
+        """Each of these raised from on_walk (and most from every later tick)."""
+        cases = [("loop", "age_s", 1e306), ("loop", "age_s", float("inf")), ("loop", "age_s", "abc"),
+                 ("loop", "age_s", 10 ** 400), ("path", "front_ft", float("inf")),
+                 ("path", "front_ft", 10 ** 400), ("notify", "instruction", "Walk \ud800"),
+                 ("notify", "instruction", "\U0001F6B6" * 1300), ("notify", "pi_voice", [1]),
+                 (None, "loop", [1]), (None, "path", 5), (None, "notify", "oops")]
+        for where, key, value in cases:
+            b, clock = make_bridge()
+            b.on_walk(make_walk(5))
+            clock.t += 1.5
+            snap = make_walk(6, "Walk straight", "Walk straight", speak=True, front_ft=10.0)
+            (snap if where is None else snap[where])[key] = value
+            outs = b.on_walk(snap)
+            clock.t += 1.5
+            outs += b.tick() + b.on_unreachable("refused")
+            assert_sendable(outs)
+            alerts = [d for c, d in decoded(outs) if d["kind"] in ("alert", "alert_text")]
+            if key != "notify":                            # without notify there is no cue step
+                self.assertEqual(alerts[0]["cue_seq"], 6, (where, key))
+            for text in (d["text"] for d in alerts if d["kind"] == "alert_text"):
+                self.assertLessEqual(len(text.encode("utf-8")), 200)
+        b, _ = make_bridge()
+        for snap in (None, [], "x", 5):
+            assert_sendable(b.on_walk(snap) + b.tick(force=True))
+
+    def test_wrong_typed_health_fields_do_not_poison_later_calls(self):
+        b, clock = make_bridge()
+        b.on_walk(make_walk(1))
+        good = (make_health(), {"front_glass_ok": True}, {"soc_c": 50.0, "throttled": 0})
+        b.on_health(*good)
+        bad = [({**make_health(), "sensors": ["lidar_ok"]}, {}, {}),
+               ({**make_health(), "warnings": 5}, {}, {}),
+               ({**make_health(), "warnings": {"a": 1}}, {}, {}),
+               ({**make_health(), "status": []}, {}, {}),
+               ({**make_health(guiding=False), "guidance_loop": "x"}, {}, {}),
+               (make_health(), [1], {"throttled": "0x50005", "soc_c": "hot"}),
+               (make_health(), {}, {"throttled": -1, "soc_c": float("inf")}),
+               ([1], None, None)]
+        for h, sh, sy in bad:
+            clock.t += 1
+            assert_sendable(b.on_health(h, sh, sy) + b.tick(force=True))
+            clock.t += 1
+            assert_sendable(b.on_health(*good) + b.tick(force=True))
+            st = P.unpack_state(b.state_value())           # the next good snapshot is whole again
+            self.assertEqual(st["status"], "ok", h)
+            self.assertTrue(st["health"]["lidar_ok"] and st["health"]["front_glass_ok"], h)
+            self.assertFalse(st["health"]["thermal_warn"] or st["health"]["undervoltage"], h)
+
+    def test_long_strings_are_capped(self):
+        b, clock = make_bridge()
+        w = make_walk(1)
+        w["notify"]["pi_voice"]["error"] = "y" * 5000
+        b.on_walk(w)
+        b.on_health(make_health())
+        clock.t += 1
+        h = make_health(guiding=False)
+        h["guidance_loop"]["error"] = "KeyError: " + "x" * 5000
+        outs = b.on_health(h)
+        assert_sendable(outs)
+        self.assertIn("guidance_stalled", [d.get("event") for c, d in decoded(outs)])
+        st = self.cmd(b, {"v": 1, "id": 1, "cmd": "get_status"})[0]["result"]
+        self.assertLessEqual(max(len(st["loop"]["error"]), len(st["voice"]["error"])), 200)
+        for warning in ("—" * 400, "\U0001F6B6" * 400, "\x01" * 400):   # 3, 4 and 6 bytes a character
+            clock.t += 1
+            assert_sendable(b.on_health(make_health(warnings=[warning] * 20)))
+
+    def test_echoed_and_stored_app_values_are_bounded(self):
+        b, _ = make_bridge()
+        for raw in (P.json_bytes({"v": 1, "id": 2, "cmd": "ping", "args": {"t": "x" * 3600}}),
+                    b'{"v":1,"id":2,"cmd":"ping","args":{"t":NaN}}'):
+            self.assertEqual(self.cmd(b, raw)[0]["error"]["code"], "BAD_ARGS")
+        self.assertEqual(self.cmd(b, {"v": 1, "id": 3, "cmd": "ping", "args": {"t": 1791504000123}})
+                         [0]["result"]["t"], 1791504000123)
+        for args in ({"app_latency_ms": "L" * 900}, {"app_latency_ms": -1}, {"app_latency_ms": True},
+                     {"epoch": 10 ** 3000}, {"cue_seq": -1}):
+            ack = {"epoch": 1, "cue_seq": 2, "outcome": "spoken", **args}
+            r = self.cmd(b, {"v": 1, "id": 4, "cmd": "alert_ack", "args": ack})[0]
+            self.assertEqual(r["error"]["code"], "BAD_ARGS", args)
+        for i in range(5):
+            self.cmd(b, {"v": 1, "id": 5, "cmd": "alert_ack",
+                         "args": {"epoch": 1, "cue_seq": i, "outcome": "spoken", "app_latency_ms": 120}})
+        diag = self.cmd(b, {"v": 1, "id": 6, "cmd": "get_diagnostics"})[0]["result"]
+        self.assertEqual([a["app_latency_ms"] for a in diag["acks"]], [120] * 5)
+
+    def test_speech_log_shrinks_to_fit_the_mtu(self):
+        """20 entries can pass 255 fragments at MTU 23: the reply was lost without a word."""
+        longest = max(load_vocab()["by_text"], key=len)
+        line = {"time": "23:59:59", "source": "simple-guidance", "level": "advisory",
+                "text": longest, "via": "pi+phone", "outcome": "interrupted"}
+
+        class LongLog(FakeService):
+            def speech_log(self, limit):
+                return {"lines": [dict(line, cue_seq=100000 + i) for i in range(50)][-limit:]}
+
+        b, _ = make_bridge()
+        b.service = LongLog()
+        for mtu, all_fit in ((23, False), (185, True)):
+            b.set_mtu(link=mtu)
+            entries = self.cmd(b, {"v": 1, "id": 1, "cmd": "get_speech_log",
+                                   "args": {"limit": 20}})[0]["result"]["entries"]
+            self.assertEqual(entries[-1]["cue_seq"], 100049)    # the newest is kept, the oldest go
+            self.assertEqual(len(entries) == 20, all_fit, mtu)
+
+    def test_a_reply_too_large_for_the_link_is_answered_too_large(self):
+        class Chatty(FakeService):
+            def mark(self, kind, note):
+                return {"ok": True, "detail": "z" * 4000}
+
+        b, _ = make_bridge()
+        b.service = Chatty()
+        r = self.cmd(b, {"v": 1, "id": 77, "cmd": "mark", "args": {"kind": "note"}})[0]
+        self.assertEqual((r["id"], r["ok"], r["error"]["code"]), (77, False, "TOO_LARGE"))
+        body = P.json_bytes({"v": 1, "id": 78, "ok": True, "result": {"x": "y" * 4000}})
+        r = strict_json(b.too_large(body, "the MTU fell"))     # what Server.send falls back to
+        self.assertEqual((r["id"], r["error"]["code"]), (78, "TOO_LARGE"))
+
+    def test_mtu_is_the_smaller_of_the_link_and_the_apps_claim(self):
+        b, _ = make_bridge()
+        b.on_connect()
+        b.set_mtu(link=185)                                # BlueZ's write option "mtu"
+        r = self.cmd(b, {"v": 1, "id": 1, "cmd": "hello", "args": {"protocol": 1, "att_mtu": 517}})[0]
+        self.assertEqual((r["result"]["att_mtu"], b.att_mtu), (185, 185))
+        self.cmd(b, {"v": 1, "id": 2, "cmd": "hello", "args": {"protocol": 1, "att_mtu": 100}})
+        self.assertEqual(b.att_mtu, 100)                   # a smaller claim is believed
+        b.on_disconnect()
+        self.assertEqual(b.att_mtu, P.MIN_ATT_MTU)
+
+    def test_command_error_path_cannot_fail(self):
+        """The error RESPONSE itself raised UnicodeEncodeError and killed the command thread."""
+        b, _ = make_bridge()
+        r = self.cmd(b, b'{"v":"\\ud800","id":7,"cmd":"ping"}')
+        self.assertEqual([(x["id"], x["error"]["code"]) for x in r], [(7, "PROTOCOL_MISMATCH")])
+        w = make_walk(1, "Walk straight")
+        w["path"]["front_ft"] = float("nan")               # NaN in a reply: an error, never bad JSON
+        b.on_walk(w)
+        r = self.cmd(b, {"v": 1, "id": 8, "cmd": "get_current"})[0]
+        self.assertEqual((r["id"], r["ok"]), (8, False))
+        r = self.cmd(b, {"v": 1, "id": 2 ** 40, "cmd": "ping"})[0]
+        self.assertEqual((r["id"], r["error"]["code"]), (None, "BAD_ARGS"))
+
+
 class ScenarioTests(unittest.TestCase):
     def run_scenario(self, name, seconds=30.0):
         clock = Clock()
@@ -427,7 +662,7 @@ class ScenarioTests(unittest.TestCase):
         said, events = self.run_scenario("sensor_failure")
         self.assertIn("sensor_degraded", events)
         self.assertNotIn("guidance_stalled", events)
-        self.assertIn("Sensors offline", said)
+        self.assertIn("Guidance stopped, use your cane", said)
 
     def test_crash_scenario_reports_and_recovers(self):
         said, events = self.run_scenario("service_crash")
@@ -484,6 +719,120 @@ class GattImportTest(unittest.TestCase):
             self.assertFalse(any("read" in f for f in level["notify_only"]))
         self.assertEqual(gatt_server.SECURITY["encrypt"]["notify_only"], ["encrypt-notify"])
         self.assertLessEqual(len("Shappe-M".encode()), gatt_server.MAX_NAME_BYTES)
+
+    def test_connection_tracking(self):
+        # A phone new to BlueZ arrives in InterfacesAdded already connected, with no
+        # PropertiesChanged after it: it must still count as exactly one connection.
+        import contextlib
+        import io
+        import dbus
+        from ble_bridge import gatt_server
+
+        class Bus:
+            def get_object(self, *_):
+                raise dbus.exceptions.DBusException("device gone")
+
+        class Hooks:
+            connects = disconnects = 0
+
+            def on_connect(self):
+                self.connects += 1
+
+            def on_disconnect(self):
+                self.disconnects += 1
+
+        s = gatt_server.Server.__new__(gatt_server.Server)
+        s.bus, s.bridge, s.connected = Bus(), Hooks(), set()
+        s.seq = {"alert": 5, "state": 5, "events": 5}
+        dev, iface = "/org/bluez/hci0/dev_58_E1_DD_9F_94_B8", gatt_server.DEVICE_IFACE
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            s.on_interfaces_added(dev, {iface: {"Connected": True}})
+            s.on_device_props(iface, {"Connected": True}, [], path=dev)     # repeat: ignored
+            s.on_device_props(iface, {"Connected": False}, [], path=dev)
+            s.on_interfaces_removed(dev, [iface])                            # already counted
+        self.assertEqual((s.bridge.connects, s.bridge.disconnects), (1, 1))
+        self.assertEqual(s.seq, {"alert": 0, "state": 0, "events": 0})
+        self.assertEqual(s.connected, set())
+        self.assertIn(f"connected: {dev} (1 connected)", out.getvalue())
+
+    def test_send_never_drops_the_rest_of_a_batch(self):
+        """A message too large for the MTU raised inside send() and lost the rest, STATE too."""
+        from ble_bridge import gatt_server
+
+        class Char:
+            notifying = True
+
+            def __init__(self):
+                self.frames = []
+
+            def notify(self, value):
+                self.frames.append(bytes(value))
+
+        b, _ = make_bridge()
+        s = gatt_server.Server.__new__(gatt_server.Server)
+        s.bridge, s.seq = b, {"alert": 0, "state": 0, "events": 0}
+        s.chars = {name: Char() for name in s.seq}
+        reply = P.json_bytes({"v": 1, "id": 9, "ok": True, "result": {"x": "y" * 3600}})  # > 3570 B
+        event = P.json_bytes({"v": 1, "event": "health_changed", "data": {"x": "z" * 5000}})
+        with contextlib.redirect_stdout(io.StringIO()):
+            s.send([("events", P.T_RESPONSE, reply), ("events", P.T_EVENT, event),
+                    ("state", P.T_STATE, b.state_value())])
+        self.assertEqual(len(s.chars["state"].frames), 1)          # STATE still went out
+        r = P.Reassembler()
+        msgs = [m for m in (r.feed(f, 0.0) for f in s.chars["events"].frames) if m]
+        self.assertEqual([(m["id"], m["error"]["code"]) for m in (P.parse_json(p) for _t, _s, p in msgs)],
+                         [(9, "TOO_LARGE")])                       # the app still gets an answer
+
+    def test_poll_loop_survives_any_exception(self):
+        """loop.age_s = 1e306 ended the poll thread for good; the process lived on, silent."""
+        from ble_bridge import gatt_server
+
+        b, _ = make_bridge()
+        logged = []
+        b.log = lambda key, message: logged.append(message)
+        bad = make_walk(6, "Walk straight", "Walk straight", speak=True)
+        bad["loop"]["age_s"] = 1e306
+        walks = iter([make_walk(5), bad] + [make_walk(7 + i, "Wall ahead", "Wall ahead") for i in range(500)])
+
+        class Source:
+            def walk(self):
+                return next(walks)
+
+            def health(self):
+                return make_health()
+
+            def system_health(self):
+                return {"front_glass_ok": True}
+
+            def system(self):
+                return {"soc_c": 50.0, "throttled": 0}
+
+        real_tick, failed = b.tick, []
+
+        def tick(force=False):                             # a bug anywhere in the loop, once
+            if not failed:
+                failed.append(True)
+                raise RuntimeError("injected")
+            return real_tick(force)
+
+        b.tick = tick
+        s = gatt_server.Server.__new__(gatt_server.Server)
+        s.bridge, s.source, s.stop = b, Source(), threading.Event()
+        sent = []
+        s.post = sent.extend
+        th = threading.Thread(target=s.poll_loop, name="ble-poll-test", daemon=True)
+        th.start()
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline and sum(t == P.T_ALERT for _c, t, _p in sent) < 3:
+            time.sleep(0.05)
+        alive = th.is_alive()
+        s.stop.set()
+        th.join(2.0)
+        self.assertTrue(alive)
+        alerts = [P.unpack_alert(p) for _c, t, p in sent if t == P.T_ALERT]
+        self.assertEqual([a["cue_seq"] for a in alerts[:3]], [6, 7, 8])
+        self.assertEqual(alerts[0]["age_ms"], P.AGE_MAX_MS)       # the huge age, saturated
+        self.assertTrue(any("RuntimeError: injected" in m for m in logged))
 
 
 if __name__ == "__main__":

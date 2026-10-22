@@ -2,7 +2,7 @@
 
 > **Status: PROTOTYPE, not production.**
 >
-> - **Tested:** protocol and bridge logic, by `test_ble_bridge.py` (34 desk tests).
+> - **Tested:** protocol and bridge logic, by `test_ble_bridge.py` (49 desk tests).
 > - **Checked:** BlueZ access, with `--check` (read-only).
 > - **Not yet done:** it has **not** advertised or served a phone.
 >
@@ -45,5 +45,5 @@ Mock mode advertises **`Shappe-M`** (a legacy advertisement fits at most 8 name 
 
 - **Pairing:** pairing is LE Secure Connections **Just Works**. That gives encryption but no MITM protection, and is acceptable only for the supervised prototype. The production design is in docs/04 §6.
 - **One phone:** v1 serves one phone. BlueZ sends notifications to every subscribed central, and the per-connection sequence counters assume one.
-- **MTU:** the MTU comes from the app's `hello` (`att_mtu`) or BlueZ's write `mtu` option. Until then, frames are cut for the 23-byte minimum.
+- **MTU:** frames are cut for the smaller of the app's `hello` (`att_mtu`) and BlueZ's write `mtu` option, whichever are known. Until then, frames are cut for the 23-byte minimum.
 - **iPhone pairing prompt:** an iPhone's automatic pairing prompt on ATT *Insufficient Encryption* (0x0F) still has to be confirmed on real iPhones (docs/04 §6.4).

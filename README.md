@@ -680,7 +680,7 @@ systemd **user** service (user, so the voice reaches PipeWire and the earpiece):
 ```bash
 ./deploy/install-service.sh                 # install + enable; prints the admin token
 systemctl --user start shappe-guide         # start now (stop any ./start_lidar.sh first)
-journalctl --user -u shappe-guide -f        # its log
+journalctl --user-unit=shappe-guide -f      # its log
 ./deploy/install-service.sh --remove        # undo
 ```
 

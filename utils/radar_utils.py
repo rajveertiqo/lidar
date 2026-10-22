@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 from config import (
     RADAR_MIN_RATE_FRACTION,
     RADAR_BAUDRATE, RADAR_CALIBRATE_STALL_S, RADAR_END_MM, RADAR_ENABLED,
-    RADAR_MAX_LAG_S, RADAR_PORT_EXCLUDE,
+    RADAR_LATE_JOIN_S, RADAR_MAX_LAG_S, RADAR_PORT_EXCLUDE,
     RADAR_PROFILE, RADAR_READY_TIMEOUT_S, RADAR_RESTART_WAIT_S, RADAR_SECTORS,
     RADAR_STALL_S,
     RADAR_REFLECTOR_SHAPE, RADAR_SIGNAL_QUALITY, RADAR_THRESHOLD_SENSITIVITY,
@@ -101,7 +101,10 @@ def _parse_system_info(raw: bytes) -> Optional[Dict[str, Any]]:
             msg = json.loads(line)
         except Exception:
             continue
-        if msg.get("status") == "ok" and "system_info" in msg:
+        # A line that is JSON but not an object, or an info that is not one, is not a reply:
+        # skip it rather than raise and lose the real reply on the next line (2026-10-22).
+        if (isinstance(msg, dict) and msg.get("status") == "ok"
+                and isinstance(msg.get("system_info"), dict)):
             return msg["system_info"]
     return None
 
@@ -876,9 +879,82 @@ def _run_cycles(restart: bool, allow_provisional: bool) -> None:
             if not _cycle_again:
                 _cycle_running = False
                 _restart_state.update(since=None, reason=None)
+                with _key_lock:
+                    stop = _live["stop"]
+                if stop is not None and not stop.is_set() and RADAR_LATE_JOIN_S > 0:
+                    t = threading.Thread(target=_late_join_loop, args=(stop,),
+                                         name="radar-late-join", daemon=True)
+                    t.start()
+                    _threads.append(t)      # joined like a board's on restart or stop
                 return
             _cycle_again = False
         restart = True
+
+
+def _late_join_loop(stop: threading.Event) -> None:
+    """While this generation lasts, start any board with a measured bearing that is not part of it once it answers — plugged back in, or its firmware recovered (2026-10-21)."""
+    while not stop.wait(RADAR_LATE_JOIN_S):
+        try:
+            _late_join_once(stop)
+        except Exception as exc:
+            print(f"[RADAR] late-join search failed: {type(exc).__name__}: {exc}")
+
+
+def _late_join_once(stop: threading.Event) -> List[str]:
+    """One search; the positions started. Opens only ports whose USB serial is a missing board's, and none a running board holds."""
+    with _key_lock:
+        if _live["stop"] is not stop:
+            return []
+        entries = [e for e, _ in _live["entries"]]
+    have = {e.get("serial") for e in entries}
+    wanted = {s for s, b in get_bearings().items() if b is not None and s not in have}
+    if not wanted:
+        return []
+    busy = {os.path.realpath(e.get("device") or "") for e in entries}
+    candidates = [c for c in sorted(glob.glob("/dev/ttyACM*")) + sorted(glob.glob("/dev/ttyUSB*"))
+                  if os.path.realpath(c) not in busy and _usb_info(c).get("serial") in wanted]
+    if not candidates:
+        return []
+    found = []
+    for dev in candidates:
+        if stop.is_set():
+            return []
+        info = read_system_info(dev, timeout=1.0)
+        if info is not None:
+            found.append({"device": dev, **_usb_info(dev), "rss": info.get("rss_version")})
+    started = []
+    for entry in assign_boards(found, allow_provisional=False):
+        if entry.get("position") is None or entry.get("serial") in have:
+            continue
+        print(f"[RADAR] {entry['serial']} ({entry['position']}, bearing "
+              f"{entry['bearing']:.1f} deg) answered on {entry['device']} — it was missing; "
+              f"starting it")
+        t = threading.Thread(target=_run_board, args=(entry, stop),
+                             name=f"radar-{entry['position']}", daemon=True)
+        with _key_lock:
+            if _live["stop"] is not stop or stop.is_set():
+                return started
+            _publish(entry["position"], {
+                "phase": "starting", "online": False, "min_dist": None,
+                "peaks_mm": [], "reconnects": 0, "error": None,
+            })
+            _live["entries"].append((entry, t))
+            _live["complete"] = True           # start-up has finished; every board is in
+            _discovery["found"] = list(_discovery.get("found") or []) + [dict(entry)]
+        t.start()
+        _threads.append(t)
+        have.add(entry["serial"])
+        started.append(entry["position"])
+    if started:
+        snap = get_radar_state()
+        joined = {e["serial"] for e in found if e.get("position") in started}
+        boards = list(snap.get("boards") or []) + [
+            {k: e.get(k) for k in ("device", "serial", "hub_port", "usb_path", "rss",
+                                   "position", "bearing", "provisional", "assumed")}
+            for e in found if e.get("position") in started]
+        set_radar_boards(boards, [m for m in snap.get("missing") or []
+                                  if m.get("serial") not in joined])
+    return started
 
 
 def restart_status() -> Dict[str, Any]:

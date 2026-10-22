@@ -192,6 +192,10 @@ class MotionTracker:
             ):
                 self._tracks = []  # a gap, or the clock went backwards
                 self._last_t = None
+                # And the cameras' last stamps with them: after a backward step they lie in
+                # the future, and every new frame was refused as "already seen" for as long
+                # as the step (fuzz test 2026-10-22).
+                self._cam_seen = {}
             dt = 0.0 if self._last_t is None else t - self._last_t
             self._last_t = t
             fwd, right, sd, speed_sd, source = self._own_step(heading, ego, dt)
@@ -443,7 +447,12 @@ class MotionTracker:
         gate = MOTION_GATE_VEHICLE_M if tr["word"] == VEHICLE else MOTION_GATE_M
         if tr["hits"] < MOTION_CONFIRM_HITS:
             gate += MOTION_GATE_NEW_EXTRA_M
-        gate += 2.0 * math.sqrt(float(np.max(np.linalg.eigvalsh(d["R"]))))
+        # The detection's own spread, once per detection rather than once per pair: it was
+        # ~60% of the tracker's time in clutter (fuzz test 2026-10-22).
+        spread = d.get("_gate_spread")
+        if spread is None:
+            spread = d["_gate_spread"] = 2.0 * math.sqrt(float(np.max(np.linalg.eigvalsh(d["R"]))))
+        gate += spread
         return math.hypot(d["x"] - tr["s"][0], d["y"] - tr["s"][1]) <= gate
 
     def _join(self, dets: List[Dict[str, Any]], t: float) -> None:

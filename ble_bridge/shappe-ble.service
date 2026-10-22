@@ -5,7 +5,7 @@
 #   sudo rfkill unblock bluetooth                 # the adapter is soft-blocked on this Pi
 #   install -Dm644 ble_bridge/shappe-ble.service ~/.config/systemd/user/shappe-ble.service
 #   systemctl --user daemon-reload && systemctl --user enable --now shappe-ble
-#   journalctl --user -u shappe-ble -f
+#   journalctl --user-unit=shappe-ble -f
 #
 # It is deliberately a separate unit: if it crashes, restarts or is never installed,
 # the guidance loop (shappe-guide) does not notice.
@@ -19,6 +19,8 @@ Wants=shappe-guide.service
 Type=simple
 WorkingDirectory=%h/Documents/lidar
 ExecStart=%h/Documents/lidar/venv/bin/python -m ble_bridge.gatt_server --security encrypt --pair-window 180
+# Without this the "[ble] connected / disconnected / pairing" lines sit in Python's buffer.
+Environment=PYTHONUNBUFFERED=1
 Restart=always
 RestartSec=3
 # The bridge is not safety-critical: lower its priority below the guidance loop.

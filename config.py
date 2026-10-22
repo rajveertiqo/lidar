@@ -92,6 +92,21 @@ CAMERA_SIMULATION_ALLOWED = (
 
 HAILO_RETRY_BACKOFF_S = (2.0, 5.0, 10.0, 30.0)
 HAILO_INFER_FAIL_RESET_S = 5.0
+# A detector that came up, broke, and then cannot be rebuilt this many times running is on
+# a dead device: every NPU worker is stopped, the shared VDevice released, and fresh ones
+# started on a new one (2026-10-21). OFF until tried on the bench: with the app running,
+# `hailortcli fw-control reset --reset-type nn_core` (then `chip`) and watch it come back.
+# Releasing a device that a native call still holds could crash the whole app, guidance
+# included, so it is only released once every NPU worker has exited.
+HAILO_VDEVICE_RESET = False
+HAILO_VDEVICE_RESET_AFTER = 3
+HAILO_VDEVICE_RESET_WAIT_S = 15.0
+# After an engine broke mid-run, it is rebuilt in this process only once the NPU answers a
+# separate one (`hailortcli fw-control identify`, within this). Bench test 2026-10-21: after
+# a chip reset, rebuilding on the dead chip blocked inside HailoRT and froze the WHOLE app
+# — guidance, voice, web server — for 28 s until the systemd watchdog killed it (with no
+# watchdog, for good). The probe is a separate process: if it hangs, only it is killed.
+HAILO_PROBE_TIMEOUT_S = 10.0
 HAILO_DETECT_RUN_TIMEOUT_MS = 2000
 HAILO_SEG_RUN_TIMEOUT_MS = 2000
 
@@ -131,6 +146,12 @@ LIDAR_CLUSTER_MIN_POINTS = 3
 LIDAR_CLUSTER_WINDOW_MM = 150
 LIDAR_PERSIST_DEG = 4.5
 LIDAR_PERSIST_MAX_AGE_S = 0.5
+# The wearer's own arm, strap or cane handle (2026-10-21): returns nearer than this are
+# dropped until they have held in one 10-degree slice for LIDAR_SELF_PERSIST_S — a wall
+# walked right up to holds, a swinging arm does not. PROVISIONAL: set from a recorded walk
+# (arm swing through the cones). 0 turns it off.
+LIDAR_SELF_RANGE_MM = 250.0
+LIDAR_SELF_PERSIST_S = 0.5
 
 LIDAR_MAX_BACKLOG_S = 0.25
 LIDAR_KEEP_BACKLOG_S = 0.1
@@ -244,12 +265,22 @@ RADAR_THRESHOLD_SENSITIVITY = (
 RADAR_STALE_S = 1.5  # a sector older than this counts as offline
 
 LIDAR_STALE_S = 1.0
+# A scan whose valid returns are under this share of the packets swept is not a reading:
+# the window is blinded (sun, rain, dirt) or failing, and "no return" would read as 40 ft
+# of open space (audit NEW-043). PROVISIONAL (2026-10-21): open space also returns little,
+# so set it from /lidar/reader's points_per_scan / packets_per_scan measured outdoors.
+LIDAR_MIN_VALID_FRACTION = 0.10
 
 CLOCK_FUTURE_TOLERANCE_S = 0.5
 
 RADAR_READY_TIMEOUT_S = 140.0
 
 RADAR_RESTART_WAIT_S = 30.0
+# A board with a measured bearing that was missing at start-up is looked for this often,
+# only on USB ports whose serial (read from sysfs, no port opened) is that board's, and
+# started when it answers (2026-10-21). Until then it stayed missing until a full
+# /radar/rediscover, which stops every board. 0 turns the search off.
+RADAR_LATE_JOIN_S = 15.0
 
 # A board session with no progress for this long is ended and reconnects. The
 # exptool client's own 2 s link timeout runs on the wall clock, and it waits with
@@ -263,6 +294,16 @@ RADAR_CALIBRATE_MAX_BODY_BYTES = 16384
 RADAR_PRIORITY = False
 
 RADAR_BEAM_H_DEG = 65.0
+
+
+def radar_beam_deg(bearing: float) -> float:
+    """How wide the board facing `bearing` hears (every board here is a ring board)."""
+    return RADAR_BEAM_H_DEG
+
+
+def radar_ring() -> tuple:
+    """The ring boards' bearings from RADAR_BEARINGS, in bearing order (used by the live map)."""
+    return tuple(sorted({b % 360.0 for b in RADAR_BEARINGS.values()}))
 
 RADAR_CONE_TRUST_MM = GUIDANCE_CORRIDOR_HALF_WIDTH_MM / math.sin(
     math.radians(RADAR_BEARING_OFFSET_DEG + RADAR_BEAM_H_DEG / 2)
@@ -805,12 +846,25 @@ SIMPLE_MIN_GAP_S = 3.0
 
 SIMPLE_REPEAT_S = 30.0
 SIMPLE_REPEAT_MAX_S = 120.0
+# Still blocked after turning: the block sentence comes back this soon (doubling to
+# SIMPLE_REPEAT_MAX_S while it lasts), not after SIMPLE_REPEAT_S (2026-10-21).
+SIMPLE_BLOCKED_REPEAT_S = 8.0
+# "Guidance stopped, use your cane" repeats this often for as long as it lasts, no backoff.
+SIMPLE_OFFLINE_REPEAT_S = 12.0
 
 SIMPLE_WALL_APPROACH_FT = 12.0
+# Something on the walking line that is not a wall, glass or a named object: "Obstacle
+# ahead" inside this, before the WALK_BLOCK_FT turn (~1.9 s at 1.3 m/s; 2026-10-21).
+SIMPLE_OBSTACLE_AHEAD_FT = 8.0
 
 SIMPLE_ON_WALL_MM = 60.0
 SIMPLE_WALL_MATCH_FT = 1.0
 SIMPLE_CROSSING_HOLD_S = 5.0
+# After a traffic light leaves the front camera, "Walk straight" stays withheld until the
+# user has been measured walking this long — not on a timer, at the kerb (2026-10-21).
+SIMPLE_CROSSING_WALKED_S = 4.0
+# With no motion reading at all, the hold ends this long after the light was last seen.
+SIMPLE_CROSSING_MAX_HOLD_S = 60.0
 
 SIMPLE_DRIFT_NEAR_FT = 5.0  # drift said only inside 5 ft, ahead of the 4 ft near-wall band (was 2.5, decided 2026-10-01)
 SIMPLE_DRIFT_MIN_DEG = 4.0
@@ -998,6 +1052,11 @@ SIMPLE_VEHICLE_LOST_S = 1.0  # a track unseen this long is dropped
 SIMPLE_VEHICLE_APPROACH_RATE = 0.12
 SIMPLE_VEHICLE_CONFIRM_FRAMES = 3
 SIMPLE_VEHICLE_EGO_MARGIN = 1.5
+# The user's pace taken off a vehicle's approach when nothing can measure it (open space,
+# no gait reading) — until 2026-10-21 that was 0, so walking toward a parked car read as
+# the car approaching. The cost: a user who IS standing still there is warned of a slowly
+# creeping vehicle later (it must close ~1.8 m/s faster). 0.0 restores the old behaviour.
+SIMPLE_VEHICLE_PACE_UNKNOWN_MPS = HEADING_NOMINAL_SPEED_MPS
 SIMPLE_CAMERA_HFOV_DEG = (
     70.0  # ASSUMED, not measured; drives every camera range estimate
 )
@@ -1013,8 +1072,25 @@ SIMPLE_VEHICLE_SIDE_MARGIN = 0.05
 SIMPLE_SETTLE_S = 6.0
 SIMPLE_OBJECT_RELEASE_S = 3.0
 SIMPLE_GLASS_RELEASE_S = 3.0
-# "Sensors offline" once neither rangefinder has reported ahead for this long.
+# "Guidance stopped, use your cane" once neither rangefinder has reported ahead for this long.
 SIMPLE_OFFLINE_S = 3.0
+# The guidance step failing this many ticks in a row (5 Hz) is a fault: the wearer is told,
+# and the watchdog heartbeat is withheld so systemd restarts the app (2026-10-21).
+GUIDANCE_FAIL_TICKS = 3
+
+# The Pi itself (utils/pi_health, 2026-10-21): read every PI_HEALTH_POLL_S off the guidance
+# path. "Hot" from PI_HOT_C (the Pi 5 firmware starts throttling near 80) or any throttle
+# flag, until it is back under PI_HOT_CLEAR_C; "power low" for PI_UNDERVOLTAGE_HOLD_S after
+# any under-voltage sample, as it comes in short dips under load.
+PI_HEALTH_POLL_S = 2.0
+PI_HOT_C = 80.0
+PI_HOT_CLEAR_C = 75.0
+PI_UNDERVOLTAGE_HOLD_S = 30.0
+# "Power low" / "Device overheating", and their all-clear, said like "Glass sensor off/on".
+SIMPLE_SYSTEM_LOSS_CONFIRM_S = 3.0
+SIMPLE_SYSTEM_RECOVER_CONFIRM_S = 60.0
+SIMPLE_SYSTEM_RECOVER_MAX_S = 600.0
+SIMPLE_SYSTEM_STARTUP_GRACE_S = 20.0  # power dips while everything starts up
 
 SIMPLE_GLASS_LOSS_CONFIRM_S = 3.0
 SIMPLE_GLASS_RECOVER_CONFIRM_S = 10.0
@@ -1035,7 +1111,9 @@ CONSOLE_ENABLED = True
 CONSOLE_STATUS_S = 2.0
 CONSOLE_HEARTBEAT_S = 60.0
 
-AUDIO_ENABLED = False  # every sound off: Pi voice, sink probe, dashboard speech; guidance still shown and logged
+# False only on the bench: every sound off (Pi voice, sink probe, dashboard speech, the
+# phone's AF_AUDIO_ENABLED); guidance still shown and logged, and /health says "down".
+AUDIO_ENABLED = True
 PI_VOICE_ENABLED = True
 PI_VOICE_TICK_HZ = 5.0
 # /guidance/walk serves the loop's newest result; older than this, it says so.

@@ -1,8 +1,8 @@
 {
  "registry": "shappe-phrases",
  "version": 1,
- "revision": 3,
- "sha": "690108ffa2ae7139",
+ "revision": 5,
+ "sha": "e01793d26d69ca9a",
  "note": "Append-only. id 0 = no sentence; 65535 = not in this registry (use ALERT_TEXT). Generated from utils/simple_guidance.ALLOWED by ble_bridge/make_vocab.py — do not edit by hand.",
  "phrases": [
   {
@@ -143,7 +143,8 @@
    "urgent": false,
    "side": null,
    "obstacle": null,
-   "mover": false
+   "mover": false,
+   "retired": true
   },
   {
    "id": 15,
@@ -3001,6 +3002,106 @@
    "action": "turn_around",
    "level": 2,
    "urgent": true,
+   "side": null,
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 301,
+   "text": "Guidance stopped, use your cane",
+   "action": "sensors_offline",
+   "level": 2,
+   "urgent": false,
+   "side": null,
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 302,
+   "text": "Obstacle ahead",
+   "action": "obstacle_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 303,
+   "text": "Stop, no clear way",
+   "action": "stop",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 304,
+   "text": "Traffic light ahead",
+   "action": "traffic_light_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 305,
+   "text": "Starting, please wait",
+   "action": "starting",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 306,
+   "text": "Ready",
+   "action": "ready",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 307,
+   "text": "Power low",
+   "action": "power_low",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 308,
+   "text": "Power normal",
+   "action": "power_normal",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 309,
+   "text": "Device overheating",
+   "action": "device_hot",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 310,
+   "text": "Device cooled down",
+   "action": "device_cool",
+   "level": 1,
+   "urgent": false,
    "side": null,
    "obstacle": null,
    "mover": false

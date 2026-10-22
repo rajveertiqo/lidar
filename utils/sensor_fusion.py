@@ -10,7 +10,8 @@ from config import (
     BEV_SHAPE_IN_HAZARDS, BEV_SHAPE_MATCH_DEG, BEV_SHAPE_MATCH_MM,
     ENV_IDENTITY_MIN_VISIBILITY, ENV_STALE_S, ENV_TRUST_ENABLED,
     GUIDANCE_DANGER_MM, GUIDANCE_WARNING_MM, GUIDANCE_SAFE_MM, GUIDANCE_AWARE_MM,
-    LIDAR_SECTOR_ORDER, LIDAR_STALE_S, LIDAR_TO_CAMERA, SIMPLE_CAMERA_FRESH_S,
+    LIDAR_MIN_VALID_FRACTION, LIDAR_SECTOR_ORDER, LIDAR_STALE_S, LIDAR_TO_CAMERA,
+    SIMPLE_CAMERA_FRESH_S,
     RADAR_AGREE_MM, RADAR_CARDINAL_ARC_SECTORS, RADAR_CONE_TRUST_MM,
     RADAR_GLASS_GAP_MM, RADAR_PRIORITY,
     RADAR_SECTORS, RADAR_START_MM,
@@ -277,6 +278,17 @@ def lidar_is_fresh(lidar_state: Optional[Dict[str, Any]],
         return bool(lidar_state.get("sectors") or lidar_state.get("cones")
                     or lidar_state.get("points"))
     return reading_is_current(lidar_state, LIDAR_STALE_S, now)
+
+
+def lidar_sparse(lidar_state: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Why this scan is too sparse to be a reading (LIDAR_MIN_VALID_FRACTION, NEW-043), or None."""
+    frac = (lidar_state or {}).get("valid_fraction")
+    if not isinstance(frac, (int, float)) or isinstance(frac, bool):
+        return None                        # not reported (simulated, older reader)
+    if frac >= LIDAR_MIN_VALID_FRACTION:
+        return None
+    return (f"the LiDAR is getting almost no returns ({frac:.0%} of the scan, "
+            f"under {LIDAR_MIN_VALID_FRACTION:.0%}) — window blinded, dirty or failing")
 
 
 def front_glass_coverage(radar_state: Optional[Dict[str, Any]] = None
@@ -697,7 +709,8 @@ def get_system_health() -> Dict[str, Any]:
     except Exception:
         hailo_ok, frame_t, camera_simulated = False, 0.0, False
 
-    lidar_ok = bool(active.get("lidar"))
+    sparse = lidar_sparse(fused.get("lidar"))
+    lidar_ok = bool(active.get("lidar")) and not sparse
     lidar_simulated = bool(fused.get("lidar_simulated"))
     camera_ok = bool(active.get("camera")) and not camera_simulated
     frames_ok = is_fresh(frame_t, SIMPLE_CAMERA_FRESH_S) and not camera_simulated
@@ -718,6 +731,9 @@ def get_system_health() -> Dict[str, Any]:
     warnings: List[str] = []
     if lidar_simulated:
         warnings.append("LiDAR is SIMULATED — no real ranging; do not navigate")
+    elif sparse and active.get("lidar"):
+        warnings.append("LiDAR getting almost no returns (blinded, dirty or failing) — "
+                        "rely on your cane")
     elif not lidar_ok:
         warnings.append("LiDAR signal lost — rely on your cane")
     if camera_simulated:

@@ -297,18 +297,23 @@ _tick_error = ""
 def _loop() -> None:
     global _tick_ok_at, _tick_error
     from utils import service
-    from utils.unified_guidance import get_unified_guidance
+    from utils.unified_guidance import get_unified_guidance, guidance_fault
     period = 1.0 / max(PI_VOICE_TICK_HZ, 0.5)
     while not _loop_stop.is_set():
         started = time.monotonic()
         try:
             get_unified_guidance()
+            fault = guidance_fault()
+            if fault:
+                raise RuntimeError(f"guidance step failing: {fault}")
             _tick_ok_at, _tick_error = time.monotonic(), ""   # local: F20
+            # Only a tick that guided feeds the watchdog (2026-10-21): a loop that keeps
+            # failing is restarted by systemd, not left running silent.
+            service.beat("guidance")
         except Exception as exc:
             if str(exc) != _tick_error:
                 print(f"[WARN] pi_voice: guidance tick failed: {exc}")
             _tick_error = str(exc)
-        service.beat("guidance")
         _loop_stop.wait(max(0.0, period - (time.monotonic() - started)))
 
 
@@ -325,11 +330,10 @@ def start() -> None:
     global _loop_thread, _running
     if _loop_thread and _loop_thread.is_alive():
         return
-    _loop_stop.clear()
-    _loop_thread = threading.Thread(target=_loop, name="guidance-loop",
-                                    daemon=True)
-    _loop_thread.start()
+    # The voice before the loop, with a fresh sink answer, so the first tick's "Starting,
+    # please wait" is heard rather than marked unavailable (2026-10-21).
     if AUDIO_ENABLED and PI_VOICE_ENABLED and shutil.which(str(PI_VOICE_CMD[0])):
+        probe_audio_output()               # bounded by wpctl's 2 s timeout
         _start_prober()
         _voice.start()
         _running = True
@@ -338,6 +342,10 @@ def start() -> None:
         _voice.error = ("audio switched off in config (AUDIO_ENABLED)" if not AUDIO_ENABLED else
                         "disabled in config" if not PI_VOICE_ENABLED else
                         f"{PI_VOICE_CMD[0]} not found")
+    _loop_stop.clear()
+    _loop_thread = threading.Thread(target=_loop, name="guidance-loop",
+                                    daemon=True)
+    _loop_thread.start()
 
 
 def stop() -> None:

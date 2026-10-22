@@ -104,7 +104,7 @@ def make_health(status: str = "ok", lidar: bool = True, radar: bool = True,
                 camera: bool = True, hailo: bool = True, warnings: Optional[List[str]] = None,
                 guiding: bool = True) -> Dict[str, Any]:
     """As main.health_check: `guiding` is the guidance LOOP ticking (it keeps ticking
-    when the LiDAR is lost — it is what says "Sensors offline"); a lost LiDAR shows as
+    when the LiDAR is lost — it is what says "Guidance stopped, use your cane"); a lost LiDAR shows as
     status "down" with lidar_ok False."""
     return {"status": status, "guiding": guiding,
             "sensors": {"lidar_ok": lidar, "radar_ok": radar, "camera_ok": camera,
@@ -149,7 +149,7 @@ SCENARIOS: Dict[str, List[Dict[str, Any]]] = {
         {"at": 7.0, "now": "Walk straight", "say": "Glass sensor off"},
         {"at": 11.0, "health": {"status": "down", "lidar": False, "radar": False,
                                 "warnings": ["LiDAR signal lost — rely on your cane"]},
-         "now": "Sensors offline", "say": "Sensors offline"},
+         "now": "Guidance stopped, use your cane", "say": "Guidance stopped, use your cane"},
         {"at": 17.0, "health": {"status": "ok"}, "front_glass_ok": True,
          "now": "Walk straight", "say": "Walk straight", "front_ft": 20.0},
     ],

@@ -59,7 +59,7 @@ cat <<EOF
 
 Done. The guide now starts at boot. Next:
   systemctl --user start shappe-guide        start it now (stop any ./start_lidar.sh first)
-  journalctl --user -u shappe-guide -f       follow its log
+  journalctl --user-unit=shappe-guide -f     follow its log
   systemctl --user status shappe-guide       is it running, and since when
-  curl -s localhost:8000/health              ok / degraded / down
+  curl -s localhost:8000/health              ok / degraded / starting / down
 EOF

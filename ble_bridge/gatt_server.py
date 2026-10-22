@@ -360,7 +360,7 @@ class Server:
     def _on_write(self, value: bytes, options: Dict[str, Any]) -> None:
         mtu = options.get("mtu")
         if mtu:
-            self.bridge.att_mtu = max(P.MIN_ATT_MTU, min(int(mtu), 517))
+            self.bridge.set_mtu(link=int(mtu))      # what BlueZ negotiated caps the app's claim
         try:
             done = self.reassembler.feed(value, time.monotonic())
         except P.ProtocolError as exc:
@@ -382,11 +382,27 @@ class Server:
         for char, msg_type, payload in outs:
             if not self.chars[char].notifying:
                 continue    # nobody subscribed: nothing is queued and no seq is used up
-            seq = self.seq[char]
-            self.seq[char] = (seq + 1) & 0xFFFF
-            for frame in P.encode(msg_type, payload, seq, self.bridge.att_mtu):
-                self.chars[char].notify(frame)
+            try:
+                self._send_one(char, msg_type, payload)
+            except Exception as exc:      # one bad message must not lose the rest (STATE, alerts)
+                self.bridge.log("send", f"{char} message 0x{msg_type:02x} not sent: "
+                                        f"{type(exc).__name__}: {exc}")
         return False                      # as a GLib idle callback: run once
+
+    def _send_one(self, char: str, msg_type: int, payload: bytes) -> None:
+        mtu = self.bridge.att_mtu
+        try:
+            frames = P.encode(msg_type, payload, self.seq[char], mtu)
+        except P.ProtocolError as exc:
+            if msg_type != P.T_RESPONSE:
+                raise
+            # A reply too big for this link (the MTU can fall after it was built): the app
+            # still gets an answer to its command, as TOO_LARGE.
+            self.bridge.log("send-reply", f"reply not sent ({exc}); answered TOO_LARGE")
+            frames = P.encode(msg_type, self.bridge.too_large(payload, str(exc)), self.seq[char], mtu)
+        self.seq[char] = (self.seq[char] + 1) & 0xFFFF
+        for frame in frames:
+            self.chars[char].notify(frame)
 
     def post(self, outs: List[Out]) -> None:
         if outs:
@@ -395,40 +411,69 @@ class Server:
     # --- polling the navigation service (its own thread) ---
 
     def poll_loop(self) -> None:
+        """Runs until stop. Nothing may end it: the process would live on, the phone silent."""
         next_health = 0.0
         while not self.stop.is_set():
             started = time.monotonic()
             outs: List[Out] = []
             try:
-                outs += self.bridge.on_walk(self.source.walk())
-                if started >= next_health:
-                    next_health = started + HEALTH_S
-                    outs += self.bridge.on_health(self.source.health(),
-                                                  self.source.system_health(),
-                                                  self.source.system())
-            except Exception as exc:
-                outs += self.bridge.on_unreachable(f"{type(exc).__name__}: {exc}")
-            outs += self.bridge.tick()
+                try:
+                    outs += self.bridge.on_walk(self.source.walk())
+                    if started >= next_health:
+                        next_health = started + HEALTH_S
+                        outs += self.bridge.on_health(self.source.health(),
+                                                      self.source.system_health(),
+                                                      self.source.system())
+                except Exception as exc:
+                    outs += self.bridge.on_unreachable(f"{type(exc).__name__}: {exc}")
+                outs += self.bridge.tick()
+            except Exception as exc:      # a bug or a value nobody expected: log it, poll again
+                self.bridge.log("poll", f"poll loop: {type(exc).__name__}: {exc}")
             self.post(outs)
             self.stop.wait(max(0.0, POLL_S - (time.monotonic() - started)))
 
     # --- connections ---
 
     def on_device_props(self, interface, changed, invalidated, path=None) -> None:
-        if interface != DEVICE_IFACE or "Connected" not in changed:
-            return
-        if bool(changed["Connected"]):
+        if interface == DEVICE_IFACE and "Connected" in changed:
+            self.set_connected(path, bool(changed["Connected"]))
+
+    def on_interfaces_added(self, path, interfaces) -> None:
+        # A phone BlueZ has not seen before (first contact, or a new private address)
+        # appears as a new Device1 that is already connected: no PropertiesChanged follows.
+        props = interfaces.get(DEVICE_IFACE)
+        if props is not None and bool(props.get("Connected", False)):
+            self.set_connected(path, True)
+
+    def on_interfaces_removed(self, path, interfaces) -> None:
+        if DEVICE_IFACE in interfaces:
+            self.set_connected(path, False)
+
+    def set_connected(self, path, connected: bool) -> None:
+        if connected == (path in self.connected):
+            return                        # already known: one connect and one disconnect each
+        who = self._describe(path)
+        if connected:
             self.connected.add(path)
             self.seq = {k: 0 for k in self.seq}
             self.reassembler = P.Reassembler()
             self.bridge.on_connect()
-            print(f"[ble] connected: {path} ({len(self.connected)} connected)")
+            print(f"[ble] connected: {who} ({len(self.connected)} connected)")
             if len(self.connected) > 1:
                 print("[ble] WARNING: more than one phone connected; v1 supports one")
         else:
             self.connected.discard(path)
             self.bridge.on_disconnect()
-            print(f"[ble] disconnected: {path}")
+            print(f"[ble] disconnected: {who}")
+
+    def _describe(self, path) -> str:
+        # Pairing swaps a phone's private address for its identity address but BlueZ keeps
+        # the object path until it restarts, so log the current Alias and Address.
+        try:
+            props = dbus.Interface(self.bus.get_object(BLUEZ, path), DBUS_PROP_IFACE)
+            return f"{props.Get(DEVICE_IFACE, 'Alias')} {props.Get(DEVICE_IFACE, 'Address')}"
+        except dbus.exceptions.DBusException:
+            return str(path)              # already removed
 
 
 def check(bus, adapter_name: Optional[str]) -> int:
@@ -523,6 +568,10 @@ def main() -> int:
     bus.add_signal_receiver(server.on_device_props, dbus_interface=DBUS_PROP_IFACE,
                             signal_name="PropertiesChanged", arg0=DEVICE_IFACE,
                             path_keyword="path")
+    bus.add_signal_receiver(server.on_interfaces_added, dbus_interface=DBUS_OM_IFACE,
+                            signal_name="InterfacesAdded", bus_name=BLUEZ)
+    bus.add_signal_receiver(server.on_interfaces_removed, dbus_interface=DBUS_OM_IFACE,
+                            signal_name="InterfacesRemoved", bus_name=BLUEZ)
 
     def _bluez_owner(owner):
         # bluetoothd restarted or stopped: our registrations died with it. Exit non-zero

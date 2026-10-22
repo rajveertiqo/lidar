@@ -255,7 +255,7 @@ busctl tree org.bluez                   # /org/bluez/hci0 present
 busctl introspect org.bluez /org/bluez/hci0 org.bluez.LEAdvertisingManager1
 bluetoothctl devices Bonded             # who is bonded (BlueZ >= 5.65 syntax)
 sudo btmon                              # live HCI: ATT MTU exchange, encryption, notifications
-journalctl --user -u shappe-ble -f      # bridge log
+journalctl --user-unit=shappe-ble -f    # bridge log
 venv/bin/python -m ble_bridge.make_vocab --check   # phrase registry still matches the device
 ```
 

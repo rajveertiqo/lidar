@@ -151,6 +151,11 @@ def fragment_payload_size(att_mtu: int) -> int:
     return min(mtu, 517) - ATT_NOTIFY_OVERHEAD - HEADER_SIZE
 
 
+def max_message_bytes(att_mtu: int = MIN_ATT_MTU) -> int:
+    """The longest message `encode` accepts at this ATT MTU: 255 x 14 = 3570 B at MTU 23."""
+    return min(MAX_MESSAGE_BYTES, MAX_FRAGMENTS * fragment_payload_size(att_mtu))
+
+
 def encode(msg_type: int, payload: bytes, seq: int, att_mtu: int = MIN_ATT_MTU) -> List[bytes]:
     """One message -> the frames to send, in order."""
     if msg_type not in TYPES:
@@ -236,11 +241,11 @@ def _u16(value: Optional[float], scale: float = 1.0, unknown: int = DIST_UNKNOWN
         return unknown
     try:
         v = float(value) * scale
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):    # not a number, or an int beyond a float
         return unknown
     if v != v or v < 0:          # NaN or negative: not a measurement
         return unknown
-    return min(int(round(v)), cap)
+    return cap if v >= cap else int(round(v))          # huge or infinite: saturate
 
 
 def pack_alert(epoch: int, cue_seq: int, age_ms: Optional[float], phrase_id: int,
@@ -311,8 +316,10 @@ def unpack_alert_text(payload: bytes) -> Dict[str, Any]:
 # --- JSON messages ---
 
 def json_bytes(obj: Dict[str, Any]) -> bytes:
-    """Compact UTF-8 JSON, the payload of every JSON-typed message."""
-    return json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    """Compact UTF-8 JSON, the payload of every JSON-typed message. Strict: NaN or
+    Infinity raise ValueError; a lone surrogate (no UTF-8 for it) is sent as '?'."""
+    return json.dumps(obj, separators=(",", ":"), ensure_ascii=False,
+                      allow_nan=False).encode("utf-8", "replace")
 
 
 def parse_json(payload: bytes) -> Dict[str, Any]:

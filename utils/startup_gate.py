@@ -113,7 +113,9 @@ class _ReadyGate:
                                             if lidar_absent else "")),
                         "waited_s": 0.0, "lidar_absent": lidar_absent}
 
-            if self._healthy_since is None:
+            if self._healthy_since is None or now < self._healthy_since:
+                # (or the clock stepped back: unanchored, the settle wait lasted as long as
+                # the step — 601 s of silence after a 600 s step, fuzz test 2026-10-22)
                 self._healthy_since = now
 
             front = (clearances or {}).get("front")
@@ -172,12 +174,16 @@ class _ReadyGate:
 
 
 _gate = _ReadyGate()
+# check()'s last answer: an error answers "ready" (speech allowed) without the gate
+# opening, and /health must agree with the voice (2026-10-21).
+_last_ready = False
 
 
 def check(health: Optional[Dict[str, Any]] = None,
           clearances: Optional[Dict[str, Any]] = None,
           now: Optional[float] = None) -> Dict[str, Any]:
     """Readiness for the guidance path."""
+    global _last_ready
     try:
         if health is None:
             from utils.sensor_fusion import get_system_health
@@ -188,15 +194,21 @@ def check(health: Optional[Dict[str, Any]] = None,
             views = walk_policy.read_all(get_lidar_state(), get_radar_state())
             clearances = {d: v.get("distance_ft") for d, v in views.items()
                           if not v.get("unknown")}
-        return _gate.check(health, clearances, now=now)
+        out = _gate.check(health, clearances, now=now)
     except Exception as exc:
-        return {"ready": True, "cue": "", "waited_s": None, "lidar_absent": False,
-                "quiet_reason": f"startup gate error, allowing speech: {exc}"}
+        out = {"ready": True, "cue": "", "waited_s": None, "lidar_absent": False,
+               "quiet_reason": f"startup gate error, allowing speech: {exc}"}
+    _last_ready = bool(out.get("ready"))
+    return out
 
 
 def reset() -> None:
+    global _last_ready
     _gate.reset()
+    _last_ready = False
 
 
 def state() -> Dict[str, Any]:
-    return _gate.state()
+    out = _gate.state()
+    out["ready"] = bool(out.get("ready") or _last_ready)
+    return out

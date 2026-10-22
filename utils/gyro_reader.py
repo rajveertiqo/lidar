@@ -647,9 +647,7 @@ def print_tuning(tuning: Dict[str, Any]) -> None:
     ):
         print(f"    {label}      {p[key]:.3f}")
     print(f"\n    GYRO_STEP_PEAK_G is {tuning['peak_g']}")
-    print(
-        f"    {tuning['cleared_threshold']} of {tuning['samples']} samples cleared it"
-    )
+    print(f"    {tuning['cleared_threshold']} of {tuning['samples']} samples cleared it")
 
     if not tuning.get("looks_like_gait"):
         print(

@@ -11,7 +11,8 @@ from config import (
     GLASS_BOARD_VIEW_MARGIN_DEG, GLASS_DOOR_MAX_BEARING_DEG, GLASS_DOOR_WALL_DEPTH_MM,
     GLASS_GRAZING_DEG,
     GLASS_LASER_BEYOND_MM, GLASS_SAME_ECHO_MM,
-    GUIDANCE_SECTORS, LIDAR_NO_RETURN_FT, RADAR_AGREE_MM,
+    GUIDANCE_CONE_CENTRES, GUIDANCE_SECTORS, LIDAR_BLIND_ARCS_DEG, LIDAR_NO_RETURN_FT,
+    RADAR_AGREE_MM,
     RADAR_BEAM_H_DEG, RADAR_CARDINAL_ARC_SECTORS,
     RADAR_CONE_TRUST_MM, RADAR_NO_RETURN_FT, RADAR_SECTORS,
     WALK_BLOCK_FT, WALK_FUSION_GLASS_OVERRIDE, WALK_GLASS_GAP_FT,
@@ -30,11 +31,22 @@ _TURN_PHRASE = {
 
 def _mm_to_ft(value: Any) -> Optional[float]:
     """Sensor millimetres -> policy feet. The single conversion boundary."""
-    if not isinstance(value, (int, float)):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    if value <= 0:
+    # NaN or inf is no reading (fuzz test 2026-10-22): NaN slipped through every
+    # comparison, "nan < 4 ft" is False, and the policy said "Walk straight".
+    if not math.isfinite(value) or value <= 0:
         return None
     return round(float(value) / MM_PER_FT, 2)
+
+
+def lidar_blind(direction: str) -> bool:
+    """Is this direction's steering cone inside an arc the LiDAR cannot see from where it is worn (LIDAR_BLIND_ARCS_DEG, clockwise from the first bearing to the second)?"""
+    centre = GUIDANCE_CONE_CENTRES.get(direction)
+    if centre is None:
+        return False
+    return any((centre - lo) % 360.0 <= (hi - lo) % 360.0
+               for lo, hi in LIDAR_BLIND_ARCS_DEG)
 
 
 def _lidar_reading(lidar_state: Dict[str, Any],
@@ -42,6 +54,8 @@ def _lidar_reading(lidar_state: Dict[str, Any],
     """(feet, measured) for the LiDAR in one direction."""
     if lidar_state.get("simulated"):
         return None, False
+    if lidar_blind(direction):
+        return None, False                 # the wearer's body, not open space (2026-10-21)
     cones = lidar_state.get("cones") or {}
     sectors = lidar_state.get("sectors") or {}
     if not cones and not sectors:
@@ -227,6 +241,8 @@ _GRAZING_MIN_STEP_MM = 50.0                   # range noise cannot make a surfac
 def _grazing(angles: List[Any], dists: List[Any], i: int) -> bool:
     """Is return i on a surface the laser sees nearly edge-on (past GLASS_GRAZING_DEG), judged from its neighbours?"""
     n, r = len(dists), float(dists[i])
+    if r <= 0.0:
+        return False                              # no range: nothing to judge (and no / 0)
     slopes = []
     for j in (i - 1, (i + 1) % n):
         d = dists[j]
@@ -325,6 +341,7 @@ def read_direction(lidar_state: Dict[str, Any], radar_state: Dict[str, Any],
         "radar_off_axis": radar_off_axis,
         "radar_board_glass": board_glass,
         "radar_blind": radar_ft is None,
+        "lidar_blind": lidar_blind(direction),
         "units": "ft",
     }
 
@@ -355,8 +372,8 @@ def _carry_measured(views: Dict[str, Dict[str, Any]], now: float) -> None:
             if not prev:
                 continue
             ft, at = prev
-            if (now - at) > WALK_MEASURED_MEMORY_S:
-                continue
+            if not (0.0 <= now - at <= WALK_MEASURED_MEMORY_S):
+                continue                      # expired, or from before a backward clock step
             current = view.get("distance_ft")
             if isinstance(current, (int, float)) and ft >= current:
                 continue                      # not worse — leave the scan alone
@@ -432,8 +449,8 @@ def _incumbent(now: float) -> Optional[str]:
     with _turn_lock:
         if not _last_turn["direction"]:
             return None
-        if (now - _last_turn["at"]) > WALK_TURN_HOLD_S:
-            _last_turn["direction"] = None
+        if not (0.0 <= now - _last_turn["at"] <= WALK_TURN_HOLD_S):
+            _last_turn["direction"] = None    # expired, or the clock stepped back
             return None
         return _last_turn["direction"]
 
@@ -464,9 +481,11 @@ def choose_turn(views: Dict[str, Dict[str, Any]],
     if not candidates:
         return None
 
+    # Room only one sensor can vouch for ranks behind room both can: a silent radar misses
+    # thin poles, and the LiDAR's blind arc is the wearer's body.
     def rank(view):
         return (view["direction"] == "back",
-                bool(view.get("radar_blind")),
+                bool(view.get("radar_blind") or view.get("lidar_blind")),
                 -_room_ft(view))
 
     return sorted(candidates, key=rank)[0]
@@ -480,8 +499,8 @@ def decide(lidar_state: Optional[Dict[str, Any]] = None,
         lidar_state = get_lidar_state() if lidar_state is None else lidar_state
         radar_state = get_radar_state() if radar_state is None else radar_state
 
-    from utils.sensor_fusion import lidar_is_fresh
-    if lidar_state and not lidar_is_fresh(lidar_state):
+    from utils.sensor_fusion import lidar_is_fresh, lidar_sparse
+    if lidar_state and (not lidar_is_fresh(lidar_state) or lidar_sparse(lidar_state)):
         lidar_state = {}
     views = read_all(lidar_state, radar_state)
     _carry_measured(views, time.time())

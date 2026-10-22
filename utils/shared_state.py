@@ -79,8 +79,8 @@ navigation_state = _default_navigation_state()
 
 def update_lidar_state(points: Dict, sectors: Dict, rpm: float, scan_index: int,
                        cones: Dict = None, captured_at: Optional[float] = None,
-                       simulated: bool = False):
-    """Thread-safe update of LiDAR state"""
+                       simulated: bool = False, valid_fraction: Optional[float] = None):
+    """Thread-safe update of LiDAR state. `valid_fraction`: valid returns / packets swept (NEW-043), None when not known."""
     from utils.freshness import RECEIVED_KEY, received_mono
     stamp = time.time() if captured_at is None else captured_at
     with lidar_lock:
@@ -93,6 +93,7 @@ def update_lidar_state(points: Dict, sectors: Dict, rpm: float, scan_index: int,
         lidar_state["last_update"] = stamp
         lidar_state[RECEIVED_KEY] = received_mono(stamp)
         lidar_state["simulated"] = bool(simulated)
+        lidar_state["valid_fraction"] = valid_fraction
 
 
 def get_lidar_state() -> Dict[str, Any]:

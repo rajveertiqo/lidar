@@ -16,13 +16,15 @@ EnvironmentFile=-%h/.config/shappe-guide.env
 ExecStart=@APP_DIR@/start_lidar.sh
 Restart=always
 RestartSec=3
+# start_lidar.sh refused (another copy runs, the port is taken): do not retry every 3 s
+RestartPreventExitStatus=75
 # The pre-flight probes every radar board and the NPU before the server starts.
 TimeoutStartSec=180
 WatchdogSec=30
 LimitCORE=0
 TimeoutAbortSec=10
 TimeoutStopSec=60
-# Log to the journal: journalctl --user -u shappe-guide -f
+# Log to the journal: journalctl --user-unit=shappe-guide -f
 StandardOutput=journal
 StandardError=journal
 Environment=PYTHONUNBUFFERED=1

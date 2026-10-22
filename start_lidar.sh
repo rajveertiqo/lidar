@@ -1,6 +1,18 @@
 #!/bin/bash
+#
+#   ./start_lidar.sh                run in this terminal (closing it, or losing SSH, stops guidance)
+#   ./start_lidar.sh --background   run detached under systemd: it keeps running when the
+#                                   terminal closes or SSH drops, and still does NOT start at boot
 
 set -e
+
+MODE=foreground
+case "${1:-}" in
+    "") ;;
+    -b|--background) MODE=background ;;
+    -h|--help) sed -n '2,5p' "$0" | sed 's/^#//'; exit 0 ;;
+    *) echo "Unknown option: $1 (try --help)"; exit 2 ;;
+esac
 
 if [ -t 1 ]; then
     RED='\033[0;31m'
@@ -15,6 +27,93 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+ENV_FILE="$HOME/.config/shappe-guide.env"
+# As the app will see them: the env file's (the installed unit's EnvironmentFile; sourced
+# below as well), else this shell's, else the defaults.
+CALLER_SET="${SERVER_HOST:-}${SERVER_PORT:-}"
+IFS='|' read -r HOST PORT < <(
+    [ -f "$ENV_FILE" ] && set -a && . "$ENV_FILE" >/dev/null 2>&1
+    printf '%s|%s\n' "${SERVER_HOST:-0.0.0.0}" "${SERVER_PORT:-8000}") || true
+HOST=${HOST:-0.0.0.0}
+PORT=${PORT:-8000}
+
+# A refusal below exits with this, and the units do not restart on it
+# (RestartPreventExitStatus), rather than retrying every 3 s and taking the hardware the
+# moment the other copy stops.
+REFUSED=75
+LOCK="${XDG_RUNTIME_DIR:-/tmp}/shappe-guide.lock"
+
+# A second copy would take the same LiDAR, radars and cameras: its radar probe stops the
+# boards the first is streaming from, and it stops the LiDAR motor on its way out when it
+# finds the port taken (2026-10-21). So refuse, before anything touches the hardware.
+already_running() {
+    local pids p
+    # The app as launched (".../venv/bin/uvicorn main:app"), not any command line that
+    # merely mentions it, such as a grep for it.
+    pids="$(pgrep -u "$(id -u)" -f '/bin/uvicorn main:app( |$)' || true)"
+    if [ -n "$pids" ]; then
+        echo -e "${RED}Shappe Guide is already running — not starting a second copy:${NC}"
+        for p in $pids; do
+            echo "  PID $p in $(readlink "/proc/$p/cwd" 2>/dev/null || echo '?')"
+        done
+    elif ss -Hltn "sport = :$PORT" 2>/dev/null | grep -q .; then
+        echo -e "${RED}Port $PORT is already in use by another program — not starting.${NC}"
+    else
+        return 1
+    fi
+    echo -e "${YELLOW}  Stop it first: Ctrl+C in the terminal running it, or${NC}"
+    echo -e "${YELLOW}    systemctl --user stop shappe-guide shappe-guide-manual${NC}"
+    return 0
+}
+
+starting_elsewhere() {
+    echo -e "${RED}Another ./start_lidar.sh is starting up right now — not starting a second copy.${NC}"
+}
+
+if [ "$MODE" = background ]; then
+    if already_running; then exit $REFUSED; fi
+    if ! flock -n "$LOCK" true; then starting_elsewhere; exit $REFUSED; fi
+    # The installed unit when it runs this checkout (watchdog, restart, its env file);
+    # otherwise a one-off unit with the same safety net, which can also carry a port or
+    # host set in this shell. Neither is enabled, so neither starts at boot.
+    if [ -z "$CALLER_SET" ] && [ "$(systemctl --user show -P WorkingDirectory shappe-guide.service 2>/dev/null)" = "$SCRIPT_DIR" ]; then
+        UNIT=shappe-guide.service
+        systemctl --user reset-failed "$UNIT" 2>/dev/null || true
+        systemctl --user start --no-block "$UNIT"
+    else
+        UNIT=shappe-guide-manual.service
+        systemctl --user reset-failed "$UNIT" 2>/dev/null || true
+        systemd-run --user --no-block --collect --unit="$UNIT" --working-directory="$SCRIPT_DIR" \
+            -E SERVER_HOST="$HOST" -E SERVER_PORT="$PORT" \
+            -p Type=notify -p NotifyAccess=main -p WatchdogSec=30 -p TimeoutStartSec=180 \
+            -p TimeoutStopSec=60 -p TimeoutAbortSec=10 -p LimitCORE=0 \
+            -p Restart=on-failure -p RestartSec=3 -p RestartPreventExitStatus=$REFUSED \
+            "$SCRIPT_DIR/start_lidar.sh"
+    fi
+    echo -e "${GREEN}Started in the background as $UNIT.${NC}"
+    echo "  It keeps running when this terminal closes or SSH drops; it does NOT start at boot."
+    echo "  follow it:  journalctl --user-unit=$UNIT -f"
+    echo "  stop it:    systemctl --user stop $UNIT"
+    if [ "$(loginctl show-user "$USER" -p Linger --value 2>/dev/null)" != "yes" ]; then
+        echo -e "${YELLOW}  Note: lingering is off for $USER, so it stops when you log out of every${NC}"
+        echo -e "${YELLOW}  session. To keep it running: sudo loginctl enable-linger $USER${NC}"
+        echo -e "${YELLOW}  (that starts nothing at boot by itself; no Shappe unit is enabled).${NC}"
+    fi
+    exit 0
+fi
+
+exec 9>"$LOCK"
+if ! flock -n 9; then
+    # A running app keeps the lock (below), so say which, if it is that.
+    already_running || starting_elsewhere
+    exit $REFUSED
+fi
+# fd 9 stays open into uvicorn below (exec keeps it), so the lock lasts as long as the app.
+if already_running; then exit $REFUSED; fi
+
+# Line by line into the journal, not in 8 KB blocks: the last lines before a crash count.
+export PYTHONUNBUFFERED=1
+
 export HAILORT_LOGGER_PATH=NONE
 
 export HAILO_MONITOR=1
@@ -26,7 +125,6 @@ echo -e "${BLUE}  LiDAR System Startup${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
-ENV_FILE="$HOME/.config/shappe-guide.env"
 PRESET_TOKEN="${SHAPPE_ADMIN_TOKEN:-}"
 # A line that sets it to something (a commented or empty one does not count).
 TOKEN_LINE_RE="^[[:space:]]*(export[[:space:]]+)?SHAPPE_ADMIN_TOKEN=[\"']?[^[:space:]\"'#]"
@@ -143,9 +241,11 @@ echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  Server Starting...${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
-
-HOST=${SERVER_HOST:-"0.0.0.0"}
-PORT=${SERVER_PORT:-"8000"}
+if [ -t 0 ]; then
+    echo -e "${YELLOW}Closing this terminal or losing SSH stops guidance. For a walk, start it${NC}"
+    echo -e "${YELLOW}with ./start_lidar.sh --background instead.${NC}"
+    echo ""
+fi
 
 GRACE="$(python3 -c 'import config; print(config.SERVER_GRACEFUL_SHUTDOWN_S)' 2>/dev/null || echo 5)"
 exec uvicorn main:app --host "$HOST" --port "$PORT" --no-access-log --log-level warning --timeout-graceful-shutdown "${GRACE%.*}"

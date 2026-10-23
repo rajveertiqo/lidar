@@ -15,6 +15,7 @@ from config import (
     CORS_ORIGINS,
     SERVER_GRACEFUL_SHUTDOWN_S,
     SERVER_HOST,
+    SERVER_MAX_BODY_BYTES,
     SERVER_PORT,
 )
 from utils.pi_camera_utils import start_camera, stop_camera
@@ -189,6 +190,58 @@ if CORS_ORIGINS:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+
+class _LimitRequestBody:
+    """413 for a request body over SERVER_MAX_BODY_BYTES, declared or streamed (chunked),
+    before it is parsed (2026-10-23). WebSocket messages: uvicorn's ws_max_size."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        headers = Headers(scope=scope)
+        declared = headers.get("content-length")
+        if declared is not None:
+            # The server delivers exactly the declared length: the header is the size.
+            if declared.isdigit() and int(declared) > SERVER_MAX_BODY_BYTES:
+                return await _too_large_response()(scope, receive, send)
+            return await self.app(scope, receive, send)
+        if "chunked" not in headers.get("transfer-encoding", "").lower():
+            return await self.app(scope, receive, send)  # no body
+        # Chunked: no size up front, so read it here, up to the limit, and hand it on whole.
+        chunks, size = [], 0
+        while True:
+            message = await receive()
+            if message["type"] != "http.request":
+                return  # the client went away mid-body
+            size += len(message.get("body", b""))
+            if size > SERVER_MAX_BODY_BYTES:
+                return await _too_large_response()(scope, receive, send)
+            chunks.append(message.get("body", b""))
+            if not message.get("more_body"):
+                break
+        replayed = False
+
+        async def replay():
+            nonlocal replayed
+            if replayed:
+                return await receive()  # what follows: the disconnect
+            replayed = True
+            return {"type": "http.request", "body": b"".join(chunks), "more_body": False}
+
+        await self.app(scope, replay, send)
+
+
+def _too_large_response():
+    return JSONResponse(
+        {"detail": f"request body over {SERVER_MAX_BODY_BYTES} bytes"}, status_code=413
+    )
+
+
+app.add_middleware(_LimitRequestBody)  # last added runs first: before anything reads
 
 
 async def _event_loop_heartbeat():
@@ -389,4 +442,5 @@ if __name__ == "__main__":
         log_level="warning",  # only surface warnings/errors from uvicorn itself
         # One open stream must not hold the teardown (config, NEW-052).
         timeout_graceful_shutdown=SERVER_GRACEFUL_SHUTDOWN_S,
+        ws_max_size=SERVER_MAX_BODY_BYTES,
     )

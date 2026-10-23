@@ -14,6 +14,7 @@ the guidance loop, and the service needs no change to support it.
 """
 
 import argparse
+import math
 import os
 import platform
 import signal
@@ -95,6 +96,10 @@ class InvalidOffset(dbus.exceptions.DBusException):
 
 class Rejected(dbus.exceptions.DBusException):
     _dbus_error_name = "org.bluez.Error.Rejected"
+
+
+class NotAuthorized(dbus.exceptions.DBusException):
+    _dbus_error_name = "org.bluez.Error.NotAuthorized"
 
 
 def _bytes(value: bytes) -> dbus.Array:
@@ -393,7 +398,46 @@ class Server:
         }
         self.app.services += [dis, nav]
         self.adv = Advertisement(bus, name)
-        self.agent = Agent(bus, lambda: time.monotonic() < self.pair_until)
+        self.agent = Agent(bus, self._window_open)
+        if pair_window_s > 0:
+            GLib.timeout_add(int(pair_window_s * 1000) + 100, self._window_closed)
+
+    # --- who may use the bridge ---
+
+    def _window_open(self) -> bool:
+        return time.monotonic() < self.pair_until
+
+    def _bonded(self, path) -> bool:
+        try:
+            props = dbus.Interface(self.bus.get_object(BLUEZ, path), DBUS_PROP_IFACE)
+            return bool(props.Get(DEVICE_IFACE, "Bonded"))
+        except dbus.exceptions.DBusException:
+            return False
+
+    def _may_use(self, path) -> bool:
+        """Anyone inside the pairing window; after it, only a bonded phone. BlueZ's
+        Pairable stops new BONDS only: pairing without bonding still encrypts the link,
+        which is all the characteristics ask, at any time (scan 2026-10-23)."""
+        return self._window_open() or self._bonded(path)
+
+    def _turn_away(self, path) -> bool:
+        """Disconnect `path` if it may not use the bridge. False: as a GLib callback, once."""
+        if path in self.connected and not self._may_use(path):
+            print(
+                f"[ble] disconnecting {self._describe(path)}: not bonded, "
+                f"and the pairing window is closed"
+            )
+            try:
+                dbus.Interface(self.bus.get_object(BLUEZ, path), DEVICE_IFACE).Disconnect()
+            except dbus.exceptions.DBusException as exc:
+                print(f"[ble] could not disconnect {path}: {exc}")
+        return False
+
+    def _window_closed(self) -> bool:
+        print("[ble] pairing window closed: bonded phones only from now on")
+        for path in list(self.connected):  # one that connected inside it but never bonded
+            self._turn_away(path)
+        return False
 
     # --- reads: one whole frame, served by GATT long reads if over the MTU ---
 
@@ -422,6 +466,9 @@ class Server:
     # --- commands ---
 
     def _on_write(self, value: bytes, options: Dict[str, Any]) -> None:
+        device = options.get("device")
+        if device is not None and not self._may_use(device):
+            raise NotAuthorized("not bonded, and the pairing window is closed")
         mtu = options.get("mtu")
         if mtu:
             self.bridge.set_mtu(
@@ -499,15 +546,22 @@ class Server:
             try:
                 try:
                     outs += self.bridge.on_walk(self.source.walk())
+                except Exception as exc:
+                    next_health = 0.0  # once it answers again, ask /health at once
+                    outs += self.bridge.on_unreachable(f"{type(exc).__name__}: {exc}")
+                else:
                     if started >= next_health:
                         next_health = started + HEALTH_S
-                        outs += self.bridge.on_health(
-                            self.source.health(),
-                            self.source.system_health(),
-                            self.source.system(),
-                        )
-                except Exception as exc:
-                    outs += self.bridge.on_unreachable(f"{type(exc).__name__}: {exc}")
+                        try:
+                            outs += self.bridge.on_health(
+                                self.source.health(),
+                                self.source.system_health(),
+                                self.source.system(),
+                            )
+                        except Exception as exc:
+                            outs += self.bridge.on_unreachable(
+                                f"{type(exc).__name__}: {exc}"
+                            )
                 outs += self.bridge.tick()
             except (
                 Exception
@@ -543,6 +597,7 @@ class Server:
             self.reassembler = P.Reassembler()
             self.bridge.on_connect()
             print(f"[ble] connected: {who} ({len(self.connected)} connected)")
+            GLib.idle_add(self._turn_away, path)
             if len(self.connected) > 1:
                 print("[ble] WARNING: more than one phone connected; v1 supports one")
         else:
@@ -623,7 +678,8 @@ def main() -> int:
         "--pair-window",
         type=float,
         default=180.0,
-        help="seconds after start during which a new phone may pair",
+        help="seconds after start during which a new phone may pair (0: none; "
+        "after it, only bonded phones may connect)",
     )
     ap.add_argument(
         "--state-file",
@@ -670,10 +726,13 @@ def main() -> int:
         )
     server = Server(bus, adapter, bridge, source, args.security, args.pair_window, name)
 
-    adapter_props.Set(ADAPTER_IFACE, "Pairable", dbus.Boolean(True))
-    adapter_props.Set(
-        ADAPTER_IFACE, "PairableTimeout", dbus.UInt32(int(args.pair_window))
-    )
+    adapter_props.Set(ADAPTER_IFACE, "Pairable", dbus.Boolean(args.pair_window > 0))
+    if args.pair_window > 0:  # a PairableTimeout of 0 is BlueZ's "pairable for ever"
+        adapter_props.Set(
+            ADAPTER_IFACE,
+            "PairableTimeout",
+            dbus.UInt32(max(1, int(math.ceil(args.pair_window)))),
+        )
 
     agents = dbus.Interface(bus.get_object(BLUEZ, "/org/bluez"), AGENT_MANAGER_IFACE)
     agents.RegisterAgent(AGENT_PATH, "NoInputNoOutput")
@@ -752,7 +811,12 @@ def main() -> int:
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, _quit)
     print(
         f"[ble] {'MOCK ' + args.mock if mock else 'live ' + args.url}; security={args.security}; "
-        f"pairing open for {args.pair_window:.0f} s; device_id={bridge.device_id} epoch={bridge.epoch}"
+        + (
+            f"pairing open for {args.pair_window:.0f} s"
+            if args.pair_window > 0
+            else "pairing closed: bonded phones only"
+        )
+        + f"; device_id={bridge.device_id} epoch={bridge.epoch}"
     )
     loop.run()
 

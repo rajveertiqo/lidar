@@ -51,6 +51,12 @@ MAX_PING_T = (
 )  # the app's clock in ms: any number a JavaScript app can hold exactly
 COMMANDS_PER_S = 10
 LOG_EVERY_S = 30.0  # a fault that repeats every poll is printed at most this often
+# Unanswered polls count as an outage only after this long: one reply slower than the
+# 0.5 s request timeout made the phone hear a false "device down" (scan 2026-10-23).
+UNREACHABLE_AFTER_S = 2.0
+# /health unanswered this long while /guidance/walk still answers: the status is no longer
+# known, so it is DOWN rather than the last "ok" kept for ever.
+HEALTH_STALE_S = 5.0
 
 # vcgencmd get_throttled bits
 _UV_NOW, _CAPPED_NOW, _THROTTLED_NOW, _SOFT_TEMP_NOW = 1 << 0, 1 << 1, 1 << 2, 1 << 3
@@ -172,6 +178,20 @@ def _saved_state(saved: Any) -> Dict[str, Any]:
     return {"device_id": device_id, "epoch": epoch & 0xFFFF}
 
 
+def _salvage(text: str) -> Dict[str, Any]:
+    """What a damaged state file still holds that save() would have written: a valid
+    device_id is kept on its own — a bad epoch, or a cut-off file, must not cost the ID
+    the phone knows the device by (scan 2026-10-23)."""
+    m = re.search(r'"device_id"\s*:\s*"([0-9a-f]{16})"', text)
+    if not m:
+        return {}  # an epoch counts only for the device_id it was kept with
+    kept: Dict[str, Any] = {"device_id": m.group(1)}
+    m = re.search(r'"epoch"\s*:\s*(\d{1,9})\b', text)
+    if m:
+        kept["epoch"] = int(m.group(1)) & 0xFFFF
+    return kept
+
+
 class _Persist:
     """device_id and epoch, kept across restarts (atomic write). A state file that cannot be
     used counts as absent, and one that cannot be written (full or read-only SD card) leaves
@@ -180,16 +200,35 @@ class _Persist:
     def __init__(self, path: Optional[str], log: Callable[[str, str], None]):
         self.path, self.log = path, log
         self.data = {"device_id": uuid.uuid4().hex[:16], "epoch": 0}
-        if path and os.path.exists(path):
-            try:
-                with open(path, encoding="utf-8") as fh:
-                    self.data.update(_saved_state(json.load(fh)))
-            except Exception as exc:  # unreadable, not JSON, or not what save() writes
-                log(
-                    "state-load",
-                    f"state file {path} ignored ({type(exc).__name__}: {exc}); "
-                    f"starting as a new device_id {self.data['device_id']}",
-                )
+        if not (path and os.path.exists(path)):
+            return
+        try:
+            with open(path, "rb") as fh:
+                text = fh.read().decode("utf-8", errors="replace")
+        except OSError as exc:  # an I/O error, permissions
+            # Left as it is for a later start: saving now would overwrite the device_id
+            # the phone knows (2026-10-23).
+            self.path = None
+            log(
+                "state-load",
+                f"cannot read {path} ({type(exc).__name__}: {exc}); this run is "
+                f"device_id {self.data['device_id']}, and the file is left untouched",
+            )
+            return
+        try:
+            self.data.update(_saved_state(json.loads(text)))
+        except Exception as exc:  # not JSON, or not what save() writes
+            kept = _salvage(text)
+            self.data.update(kept)
+            why = f"{type(exc).__name__}: {exc}"
+            log(
+                "state-load",
+                f"state file {path} damaged ({why}): kept its device_id "
+                f"{kept['device_id']}, the rest ignored"
+                if "device_id" in kept
+                else f"state file {path} ignored ({why}); "
+                f"starting as a new device_id {self.data['device_id']}",
+            )
 
     def save(self) -> None:
         if not self.path:
@@ -238,6 +277,8 @@ class Bridge:
         self.system: Dict[str, Any] = {}
         self.status = P.STATUS_UNREACHABLE
         self.unreachable_reason = "not polled yet"
+        self.answered_at: Optional[float] = None  # the last poll the service answered
+        self.health_at: Optional[float] = None  # the last /health it answered
         self._state_key: Optional[tuple] = None
         self._state_sent = -1e9
         self._state_payload = P.pack_state(
@@ -313,6 +354,7 @@ class Bridge:
             now = self.clock()
             snap = _dict(snap)
             self.walk, self.walk_at = snap, now
+            self.answered_at = now
             if self.status == P.STATUS_UNREACHABLE:
                 self.status = P.STATUS_DOWN  # reachable again; /health will refine
                 self.unreachable_reason = ""
@@ -388,6 +430,7 @@ class Bridge:
             self.health = _dict(health)
             self.sys_health = _dict(sys_health)
             self.system = _dict(system)
+            self.answered_at = self.health_at = self.clock()
             status = self.health.get("status")
             self.status = {"ok": P.STATUS_OK, "degraded": P.STATUS_DEGRADED}.get(
                 status if isinstance(status, str) else "", P.STATUS_DOWN
@@ -441,6 +484,10 @@ class Bridge:
         reason = str(reason)[:MAX_WARNING_CHARS]
         with self._lock:
             self.stats["poll_errors"] += 1
+            now = self.clock()
+            last = self.answered_at if self.answered_at is not None else self.started
+            if self.status != P.STATUS_UNREACHABLE and now - last < UNREACHABLE_AFTER_S:
+                return self._maybe_state(now)  # one slow reply is not an outage
             if self.status != P.STATUS_UNREACHABLE:
                 self.status = P.STATUS_UNREACHABLE
                 self.unreachable_reason = reason
@@ -453,7 +500,22 @@ class Bridge:
         """Called about every 100 ms: the heartbeat, even when nothing changes.
         force=True sends STATE now, whatever the timers say (a phone just subscribed)."""
         with self._lock:
-            return self._maybe_state(self.clock(), force=force)
+            now = self.clock()
+            return self._stale_health(now) + self._maybe_state(now, force=force)
+
+    def _stale_health(self, now: float) -> List[Out]:
+        """OK or DEGRADED that /health has not confirmed for HEALTH_STALE_S becomes DOWN."""
+        if self.status not in (P.STATUS_OK, P.STATUS_DEGRADED) or self.health_at is None:
+            return []
+        if now - self.health_at <= HEALTH_STALE_S:
+            return []
+        self.status = P.STATUS_DOWN
+        self.unreachable_reason = (
+            f"/health has not answered for {now - self.health_at:.0f} s"
+        )
+        self._ready_announced = False
+        self._flags = {**self._flags, "_status": self.status}  # its return is news
+        return self._event("health_changed", self._health_summary())
 
     # --- STATE ---
 

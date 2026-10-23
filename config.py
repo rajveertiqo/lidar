@@ -418,7 +418,7 @@ HEADING_MAX_INCIDENCE_SEC = 3.0
 HEADING_SENS_JUMP_FRACTION = 0.1
 HEADING_STATE_STALE_S = LIDAR_STALE_S
 
-GYRO_ENABLED = True
+GYRO_ENABLED = False  # gyro unplugged 2026-10-23; set True when it is back on the SPI bus
 
 GYRO_TRANSPORT = "spi"  # "spi" or "i2c"
 GYRO_SPI_BUS = 0
@@ -863,6 +863,10 @@ SERVICE_HEARTBEAT_MAX_AGE_S = 10.0
 
 SHUTDOWN_TIMEOUT_S = 45.0
 SERVER_GRACEFUL_SHUTDOWN_S = 5.0
+# The largest request body, and WebSocket message, the server reads. A full LiDAR scan as
+# JSON is ~60 KB. Unlimited, a 43 MB POST stalled the other threads 0.6 s and took 380 MB,
+# from any device on the Wi-Fi, read even before the admin-token check (scan 2026-10-23).
+SERVER_MAX_BODY_BYTES = 1_048_576
 
 FRAME_GRID_ROWS = 2
 FRAME_GRID_COLS = 2

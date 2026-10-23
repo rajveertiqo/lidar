@@ -17,7 +17,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
 from ble_bridge import protocol as P  # noqa: E402
-from ble_bridge.core import Bridge, load_vocab, STATE_HEARTBEAT_S  # noqa: E402
+from ble_bridge.core import (  # noqa: E402
+    HEALTH_STALE_S,
+    STATE_HEARTBEAT_S,
+    UNREACHABLE_AFTER_S,
+    Bridge,
+    load_vocab,
+)
 from ble_bridge.sources import MockSource, SCENARIOS, make_health, make_walk  # noqa: E402
 
 
@@ -402,11 +408,40 @@ class BridgeTests(unittest.TestCase):
             state["health"]["thermal_warn"] and state["health"]["undervoltage"]
         )
 
+    def test_one_slow_reply_is_not_an_outage(self):
+        b, clock = make_bridge()
+        b.on_walk(make_walk(1))
+        b.on_health(make_health())
+        clock.t += 0.5
+        events = lambda outs: [d["event"] for c, d in decoded(outs) if d["kind"] == "event"]
+        self.assertEqual(events(b.on_unreachable("timed out")), [])
+        self.assertEqual(P.unpack_state(b.state_value())["status"], "ok")
+        clock.t += UNREACHABLE_AFTER_S  # still no answer: now it is one
+        self.assertEqual(events(b.on_unreachable("timed out")), ["service_unreachable"])
+
+    def test_health_unanswered_is_down_not_ok(self):
+        b, clock = make_bridge()
+        b.on_walk(make_walk(1))
+        b.on_health(make_health())
+        events = lambda outs: [d["event"] for c, d in decoded(outs) if d["kind"] == "event"]
+        seen = []
+        for _ in range(int(HEALTH_STALE_S) + 2):  # /guidance/walk answers, /health not
+            clock.t += 1
+            seen += events(b.on_walk(make_walk(1)) + b.on_unreachable("timed out"))
+            seen += events(b.tick())
+        self.assertNotIn("service_unreachable", seen)
+        self.assertIn("health_changed", seen)
+        self.assertEqual(P.unpack_state(b.state_value())["status"], "down")
+        self.assertIn("health_changed", events(b.on_health(make_health())))
+        clock.t += 0.3  # STATE goes out at most every STATE_MIN_INTERVAL_S
+        b.tick()
+        self.assertEqual(P.unpack_state(b.state_value())["status"], "ok")
+
     def test_unreachable_is_reported_once_and_clears(self):
         b, clock = make_bridge()
         b.on_walk(make_walk(1))
         b.on_health(make_health())
-        clock.t += 1
+        clock.t += UNREACHABLE_AFTER_S
         first = [
             d["event"]
             for c, d in decoded(b.on_unreachable("connection refused"))
@@ -700,6 +735,51 @@ class RobustnessTests(unittest.TestCase):
                 state_path=path,
             )
             self.assertEqual((b.device_id, b.epoch), ("0123456789abcdef", 42))
+
+    def test_damaged_state_file_keeps_a_valid_device_id(self):
+        cases = [
+            ('{"device_id":"0123456789abcdef","epoch":NaN}', 1),
+            ('{"device_id": "0123456789abcdef", "epoch": 41', 42),  # cut off mid-write
+            ('\udcff{"device_id":"0123456789abcdef","epoch":7}', 8),  # a bad byte
+        ]
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "state.json")
+            for content, epoch in cases:
+                with open(path, "wb") as fh:
+                    fh.write(content.encode("utf-8", "surrogateescape"))
+                with contextlib.redirect_stdout(io.StringIO()) as log:
+                    b = Bridge(
+                        load_vocab(),
+                        {"mock": False},
+                        clock=Clock(),
+                        wall=lambda: 0.0,
+                        state_path=path,
+                    )
+                self.assertEqual((b.device_id, b.epoch), ("0123456789abcdef", epoch))
+                self.assertIn("kept its device_id", log.getvalue())
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads a mode-000 file")
+    def test_unreadable_state_file_is_left_untouched(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "state.json")
+            with open(path, "w") as fh:
+                json.dump({"device_id": "0123456789abcdef", "epoch": 41}, fh)
+            os.chmod(path, 0)
+            try:
+                with contextlib.redirect_stdout(io.StringIO()) as log:
+                    b = Bridge(
+                        load_vocab(),
+                        {"mock": False},
+                        clock=Clock(),
+                        wall=lambda: 0.0,
+                        state_path=path,
+                    )
+            finally:
+                os.chmod(path, 0o600)
+            self.assertIn("left untouched", log.getvalue())
+            with open(path) as fh:  # the next start can still read the ID
+                self.assertEqual(json.load(fh)["device_id"], "0123456789abcdef")
+            self.assertNotEqual(b.device_id, "0123456789abcdef")
 
     def test_bad_walk_values_are_unknown_not_fatal(self):
         """Each of these raised from on_walk (and most from every later tick)."""

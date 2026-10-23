@@ -248,4 +248,5 @@ if [ -t 0 ]; then
 fi
 
 GRACE="$(python3 -c 'import config; print(config.SERVER_GRACEFUL_SHUTDOWN_S)' 2>/dev/null || echo 5)"
-exec uvicorn main:app --host "$HOST" --port "$PORT" --no-access-log --log-level warning --timeout-graceful-shutdown "${GRACE%.*}"
+WS_MAX="$(python3 -c 'import config; print(config.SERVER_MAX_BODY_BYTES)' 2>/dev/null || echo 1048576)"
+exec uvicorn main:app --host "$HOST" --port "$PORT" --no-access-log --log-level warning --timeout-graceful-shutdown "${GRACE%.*}" --ws-max-size "$WS_MAX"

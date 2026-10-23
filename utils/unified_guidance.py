@@ -554,6 +554,7 @@ def get_unified_guidance() -> Dict[str, Any]:
         "blocked",
         "vehicle_approaching",
         "mover_approaching",
+        "offline",  # "Guidance stopped, use your cane" cuts in (2026-10-23)
     )
 
     say = bool(simple.get("speak"))

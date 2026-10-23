@@ -51,6 +51,7 @@ from config import (
 )
 
 _AXIS_KEYS = {"x": ("gx", "ax"), "y": ("gy", "ay"), "z": ("gz", "az")}
+_SETTINGS_CHECK_S = 1.0  # how often the chip is asked whether it reset itself
 
 
 class _Sample(NamedTuple):
@@ -478,6 +479,9 @@ class GyroReader:
             sensor, self._sensor = self._sensor, None
             was = self._connected
             self._connected = False
+            self._bias_trusted = False  # the next connect's calibration re-earns it
+            self._trust_reason = "link lost"
+            self._agreements = 0
         if sensor is not None:
             try:
                 sensor.close()
@@ -494,7 +498,7 @@ class GyroReader:
         errors = 0
         last_t: Optional[float] = None
         last_mono: Optional[float] = None
-        deadline = time.monotonic()
+        deadline = next_check = time.monotonic()
 
         while not self._stop.is_set():
             if not self._connected:
@@ -503,9 +507,18 @@ class GyroReader:
                     continue
                 errors = 0
                 last_t = last_mono = None
-                deadline = time.monotonic()
+                deadline = next_check = time.monotonic()
 
             try:
+                if time.monotonic() >= next_check:
+                    next_check = time.monotonic() + _SETTINGS_CHECK_S
+                    if not self._sensor.settings_intact():
+                        with self._lock:
+                            self._last_error = "chip reset itself (its settings are gone)"
+                            self._dropouts += 1
+                        self._disconnect()  # reconnecting re-initialises and recalibrates
+                        last_t = last_mono = None
+                        continue
                 s = self._sensor.read()
                 errors = 0
             except Exception as e:

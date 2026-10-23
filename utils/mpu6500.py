@@ -20,6 +20,10 @@ SPI_READ = 0x80
 
 SPI_DEAD_BYTES = (0x00, 0xFF)
 
+# Identical 14-byte bursts in a row before the readings count as frozen: a live chip's
+# noise changes every one.
+FROZEN_READS = 50
+
 # FS_SEL / AFS_SEL -> (register bits, LSB per unit)
 GYRO_RANGES = {
     250: (0x00, 131.0),
@@ -162,6 +166,7 @@ class MPU6500:
         self.gyro_bias = (0.0, 0.0, 0.0)
         self.chip_id = None
         self._temp_div, self._temp_off = TEMP_CAL_DEFAULT
+        self._last_block, self._repeats = None, 0
 
         if gyro_range not in GYRO_RANGES:
             raise ValueError(f"gyro_range must be one of {sorted(GYRO_RANGES)}")
@@ -211,6 +216,17 @@ class MPU6500:
     def read_raw(self):
         """Burst-read all 14 sensor bytes so the sample is time-coherent."""
         d = self.link.read_block(ACCEL_XOUT_H, 14)
+        # SPI never errors: a chip that is gone reads every byte 0x00 or 0xFF, and one that
+        # stopped repeats its last sample. Both passed as live data (2026-10-23).
+        if d[0] in SPI_DEAD_BYTES and all(b == d[0] for b in d):
+            raise OSError(f"no chip answering on {self.describe()} (every byte {d[0]:#04x})")
+        block = bytes(d)
+        if block == self._last_block:
+            self._repeats += 1
+            if self._repeats >= FROZEN_READS:
+                raise OSError(f"readings frozen ({self._repeats + 1} identical in a row)")
+        else:
+            self._last_block, self._repeats = block, 0
 
         def word(i):
             v = (d[i] << 8) | d[i + 1]
@@ -232,6 +248,15 @@ class MPU6500:
             "gz": gz / g - bz,
             "temp": temp / self._temp_div + self._temp_off,
         }
+
+    def settings_intact(self):
+        """Whether wake()'s ranges and wake-up are still in the chip. A reset (brown-out,
+        loose power pin) silently reverts them: asleep, or read at the wrong scale."""
+        return (
+            (self.link.read_byte(GYRO_CONFIG) & 0x18) == self._gyro_bits
+            and (self.link.read_byte(ACCEL_CONFIG) & 0x18) == self._accel_bits
+            and not self.link.read_byte(PWR_MGMT_1) & 0x40  # SLEEP
+        )
 
     def describe(self):
         return self.link.describe()

@@ -30,10 +30,16 @@ def get_walk():
 
 @router.get("/policy")
 def get_policy():
-    """The straight-walk decision on its own, in METRES."""
-    from utils import walk_policy
-
-    return walk_policy.decide()
+    """The straight-walk decision on its own, in FEET, as the guidance loop last made it — running walk_policy.decide() here would rewrite the loop's turn memory and could change what is spoken (2026-10-23)."""
+    latest = latest_guidance()
+    walk = latest.get("walk") or {
+        "action": "unknown",
+        "direction": None,
+        "instruction": "",
+        "reason": (latest.get("path") or {}).get("reason", ""),
+        "units": "ft",
+    }
+    return {**walk, "loop": latest["loop"]}
 
 
 @router.get("/drift")

@@ -176,6 +176,7 @@ class _Voice:
         self.failing: bool = False
         # Monotonic time an utterance first started with none completing since.
         self._unfinished_since: Optional[float] = None
+        self._gave_back = False  # a failed sentence handed back since the last success
 
     @property
     def accepted_seq(self) -> Optional[int]:
@@ -248,6 +249,19 @@ class _Voice:
     def _fail(self, error: str) -> None:
         self.error, self.failing = error, True
 
+    def _give_back(self, seq: Optional[int], text: str) -> None:
+        """Have the guidance say `text` again (the phone, while this voice is failing). Once
+        per run of failures, so a voice that keeps failing cannot loop it (2026-10-23)."""
+        if seq is None or self._gave_back:
+            return
+        self._gave_back = True
+        try:
+            from utils import simple_guidance
+
+            simple_guidance.voice_failed(seq, text)
+        except Exception:
+            pass
+
     def _run(self) -> None:
         while not self._stop.is_set():
             self._wake.wait(timeout=1.0)
@@ -273,6 +287,7 @@ class _Voice:
                         self._unfinished_since = started
             if started is None:
                 _report(seq, "failed", text, self.error)
+                self._give_back(seq, text)
                 continue
             _report(seq, "started", text)
             try:
@@ -286,6 +301,7 @@ class _Voice:
                     except Exception:
                         pass
                     _report(seq, "hung", text, self.error)
+                    self._give_back(seq, text)
                     continue
                 took = f"{time.monotonic() - started:.1f}s"
                 if self._killed is proc:
@@ -302,14 +318,17 @@ class _Voice:
                 if rc != 0:
                     self._fail(f"{PI_VOICE_CMD[0]} exited with status {rc}")
                     _report(seq, "failed", text, self.error)
+                    self._give_back(seq, text)
                     continue
                 self.last, self.last_at = text, time.time()
                 self.error, self.failing = "", False
                 self._unfinished_since = None
+                self._gave_back = False
                 _report(seq, "completed", text, took)
             except Exception as exc:
                 self._fail(f"{type(exc).__name__}: {exc}")
                 _report(seq, "failed", text, self.error)
+                self._give_back(seq, text)
             finally:
                 with self._lock:
                     self._proc, self._playing_seq = None, None
@@ -359,6 +378,22 @@ def loop_status() -> Dict[str, Any]:
     }
 
 
+def _start_airtime_timing() -> None:
+    """Time every sentence as this voice renders it (~3 s, silent), off-thread: until it
+    is done the gate uses its fitted estimate."""
+
+    def run():
+        try:
+            from utils import simple_guidance
+
+            n = simple_guidance.measure_airtimes(PI_VOICE_CMD)
+            print(f"[INFO] pi_voice: timed {n} sentences for the speech gate")
+        except Exception as exc:
+            print(f"[WARN] pi_voice: sentence timing failed: {exc}")
+
+    threading.Thread(target=run, name="pi-voice-airtime", daemon=True).start()
+
+
 def start() -> None:
     """Start the guidance loop, and the voice if enabled and espeak-ng exists."""
     global _loop_thread, _running
@@ -371,6 +406,7 @@ def start() -> None:
         _start_prober()
         _voice.start()
         _running = True
+        _start_airtime_timing()
     else:
         _running = False
         _voice.error = (

@@ -579,7 +579,13 @@ STARTUP_STABLE_MAX_WAIT_S = 5.0
 
 STARTUP_READY_CUE = "Ready."
 
-NOTIFY_WORDS_PER_SEC = 2.8  # measured speaking rate of the delivery voice
+# How long a sentence keeps the voice busy until pi_voice has timed the real ones
+# (simple_guidance.measure_airtimes): BASE + PER_CHAR * letters + PER_COMMA * commas.
+# Fitted 2026-10-23 to espeak-ng at 170 wpm, never short for any of the 309 sentences
+# (mean +0.17 s); the 2.8 words/s it replaced was short for 308, by up to 0.83 s.
+NOTIFY_AIRTIME_BASE_S = 0.71
+NOTIFY_AIRTIME_PER_CHAR_S = 0.049
+NOTIFY_AIRTIME_PER_COMMA_S = 0.26
 
 BEV_ENABLED = True
 
@@ -1093,9 +1099,13 @@ SIMPLE_VEHICLE_PACE_UNKNOWN_MPS = HEADING_NOMINAL_SPEED_MPS
 # (FUSION_CAMERA_*: the IMX519's 66 deg across 4656 px, centre-cropped to 3840 px) = 56.3 deg,
 # not the 70 assumed until 2026-10-23, which put every box-size range ~23% too near and
 # side bearings up to ~7 deg too far out.
-SIMPLE_CAMERA_HFOV_DEG = 2.0 * math.degrees(math.atan(
-    math.tan(math.radians(FUSION_CAMERA_LENS_HFOV_DEG) / 2.0)
-    * FUSION_CAMERA_CROP_PX[0] / FUSION_CAMERA_SENSOR_PX[0]))
+SIMPLE_CAMERA_HFOV_DEG = 2.0 * math.degrees(
+    math.atan(
+        math.tan(math.radians(FUSION_CAMERA_LENS_HFOV_DEG) / 2.0)
+        * FUSION_CAMERA_CROP_PX[0]
+        / FUSION_CAMERA_SENSOR_PX[0]
+    )
+)
 SIMPLE_VEHICLE_MISS_M = 2.0
 SIMPLE_VEHICLE_IDLE_RATE = 0.05
 SIMPLE_VEHICLE_IDLE_SLIDE = 0.05
@@ -1157,5 +1167,5 @@ GUIDANCE_RESULT_STALE_S = 2.0
 PI_VOICE_REPORT_QUEUE_MAX = 256
 PI_VOICE_REAP_WAIT_S = 2.0
 PI_VOICE_ALLOW_HDMI = False
-# ~170 words a minute: the 2.8 words/s the gate's airtime estimate assumes.
+# ~170 words a minute; the gate times every sentence with this command at start-up.
 PI_VOICE_CMD = ["espeak-ng", "-s", "170", "-v", "en-us"]

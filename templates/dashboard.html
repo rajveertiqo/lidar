@@ -366,12 +366,24 @@
         const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; speechSynthesis.speak(u);
       }
 
+      // ------------------------------------------------------------ requests
+      // Every request gives up after `ms`: one that hangs must not freeze the page on an old
+      // instruction while the chip still says "live" (2026-10-23).
+      async function getJSON(url, ms = 2500) {
+        const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), ms);
+        try { return await (await fetch(url, { cache: "no-store", signal: ctl.signal })).json(); }
+        finally { clearTimeout(timer); }
+      }
+      // One request per poller at a time, so a slow server cannot pile them up.
+      const single = (fn) => { let busy = false; return async () => { if (busy) return; busy = true; try { await fn(); } finally { busy = false; } }; };
+
       // ------------------------------------------------------------ NOW (400 ms)
       let seenSeq = null, lastSaidAt = 0, lastSaidText = "", busyWalk = false, lastObject = null, lastVehicle = null, lastSteer = null, lastMovers = [], lastRadarMovers = [];
       async function pollWalk() {
         if (busyWalk) return; busyWalk = true;
         try {
-          const d = await (await fetch("/guidance/walk", { cache: "no-store" })).json();
+          const d = await getJSON("/guidance/walk");
+          walkOkAt = Date.now(); loopStale = !!(d.loop || {}).stale;
           const p = d.path || {}, n = d.notify || {}, raw = p.raw || {};
           const rule = p.rule || (p.instruction ? "clear" : "");
           $("now").dataset.rule = rule;
@@ -460,10 +472,8 @@
             ? '<span class="warn-t">at a crossing — “Walk straight” withheld</span>'
             : "none detected";
         } catch (e) {
-          $("now-text").textContent = "No connection to the device";
-          $("now").dataset.rule = "offline";
-          setStatus("bad", "no connection");
-        } finally { busyWalk = false; }
+          walkOkAt = 0;  // renderStatus says "No connection"
+        } finally { busyWalk = false; renderStatus(); }
       }
 
       function piHasCue(pv, seq) {
@@ -482,16 +492,41 @@
         el.innerHTML = `<span class="dot"></span><b>${esc(text)}</b>`;
       }
 
+      // ------------------------------------------------------------ status chip
+      // One verdict, worst first: no fresh instruction, the guidance loop stopped, then
+      // /health (sensors, under-voltage, heat, audio off).
+      let walkOkAt = 0, loopStale = false, health = null, healthAt = 0;
+      function renderStatus() {
+        const now = Date.now();
+        if (now - walkOkAt > 3000) {
+          $("now-text").textContent = "No connection to the device";
+          $("now").dataset.rule = "offline";
+          return setStatus("bad", "no connection");
+        }
+        if (loopStale) return setStatus("bad", "guidance stopped");
+        if (!health || now - healthAt > 3000) return setStatus("warn", "health unknown");
+        const sys = health.system || {}, voice = health.voice || {}, sens = health.sensors || {};
+        if (health.status === "down")
+          return setStatus("bad", voice.audio_enabled === false ? "audio off" : !sens.lidar_ok ? "LiDAR down" : "guidance stopped");
+        if (health.status === "starting") return setStatus("warn", "scanning");
+        if (sys.power_low) return setStatus("bad", "under-voltage");
+        if (sys.hot) return setStatus("warn", "overheating");
+        if (health.status !== "ok") return setStatus("warn", "degraded");
+        setStatus("ok", "live");
+      }
+      async function pollHealth() {
+        try {
+          health = await getJSON("/health"); healthAt = Date.now();  // a 503 still carries the body
+          $("s-warn").textContent = (health.warnings || []).join(" · ");
+        } catch (e) {} finally { renderStatus(); }
+      }
+
       // ------------------------------------------------------------ health + log (1 s)
       async function pollTest() {
         try {
-          const d = await (await fetch("/guidance/test?limit=50", { cache: "no-store" })).json();
+          const d = await getJSON("/guidance/test?limit=50");
           if (d.geometry) geom = d.geometry;
           const h = d.health || {}, v = d.voice || {}, st = d.startup || {};
-          if (!h.lidar_ok) setStatus("bad", "LiDAR down");
-          else if (!st.ready) setStatus("warn", "scanning");
-          else if (!h.all_ok) setStatus("warn", "degraded");
-          else setStatus("ok", "live");
           $("h-voice").className = `chip ${v.usable ? "ok" : ""}`;
           $("h-voice").textContent = v.usable ? `🎧 Pi · ${v.output}` : "📱 phone voice";
           $("h-rate").textContent = `${d.said_last_minute || 0} /min`;
@@ -512,7 +547,6 @@
           $("s-voice").textContent = v.usable ? `Pi → ${v.output}; the phone stays quiet`
             : v.running ? `phone screen reader (the Pi has ${v.output || "no output"}${v.error ? ` — ${v.error}` : ""})`
             : "phone screen reader (Pi voice off)";
-          $("s-warn").textContent = (h.warnings || []).join(" · ");
           $("log-path").textContent = d.log_path ? d.log_path.split("/").slice(-1)[0] : "";
           const lines = (d.lines || []).slice().reverse();
           $("log").innerHTML = lines.length ? lines.map((r) => {
@@ -527,7 +561,7 @@
       // ------------------------------------------------------------ radar boards (1 s)
       async function pollRadar() {
         try {
-          const d = await (await fetch("/radar/state", { cache: "no-store" })).json();
+          const d = await getJSON("/radar/state");
           const secs = d.sectors || {};
           const keys = Object.keys(secs).filter((k) => /^deg\d+$/.test(k)).sort();
           $("boards").innerHTML = keys.map((k) => {
@@ -542,7 +576,7 @@
       // ------------------------------------------------------------ motion (1 s)
       async function pollMotion() {
         try {
-          const h = await (await fetch("/guidance/heading", { cache: "no-store" })).json();
+          const h = await getJSON("/guidance/heading");
           const kmh = (mps) => (mps * 3.6).toFixed(1);
           $("m-motion").textContent = h.confidently_still ? "standing still"
             : h.speed_source === "odometry" ? `walking ${kmh(h.speed_measured_mps || 0)} km/h (measured)`
@@ -559,19 +593,38 @@
         const all = view === "all";
         $("cam-single").hidden = all; $("cam-all").hidden = !all;
         $("cam-note").hidden = view !== "front";
+        // A browser allows ~6 connections to the device and each stream holds one for good:
+        // four streams (more with a second tab) left the polls queued behind them. "All"
+        // is one short request a second; the single stream stops while the tab is hidden.
         if (all) {
           $("cam-img").removeAttribute("src");
           $("cam-all").innerHTML = ["front", "right", "left", "back"].map((c) =>
-            `<div class="cam"><img src="/camera/stream/${c}" alt="${c} camera" /><div class="chip" style="position:absolute;left:8px;top:8px">${c}</div></div>`).join("");
+            `<div class="cam"><img id="cam-all-${c}" alt="${c} camera" /><div class="chip" style="position:absolute;left:8px;top:8px">${c}</div></div>`).join("");
+          pollAllCams();
         } else {
           $("cam-all").innerHTML = "";
           $("cam-off").hidden = true;
-          $("cam-img").src = `/camera/stream/${view}?t=${Date.now()}`;
+          if (document.hidden) $("cam-img").removeAttribute("src");
+          else $("cam-img").src = `/camera/stream/${view}?t=${Date.now()}`;
         }
         drawCamOverlay();
       }
+      const pollAllCams = single(async () => {
+        if (camView !== "all" || document.hidden) return;
+        try {
+          const frames = (await getJSON("/camera/frames/all", 4000)).frames || {};
+          for (const [c, f] of Object.entries(frames)) {
+            const img = $(`cam-all-${c}`);
+            if (img && f.frame) img.src = `data:image/jpeg;base64,${f.frame}`;
+          }
+        } catch (e) {}
+      });
+      document.addEventListener("visibilitychange", () => setCam(camView));
       const camCheck = () => { $("cam-off").hidden = $("cam-img").naturalWidth > 0 || camView === "all"; };
-      $("cam-img").addEventListener("error", () => setTimeout(camCheck, 2500));
+      $("cam-img").addEventListener("error", () => setTimeout(() => {
+        camCheck();
+        if (camView !== "all" && !document.hidden) $("cam-img").src = `/camera/stream/${camView}?t=${Date.now()}`;  // reconnect
+      }, 2500));
       document.querySelectorAll("#cam-tabs button").forEach((b) => b.addEventListener("click", () => setCam(b.dataset.cam)));
 
       function drawCamOverlay() {
@@ -652,7 +705,7 @@
       async function pollCam() {
         if (busyCam) return; busyCam = true;
         try {
-          camDets = await (await fetch("/camera/stats", { cache: "no-store" })).json();
+          camDets = await getJSON("/camera/stats");
           $("s-camfps").textContent = camDets.capture_fps != null
             ? `· ${Number(camDets.capture_fps).toFixed(1)} fps · ${camDets.total_objects || 0} objects` : "";
           drawCamOverlay();
@@ -791,12 +844,15 @@
 
       // ------------------------------------------------------------ go
       setCam(camView);
-      pollWalk(); pollTest(); pollRadar(); pollMotion(); pollCam(); connectScan();
+      const tickTest = single(pollTest), tickRadar = single(pollRadar), tickMotion = single(pollMotion), tickHealth = single(pollHealth);
+      pollWalk(); tickTest(); tickRadar(); tickMotion(); tickHealth(); pollCam(); connectScan();
       setInterval(pollWalk, 400);
-      setInterval(pollTest, 1000);
-      setInterval(pollRadar, 1000);
-      setInterval(pollMotion, 1000);
+      setInterval(tickTest, 1000);
+      setInterval(tickRadar, 1000);
+      setInterval(tickMotion, 1000);
+      setInterval(tickHealth, 1000);
       setInterval(pollCam, 700);
+      setInterval(pollAllCams, 1000);
       setInterval(drawScan, 200);
     </script>
   </body>

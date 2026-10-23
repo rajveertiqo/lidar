@@ -1049,6 +1049,8 @@ def start_radar(
     return {"enabled": True, "starting": True}
 
 
+# Lock order: _key_lock, then _cycle_lock — apply_calibration holds _key_lock into
+# restart_radar. Never take _key_lock while holding _cycle_lock (a deadlock, 2026-10-23).
 _cycle_lock = threading.Lock()
 _cycle_running = False
 _cycle_again = False
@@ -1087,12 +1089,12 @@ def _run_cycles(restart: bool, allow_provisional: bool) -> None:
                 f"[RADAR] {'restart' if restart else 'startup'} failed: "
                 f"{type(exc).__name__}: {exc}"
             )
+        with _key_lock:  # read before _cycle_lock, never inside it (lock order above)
+            stop = _live["stop"]
         with _cycle_lock:
             if not _cycle_again:
                 _cycle_running = False
                 _restart_state.update(since=None, reason=None)
-                with _key_lock:
-                    stop = _live["stop"]
                 if stop is not None and not stop.is_set() and RADAR_LATE_JOIN_S > 0:
                     t = threading.Thread(
                         target=_late_join_loop,

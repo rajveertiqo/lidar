@@ -834,6 +834,30 @@ def scanner_thread(loop):
         stop_scanner.wait(delay)
 
 
+def _clear_protection_stop(lidar) -> None:
+    """RESET a device in protection stop (health "Error"), before the motor spins up.
+
+    Only a RESET clears one, and a device in it still answers get_info, so the reset
+    in the info loop never ran: _ScanStream.start() refused, every reconnect met the
+    same Error, and the LiDAR stayed lost until power-cycled (2026-10-23). Best effort:
+    start() still refuses a device the reset did not clear."""
+    try:
+        status, code = lidar.get_health()
+        if status != "Error":
+            return
+        print(f"[WARN] LiDAR in protection stop (error code {code}) — resetting it")
+        lidar.reset()
+        time.sleep(1.5)
+        lidar.clear_input()
+        status, code = lidar.get_health()
+        print(
+            f"[{'WARN' if status == 'Error' else 'OK'}] LiDAR health after reset: "
+            f"{status} (error code {code})"
+        )
+    except Exception as e:
+        print(f"[WARN] LiDAR protection-stop check failed: {e}")
+
+
 def _scan_session(RPLidar, progress):
     """Connect, spin up and stream until the device fails or we are stopped."""
     global lidar_instance
@@ -873,6 +897,7 @@ def _scan_session(RPLidar, progress):
             "[WARN] No LiDAR info after 3 tries — continuing; "
             "scanning may still work once the buffer settles."
         )
+    _clear_protection_stop(lidar)
 
     # Start motor at the configured speed (soft-started)
     target_pwm = rpm_to_pwm(LIDAR_RPM)

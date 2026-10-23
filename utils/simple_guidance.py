@@ -12,7 +12,9 @@ from config import (
     GUIDANCE_CORRIDOR_MAX_MM,
     LIDAR_CLUSTER_WINDOW_MM,
     LIDAR_STALE_S,
-    NOTIFY_WORDS_PER_SEC,
+    NOTIFY_AIRTIME_BASE_S,
+    NOTIFY_AIRTIME_PER_CHAR_S,
+    NOTIFY_AIRTIME_PER_COMMA_S,
     SIMPLE_GLASS_LOSS_CONFIRM_S,
     SIMPLE_GLASS_RECOVER_CONFIRM_S,
     SIMPLE_GLASS_RECOVER_MAX_S,
@@ -2620,8 +2622,42 @@ class _MoverShadow:
         self.__init__()
 
 
+# Each sentence's airtime as the Pi voice renders it, trailing silence included: how long
+# the voice is busy. A words/s guess ran short, so a block warning cut "Vehicle
+# approaching, move right" before "move right" (2026-10-23).
+_measured_airtime: Dict[str, float] = {}
+
+
+def measure_airtimes(cmd: List[str]) -> int:
+    """Time every sentence in ALLOWED with the voice command (espeak-ng --stdout, no sound); how many were timed. pi_voice runs it off-thread at start-up."""
+    import subprocess
+
+    timed = 0
+    for text in sorted(ALLOWED):
+        try:
+            wav = subprocess.run(
+                list(cmd) + ["--stdout", text], capture_output=True, timeout=5.0
+            ).stdout
+            if wav[:4] != b"RIFF" or wav[8:12] != b"WAVE":
+                continue  # not espeak's WAV: keep the estimate
+            byte_rate = int.from_bytes(wav[28:32], "little")
+            if len(wav) > 44 and byte_rate > 0:
+                _measured_airtime[text] = (len(wav) - 44) / byte_rate
+                timed += 1
+        except Exception:
+            pass
+    return timed
+
+
 def _airtime(text: str) -> float:
-    return len(text.split()) / NOTIFY_WORDS_PER_SEC
+    measured = _measured_airtime.get(text)
+    if measured is not None:
+        return measured
+    return (
+        NOTIFY_AIRTIME_BASE_S
+        + NOTIFY_AIRTIME_PER_CHAR_S * len(text)
+        + NOTIFY_AIRTIME_PER_COMMA_S * text.count(",")
+    )
 
 
 class _Gate:
@@ -2791,15 +2827,17 @@ class _Gate:
         if self._status_busy_until - now > 2.0 * _airtime(GLASS_SENSOR_OFF):
             self._status_busy_until = now
 
-    def admit_status(self, text: str, now: float) -> Tuple[bool, int, str]:
-        """Admit a STATUS notice ("Glass sensor off/on", "Camera off/on"): its own cue_seq, and nothing else about the gate changes (audit pass 2, NEW-028)."""
+    def admit_status(
+        self, text: str, now: float, cut_in: bool = False
+    ) -> Tuple[bool, int, str]:
+        """Admit a STATUS notice ("Glass sensor off/on", "Camera off/on"): its own cue_seq, and nothing else about the gate changes (audit pass 2, NEW-028). `cut_in`: do not wait for the sentence playing — "Guidance stopped" (2026-10-23)."""
         if self._has_spoken and now < self._spoken_at:
             self._busy_until = min(self._busy_until, now)  # clock stepped back
         self._unstep_status(now)
         busy_until = max(
             self._busy_until if self._has_spoken else 0.0, self._status_busy_until
         )
-        if now < busy_until:
+        if now < busy_until and not cut_in:
             return (
                 False,
                 self._seq,
@@ -3335,7 +3373,7 @@ def fault_notice(why: str, now: Optional[float] = None) -> Dict[str, Any]:
     with _lock:
         last = _fault["said_at"]
         if last is None or not (0.0 <= now - last < SIMPLE_OFFLINE_REPEAT_S):
-            speak, cue_seq, quiet = _gate.admit_status(SENSORS_OFFLINE, now)
+            speak, cue_seq, quiet = _gate.admit_status(SENSORS_OFFLINE, now, cut_in=True)
         else:
             speak, cue_seq = False, _gate.state()["cue_seq"]
             quiet = f"guidance fault — said {now - last:.0f}s ago"
@@ -3355,6 +3393,15 @@ def fault_notice(why: str, now: Optional[float] = None) -> Dict[str, Any]:
         "quiet_reason": quiet,
         "announced": announced,
     }
+
+
+def voice_failed(seq: int, text: str) -> bool:
+    """The Pi voice could not play cue `seq`, which the gate counted as said when it was queued: unless something newer was said since, forget it so it is said again (pi_voice, 2026-10-23). True if forgotten."""
+    with _lock:
+        if _gate.state()["cue_seq"] != seq or _gate.last != text:
+            return False
+        _gate.forget_said()
+        return True
 
 
 def reset() -> None:

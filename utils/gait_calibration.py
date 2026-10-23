@@ -22,6 +22,10 @@ _SAVE_MIN_DELTA_M = 0.005
 _lock = threading.Lock()
 _state: Optional[Dict[str, Any]] = None  # what is on disk, or {} if nothing
 _last_save = 0.0
+# The file itself (taken after _lock, never before it), and which write is the newest: a
+# learned stride is written off the LiDAR thread, and must not land over a newer one.
+_file_lock = threading.Lock()
+_write_seq = 0
 
 _NEW_FILE_MODE = 0o644
 
@@ -125,21 +129,54 @@ def _fsync_dir(directory: Path) -> None:
         os.close(dfd)
 
 
-def _write(stride: float, source: str, **extra) -> Dict[str, Any]:
-    """Caller holds the lock."""
-    global _last_save
+def _payload(stride: float, source: str, **extra) -> Dict[str, Any]:
     data: Dict[str, Any] = {
         "stride_m": round(float(stride), 4),
         "source": source,
         "measured_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
     data.update({k: v for k, v in extra.items() if v is not None})
-    _atomic_write_text(STRIDE_FILE, json.dumps(data, indent=2, sort_keys=True) + "\n")
+    return data
+
+
+def _adopt(data: Dict[str, Any]) -> None:
+    """What is now on disk. Caller holds _lock."""
     globals()["_state"] = dict(
-        data, **{_OWNER: "learned" if source == "learned" else "operator"}
+        data, **{_OWNER: "learned" if data["source"] == "learned" else "operator"}
     )
+
+
+def _write(stride: float, source: str, **extra) -> Dict[str, Any]:
+    """Caller holds _lock: written now, and newer than any learned write in flight."""
+    global _last_save, _write_seq
+    data = _payload(stride, source, **extra)
+    _write_seq += 1
+    with _file_lock:
+        _atomic_write_text(STRIDE_FILE, json.dumps(data, indent=2, sort_keys=True) + "\n")
+    _adopt(data)
     _last_save = time.time()
     return dict(data)
+
+
+def _save_learned(seq: int, stride: float) -> None:
+    """note_learned's write, on its own thread: a write and two fsyncs on the LiDAR thread,
+    under the lock every scan takes, could stall a scan on a busy card (scan 2026-10-23)."""
+    data = _payload(stride, "learned")
+    with _file_lock:
+        if seq != _write_seq:
+            return  # an operator's stride, a clear or a newer learned one came since
+        try:
+            _atomic_write_text(
+                STRIDE_FILE, json.dumps(data, indent=2, sort_keys=True) + "\n"
+            )
+        except Exception as exc:
+            print(
+                f"[GAIT] could not persist learned stride ({type(exc).__name__}: {exc})"
+            )
+            return
+    with _lock:
+        if seq == _write_seq:
+            _adopt(data)
 
 
 def set_stride(
@@ -165,7 +202,7 @@ def set_stride(
 
 def note_learned(stride_m: float) -> None:
     """Offer a scan-match-learned stride for persistence."""
-    global _last_save
+    global _last_save, _write_seq
     stride = float(stride_m)
     if not (GYRO_STRIDE_MIN_M <= stride <= GYRO_STRIDE_MAX_M):
         return
@@ -182,24 +219,25 @@ def note_learned(stride_m: float) -> None:
         if current is not None and abs(current - stride) < _SAVE_MIN_DELTA_M:
             return
         _last_save = now
-        try:
-            _write(stride, "learned")
-        except Exception as exc:
-            print(
-                f"[GAIT] could not persist learned stride ({type(exc).__name__}: {exc})"
-            )
+        _write_seq += 1
+        seq = _write_seq
+    threading.Thread(
+        target=_save_learned, args=(seq, stride), name="gait-save", daemon=True
+    ).start()
 
 
 def clear_stride() -> Dict[str, Any]:
     """Drop the overlay and fall back to the config seed."""
-    global _state, _last_save, _operator_override
+    global _state, _last_save, _operator_override, _write_seq
     with _lock:
-        try:
-            STRIDE_FILE.unlink()
-        except FileNotFoundError:
-            pass
-        else:
-            _fsync_dir(STRIDE_FILE.parent)  # or a power cut can undo the clear
+        _write_seq += 1  # a learned write in flight must not bring the file back
+        with _file_lock:
+            try:
+                STRIDE_FILE.unlink()
+            except FileNotFoundError:
+                pass
+            else:
+                _fsync_dir(STRIDE_FILE.parent)  # or a power cut can undo the clear
         _state = {}
         _last_save = 0.0
         _operator_override = True

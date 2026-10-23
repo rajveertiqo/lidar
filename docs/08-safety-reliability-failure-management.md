@@ -122,7 +122,7 @@ Severity (S), occurrence (O) and detectability (D) are 1–5 qualitative estimat
 - **Desk:**
   - `tools/glass_sim.py`, `tools/movers_sim.py`, `tools/drift_sim.py`, `tools/bev_check.py` (CONFIRMED present);
   - BLE: `ble_bridge/test_ble_bridge.py` (34 tests);
-  - real walks replayed: record a walk (`SHAPPE_RECORD_WALK=1` or `POST /guidance/record {"on": true}`), then `tools/walk_replay.py logs/walks/<file>.jsonl.gz` feeds it through the current code and lists every sentence that would now be said differently (added 2026-10-09; desk-tested, 100% replay fidelity on a simulated walk).
+  - real walks replayed: record a walk (`SHAPPE_RECORD_WALK=1`, or `POST /guidance/record {"on": true}` with the admin token; the newest 30 / 1 GB are kept), then `tools/walk_replay.py logs/walks/<file>.jsonl.gz` feeds it through the current code and lists every sentence that would now be said differently (added 2026-10-09; desk-tested, 100% replay fidelity on a simulated walk).
   - The repository's own `tests/` suite is **not in this checkout** (gitignored, absent). The audit counted 1075 tests in `~/lidar`; restoring CI is an open audit action.
 - **Bench (nobody wearing it):** the audit §8 bench list:
   - LiDAR RPM and points per scan;

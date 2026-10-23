@@ -64,7 +64,13 @@ class _Sdk:
             raise RuntimeError(
                 f"cannot open the ToF on CSI port {TOF_CSI_PORT} (error {ret})"
             )
-        ret = self.cam.start(ac.FrameType.DEPTH if self.new_api else ac.TOFOutput.DEPTH)
+        try:
+            ret = self.cam.start(
+                ac.FrameType.DEPTH if self.new_api else ac.TOFOutput.DEPTH
+            )
+        except BaseException:
+            self.cam.close()  # opened: a start that RAISES must not leave it held
+            raise
         if ret not in (0, None):
             self.cam.close()
             raise RuntimeError(f"the ToF would not start (error {ret})")

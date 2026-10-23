@@ -338,40 +338,47 @@ def main():
     )
     args = ap.parse_args()
 
-    if args.mode:
-        set_camarray_mode(args.i2c_bus, args.mode)
-
     # A merged mode implies a split unless the user asked for something else.
     layout = args.split or MODE_LAYOUT.get(args.mode)
 
     w, h = parse_size(args.size)
     views, note = build_views(layout, w, h)
 
-    picam2 = Picamera2(args.camera)
-    picam2.configure(
-        picam2.create_video_configuration(
-            main={"size": (w, h), "format": "RGB888"},
-            raw={"size": SAFE_SENSOR_MODE},
-        )
-    )
-    picam2.start()
-
-    broker = FrameBroker(views)
-    stop = threading.Event()
-    worker = threading.Thread(
-        target=capture_loop,
-        args=(picam2, broker, views, args.quality, stop),
-        daemon=True,
-    )
-    worker.start()
-
-    page = build_page(views, (w, h), note)
-    httpd = ThreadedServer(("0.0.0.0", args.port), make_handler(broker, views, page))
-
-    print(f"streaming {note}")
-    print(f"open http://{local_ip()}:{args.port}/   (Ctrl-C to stop)")
-    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    # The camera FIRST: it refuses while the guide holds it, and only then is the HAT's
+    # mode written — written first, it switched the board under the running guide; and
+    # everything after is inside the try, so a port in use (8000 is the guide's) still
+    # closes the camera and restores the HAT (scan 2026-10-23).
     try:
+        picam2 = Picamera2(args.camera)
+    except Exception as exc:
+        sys.exit(f"camera {args.camera} unavailable ({exc}) — is the guide running?")
+    stop = threading.Event()
+    httpd = None
+    try:
+        if args.mode:
+            set_camarray_mode(args.i2c_bus, args.mode)
+        picam2.configure(
+            picam2.create_video_configuration(
+                main={"size": (w, h), "format": "RGB888"},
+                raw={"size": SAFE_SENSOR_MODE},
+            )
+        )
+        picam2.start()
+
+        broker = FrameBroker(views)
+        worker = threading.Thread(
+            target=capture_loop,
+            args=(picam2, broker, views, args.quality, stop),
+            daemon=True,
+        )
+        worker.start()
+
+        page = build_page(views, (w, h), note)
+        httpd = ThreadedServer(("0.0.0.0", args.port), make_handler(broker, views, page))
+
+        print(f"streaming {note}")
+        print(f"open http://{local_ip()}:{args.port}/   (Ctrl-C to stop)")
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
         while not stop.wait(0.5):
             pass
     except KeyboardInterrupt:
@@ -379,8 +386,12 @@ def main():
     finally:
         stop.set()
         _arm_teardown_watchdog()
-        httpd.shutdown()
-        picam2.stop()
+        if httpd is not None:
+            httpd.shutdown()
+        try:
+            picam2.stop()
+        except Exception:
+            pass
         picam2.close()
         if args.mode:
             try:
@@ -390,7 +401,6 @@ def main():
                     "warning: could not restore HAT to 4ch - "
                     "run: sudo i2cset -y %d 0x24 0x24 0x00" % args.i2c_bus
                 )
-
 
 if __name__ == "__main__":
     main()

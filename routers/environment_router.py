@@ -31,6 +31,7 @@ async def get_environment_status():
         lambda: detect_environment_conditions(
             image=pi_camera_utils.get_current_frame(),
             lidar_points=lidar_points,
+            record=False,  # an answer only: the detection thread keeps the shared state
         )
     )
 

@@ -1128,7 +1128,14 @@ def _late_join_once(stop: threading.Event) -> List[str]:
     wanted = {s for s, b in get_bearings().items() if b is not None and s not in have}
     if not wanted:
         return []
-    busy = {os.path.realpath(e.get("device") or "") for e in entries}
+    # Held only while the entry's own board is on it: a board that left keeps its old node
+    # in its entry until found again, and a missing board back on that node was skipped
+    # for as long (scan 2026-10-23).
+    busy = {
+        os.path.realpath(e["device"])
+        for e in entries
+        if e.get("device") and _usb_info(e["device"]).get("serial") == e.get("serial")
+    }
     candidates = [
         c
         for c in sorted(glob.glob("/dev/ttyACM*")) + sorted(glob.glob("/dev/ttyUSB*"))

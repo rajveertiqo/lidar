@@ -428,14 +428,18 @@ class Server:
                 f"and the pairing window is closed"
             )
             try:
-                dbus.Interface(self.bus.get_object(BLUEZ, path), DEVICE_IFACE).Disconnect()
+                dbus.Interface(
+                    self.bus.get_object(BLUEZ, path), DEVICE_IFACE
+                ).Disconnect()
             except dbus.exceptions.DBusException as exc:
                 print(f"[ble] could not disconnect {path}: {exc}")
         return False
 
     def _window_closed(self) -> bool:
         print("[ble] pairing window closed: bonded phones only from now on")
-        for path in list(self.connected):  # one that connected inside it but never bonded
+        for path in list(
+            self.connected
+        ):  # one that connected inside it but never bonded
             self._turn_away(path)
         return False
 

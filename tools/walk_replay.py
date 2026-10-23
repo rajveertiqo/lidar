@@ -19,6 +19,7 @@ import argparse
 import gzip
 import json
 import sys
+import zlib
 from pathlib import Path
 from unittest import mock
 
@@ -27,16 +28,22 @@ sys.path.insert(0, str(ROOT))
 
 
 def _ticks(path):
-    with gzip.open(path, "rt", encoding="utf-8") as fh:
-        for n, line in enumerate(fh, 1):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                yield json.loads(line)
-            except json.JSONDecodeError:
-                print(f"  (line {n} unreadable — the recording was cut off there)")
-                return
+    n = 0
+    try:
+        with gzip.open(path, "rt", encoding="utf-8") as fh:
+            for n, line in enumerate(fh, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError:
+                    print(f"  (line {n} unreadable — the recording was cut off there)")
+                    return
+    except (EOFError, OSError, zlib.error) as e:  # gzip.BadGzipFile is an OSError
+        # A recording the app never closed — shut down mid-walk, or the power went —
+        # replays up to its last whole line instead of aborting (scan 2026-10-23).
+        print(f"  (the recording ends cut off after line {n}: {type(e).__name__})")
 
 
 def replay(path, recompute_policy=True, show_all=False):

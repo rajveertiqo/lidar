@@ -1,4 +1,4 @@
-"""Live map API — the /map test page: LiDAR, radar and cameras placed around the user, turned by the gyro."""
+"""Live map API — the /map test page: LiDAR, radar and cameras placed around the user, turned by the LiDAR or (once commissioned, or chosen on the page) the gyro."""
 
 import asyncio
 from pathlib import Path
@@ -30,8 +30,10 @@ async def map_page():
 @router.get("/state")
 def map_state(walls: bool = False):
     """One snapshot, as the page receives it (starts the map if nobody is watching)."""
+    from utils.live_map import STATE_HOLD_S
+
     live_map = get_map()
-    live_map.touch()
+    live_map.touch(STATE_HOLD_S)
     return live_map.snapshot(include_map=walls)
 
 

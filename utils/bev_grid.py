@@ -13,6 +13,7 @@ from config import (
     BEV_CELL_MM,
     BEV_DECAY,
     BEV_EXTRACT_HZ,
+    LIDAR_STALE_S,
     BEV_GAP_CLEAR_MM,
     BEV_GAP_MAX_BEARING_DEG,
     BEV_GAP_MAX_MM,
@@ -94,7 +95,7 @@ class BEVGrid:
             "unknown_wedges": [],
             "last_update": 0.0,
         }
-        self._last_extract = 0.0
+        self._last_extract: Optional[float] = None  # monotonic
 
     # ---- geometry ---------------------------------------------------------
 
@@ -199,12 +200,10 @@ class BEVGrid:
         dyaw = float(scan_yaw)
 
         if trans_q >= BEV_MIN_MOTION_QUALITY and heading.get("speed_observable"):
-            if "scan_fwd_mm" in heading or "scan_right_mm" in heading:
-                dfwd = float(heading.get("scan_fwd_mm") or 0.0)
-                dright = float(heading.get("scan_right_mm") or 0.0)
-            else:
-                dfwd = float(heading.get("speed_measured_mps") or 0.0) * dt * 1000.0
-                dright = float(heading.get("lateral_mps") or 0.0) * dt * 1000.0
+            # heading_tracker always gives this scan's step (None: not measured); a
+            # speed x dt fallback here could never run.
+            dfwd = float(heading.get("scan_fwd_mm") or 0.0)
+            dright = float(heading.get("scan_right_mm") or 0.0)
         else:
             dfwd = dright = 0.0
 
@@ -572,18 +571,28 @@ class BEVGrid:
         """Run extraction if its rate budget allows, and publish the result."""
         if cv2 is None:
             return
-        now = time.time()
-        if (now - self._last_extract) < (1.0 / max(1e-3, BEV_EXTRACT_HZ)):
+        # Monotonic: on the wall clock a backward step stopped extraction until the clock
+        # caught up, and the last snapshot was served all the while (scan 2026-10-23).
+        mono = time.monotonic()
+        if self._last_extract is not None and (mono - self._last_extract) < (
+            1.0 / max(1e-3, BEV_EXTRACT_HZ)
+        ):
             return
-        self._last_extract = now
+        self._last_extract = mono
         snap = self.extract(camera)
         with self._lock:
             self._snapshot = snap
 
     def snapshot(self) -> Dict[str, Any]:
-        """The most recent extraction. Safe to call from any thread."""
+        """The most recent extraction, `stale` once it is older than LIDAR_STALE_S or three
+        extraction periods. Safe to call from any thread."""
         with self._lock:
-            return dict(self._snapshot)
+            out = dict(self._snapshot)
+            made = self._last_extract
+        out["stale"] = made is None or time.monotonic() - made > max(
+            LIDAR_STALE_S, 3.0 / max(1e-3, BEV_EXTRACT_HZ)
+        )
+        return out
 
     def render_png(self, scale: int = 2) -> Optional[bytes]:
         """Top-down debug image: red occupied, dark free, grey unknown."""

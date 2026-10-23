@@ -127,7 +127,17 @@ async def capture_pair():
                 detail="this SDK gives no brightness picture to find the board in",
             )
         os.makedirs(TOF_CALIBRATION_PAIRS_DIR, exist_ok=True)
-        n = 1 + sum(
+        # After the highest number, not the count: with one deleted, the count named an
+        # existing pair and the capture overwrote it (scan 2026-10-23).
+        n = 1 + max(
+            (
+                int(f[:-8])
+                for f in os.listdir(TOF_CALIBRATION_PAIRS_DIR)
+                if f.endswith("_cam.png") and f[:-8].isdigit()
+            ),
+            default=0,
+        )
+        pairs = 1 + sum(
             1 for f in os.listdir(TOF_CALIBRATION_PAIRS_DIR) if f.endswith("_cam.png")
         )
         stem = os.path.join(TOF_CALIBRATION_PAIRS_DIR, f"{n:03d}")
@@ -142,7 +152,7 @@ async def capture_pair():
             json.dump({"camera_t": t_cam, "tof_t": t_tof}, f)
         return {
             "saved": os.path.basename(stem),
-            "pairs": n,
+            "pairs": pairs,
             "gap_ms": round(abs(t_tof - t_cam) * 1000.0, 1),
         }
 

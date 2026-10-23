@@ -35,6 +35,8 @@ _counts: Dict[str, int] = {}  # lines this run, by source
 _by_seq: Dict[int, Dict[str, Any]] = {}  # cue_seq -> its record in _recent
 _early: Dict[int, List[tuple]] = {}
 _EARLY_MAX = 16
+_open_failed_at: Optional[float] = None  # monotonic: the last file that could not be made
+_OPEN_RETRY_S = 60.0
 
 
 def _elapsed(now: float) -> str:
@@ -44,36 +46,46 @@ def _elapsed(now: float) -> str:
 
 
 def _open(now: float) -> Optional[str]:
-    """Create this run's file on the FIRST utterance, not at import."""
-    global _path, _started, _bytes
+    """Create this run's file on the FIRST utterance, not at import. Made and written
+    before any old one is pruned, and after a failure not tried again for _OPEN_RETRY_S: on
+    a full card every sentence made an empty file and deleted an old log (scan 2026-10-23)."""
+    global _path, _bytes, _open_failed_at
     if _path is not None:
         return _path
     if not SPEECH_LOG_TO_FILE:
         return None  # in memory only (config.SPEECH_LOG_TO_FILE)
+    mono = time.monotonic()
+    if _open_failed_at is not None and mono - _open_failed_at < _OPEN_RETRY_S:
+        return None
+    path = None
     try:
         os.makedirs(SPEECH_LOG_DIR, exist_ok=True)
-        _prune_old_runs()
         stamp = time.strftime("%Y%m%d_%H%M%S")
-        _path = os.path.join(SPEECH_LOG_DIR, f"speech_{stamp}.log")
-        _started = now
-        with open(_path, "w", encoding="utf-8") as f:
+        path = os.path.join(SPEECH_LOG_DIR, f"speech_{stamp}.log")
+        with open(path, "w", encoding="utf-8") as f:
             f.write(_HEADER)
-        _bytes = len(_HEADER)
-        return _path
     except Exception:
-        _path = None
+        _open_failed_at = mono
+        if path is not None:
+            try:
+                os.remove(path)  # no empty file left behind
+            except OSError:
+                pass
         return None
+    _path, _bytes, _open_failed_at = path, len(_HEADER), None
+    _prune_old_runs()
+    return _path
 
 
 def _prune_old_runs() -> None:
-    """Keep the newest SPEECH_LOG_KEEP_RUNS - 1 logs, making room for this run's."""
+    """Keep the newest SPEECH_LOG_KEEP_RUNS logs, this run's included."""
     try:
         runs = sorted(
             n
             for n in os.listdir(SPEECH_LOG_DIR)
             if n.startswith("speech_") and n.endswith(".log")
         )
-        for name in runs[: max(0, len(runs) - (SPEECH_LOG_KEEP_RUNS - 1))]:
+        for name in runs[: max(0, len(runs) - SPEECH_LOG_KEEP_RUNS)]:
             os.remove(os.path.join(SPEECH_LOG_DIR, name))
     except Exception:
         pass
@@ -95,7 +107,7 @@ def say(
     via: str = "",
 ) -> None:
     """Record one utterance."""
-    global _bytes, _full
+    global _bytes, _full, _started
     source, level, text, detail = (
         _one_line(source),
         _one_line(level),
@@ -109,6 +121,8 @@ def say(
     now = time.time() if now is None else now
     try:
         with _lock:
+            if _started is None:
+                _started = now  # the first line, file or not: else every one is +00:00.0
             rec = {
                 "t": now,
                 "source": source,
@@ -246,9 +260,9 @@ def recent(limit: int = 50) -> Dict[str, Any]:
 
 def reset() -> None:
     """Start a new file. Used by the tests; a running rig never calls it."""
-    global _path, _started, _bytes, _full
+    global _path, _started, _bytes, _full, _open_failed_at
     with _lock:
-        _path, _started, _bytes, _full = None, None, 0, False
+        _path, _started, _bytes, _full, _open_failed_at = None, None, 0, False, None
         _recent.clear()
         _counts.clear()
         _by_seq.clear()

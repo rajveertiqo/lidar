@@ -21,7 +21,13 @@ import threading
 import time
 from typing import Any, Dict, Optional
 
-from config import WALK_RECORD, WALK_RECORD_DIR, WALK_RECORD_MAX_MB
+from config import (
+    WALK_RECORD,
+    WALK_RECORD_DIR,
+    WALK_RECORD_KEEP_FILES,
+    WALK_RECORD_KEEP_MB,
+    WALK_RECORD_MAX_MB,
+)
 
 _FLUSH_S = 2.0
 
@@ -40,6 +46,7 @@ class WalkRecorder:
     def __init__(self):
         self._lock = threading.Lock()
         self._queue: "queue.Queue[Optional[str]]" = queue.Queue(maxsize=200)
+        self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._path: Optional[str] = None
         self._started: Optional[float] = None
@@ -55,6 +62,7 @@ class WalkRecorder:
             if self._path is not None:
                 return self._status()
             os.makedirs(WALK_RECORD_DIR, exist_ok=True)
+            _prune()
             safe = "".join(
                 c if c.isalnum() or c in "-_" else "-" for c in label.strip()
             )[:40]
@@ -64,9 +72,10 @@ class WalkRecorder:
             self._ticks = self._dropped = self._bytes = 0
             self._error = ""
             self._queue = queue.Queue(maxsize=200)
+            self._stop = threading.Event()
             self._thread = threading.Thread(
                 target=self._write,
-                args=(self._path, self._queue),
+                args=(self._path, self._queue, self._stop),
                 name="walk-recorder",
                 daemon=True,
             )
@@ -78,12 +87,11 @@ class WalkRecorder:
         with self._lock:
             if self._path is None:
                 return self._status()
-            q, thread, path = self._queue, self._thread, self._path
+            thread, path = self._thread, self._path
             self._path = None
-        try:
-            q.put(None, timeout=2.0)
-        except queue.Full:
-            pass
+            # An event, not a marker in the queue: a full queue dropped the marker, and the
+            # writer then never closed the file (scan 2026-10-23).
+            self._stop.set()
         if thread is not None:
             thread.join(timeout=5.0)
         print(f"[REC] stopped: {path} ({self._ticks} ticks, {self._dropped} dropped)")
@@ -150,13 +158,23 @@ class WalkRecorder:
 
     # ---- writer thread ---------------------------------------------------
 
-    def _write(self, path: str, q: "queue.Queue[Optional[str]]") -> None:
+    def _write(
+        self, path: str, q: "queue.Queue[Optional[str]]", stop: threading.Event
+    ) -> None:
         limit = WALK_RECORD_MAX_MB * 1e6
         last_flush = time.monotonic()
         try:
             with gzip.open(path, "wt", encoding="utf-8", compresslevel=5) as fh:
                 while True:
-                    line = q.get()
+                    try:
+                        line = q.get(timeout=0.5)
+                    except queue.Empty:
+                        if stop.is_set():
+                            break  # stopped, and everything queued is written
+                        if time.monotonic() - last_flush >= _FLUSH_S:
+                            fh.flush()  # idle: what is written reaches the card
+                            last_flush = time.monotonic()
+                        continue
                     if line is None:
                         break
                     fh.write(line + "\n")
@@ -179,6 +197,29 @@ class WalkRecorder:
             with self._lock:
                 if self._path == path:
                     self._path = None
+
+
+def _prune() -> None:
+    """Keep the newest WALK_RECORD_KEEP_FILES recordings, WALK_RECORD_KEEP_MB in all: they
+    were never deleted. Called before a new one starts, so never the one being written."""
+    try:
+        files = sorted(
+            (
+                os.path.join(WALK_RECORD_DIR, n)
+                for n in os.listdir(WALK_RECORD_DIR)
+                if n.startswith("walk-") and n.endswith(".jsonl.gz")
+            ),
+            key=os.path.getmtime,
+            reverse=True,
+        )
+        total = 0.0
+        for i, f in enumerate(files):
+            total += os.path.getsize(f) / 1e6
+            if i >= WALK_RECORD_KEEP_FILES or total > WALK_RECORD_KEEP_MB:
+                os.remove(f)
+                print(f"[REC] removed an old recording: {os.path.basename(f)}")
+    except OSError as e:
+        print(f"[REC] could not tidy {WALK_RECORD_DIR}: {e}")
 
 
 _recorder = WalkRecorder()

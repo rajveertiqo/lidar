@@ -505,7 +505,10 @@ class Bridge:
 
     def _stale_health(self, now: float) -> List[Out]:
         """OK or DEGRADED that /health has not confirmed for HEALTH_STALE_S becomes DOWN."""
-        if self.status not in (P.STATUS_OK, P.STATUS_DEGRADED) or self.health_at is None:
+        if (
+            self.status not in (P.STATUS_OK, P.STATUS_DEGRADED)
+            or self.health_at is None
+        ):
             return []
         if now - self.health_at <= HEALTH_STALE_S:
             return []

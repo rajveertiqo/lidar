@@ -18,7 +18,9 @@ CAMERA_CAPTURE_FPS = 2 * TARGET_FPS
 
 STREAM_MAX_WIDTH = 480  # px per sector feed
 STREAM_QUALITY = 50  # JPEG quality for the display stream
-STREAM_FPS = 30  # smooth/live — matches the camera capture rate
+STREAM_FPS = 30  # the display stream's ceiling, not a camera's rate: cycling, the front
+# camera gives ~23 fps and each side ~4; a feed is sent whenever any camera's picture
+# changes, so a side's is resent unchanged in between
 
 STREAM_STALL_TIMEOUT_S = 5.0
 
@@ -254,7 +256,8 @@ RADAR_PORT_EXCLUDE = LIDAR_PORT_CANDIDATES  # resolved with realpath (F13)
 
 RADAR_BAUDRATE = 115200
 
-RADAR_START_MM = 250  # nearer than this the radar is blind; LiDAR covers it
+RADAR_START_MM = 250  # where each board's measured range starts: nearer is not measured. The
+# LiDAR covers that, except in its blind arc (LIDAR_BLIND_ARCS_DEG, behind-left)
 RADAR_END_MM = 4000  # radar reach: 13 ft, so "Glass ahead" can start at SIMPLE_WALL_APPROACH_FT (was 3000, 2026-10-01)
 RADAR_UPDATE_RATE = 6.0
 
@@ -844,6 +847,10 @@ WALK_RECORD_DIR = os.path.join(_APP_DIR, "logs", "walks")
 WALK_RECORD_MAX_MB = (
     500  # uncompressed; a recording stops itself here (~1 h of walking)
 )
+# Older recordings are deleted when a new one starts: the newest this many, this much in all
+# (compressed, on the card).
+WALK_RECORD_KEEP_FILES = 30
+WALK_RECORD_KEEP_MB = 1000
 
 SPEECH_LOG_KEEP_RUNS = 200
 

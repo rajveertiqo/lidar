@@ -146,7 +146,7 @@ async def set_gait_stride(payload: dict):
                 "error": "expected {'distance_m', 'steps'}, "
                 "{'stride_m'} or {'clear': true}",
             }
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, OverflowError) as exc:  # {"steps": Infinity}: a 500
         return {"ok": False, "error": str(exc)}
 
     return {"ok": True, "saved": saved, "stride": status(), "restart_required": True}
@@ -255,10 +255,11 @@ def walk_record_status():
     return get_recorder().status()
 
 
-@router.post("/record")
+@router.post("/record", dependencies=[Depends(require_admin)])
 async def walk_record(payload: dict):
     """{"on": true, "label": "..."} starts recording every guidance tick to
-    logs/walks/; {"on": false} stops. Nothing about guidance changes."""
+    logs/walks/; {"on": false} stops. Nothing about guidance changes. Admin token: from
+    any device on the Wi-Fi it filled the card (scan 2026-10-23)."""
     from utils.walk_recorder import get_recorder
 
     rec = get_recorder()

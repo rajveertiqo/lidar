@@ -1,7 +1,9 @@
 """Environment Detection Module Detects weather conditions like rain, fog, low light from camera and LiDAR data"""
 
-import numpy as np
+import threading
 import time
+
+import numpy as np
 from typing import Dict, Any, List, Tuple, Optional
 from collections import deque
 
@@ -45,6 +47,7 @@ environment_state = {
     "last_update": 0,
 }
 
+_history_lock = threading.Lock()
 detection_history = {
     "fog": deque(maxlen=EnvironmentConfig.HISTORY_SIZE),
     "rain": deque(maxlen=EnvironmentConfig.HISTORY_SIZE),
@@ -338,8 +341,12 @@ def detect_environment_conditions(
     image: Optional[np.ndarray] = None,
     lidar_points: Optional[List[Tuple[float, float]]] = None,
     image_bytes: Optional[bytes] = None,
+    record: bool = True,
 ) -> Dict[str, Any]:
-    """Main function to detect environment conditions from camera and LiDAR."""
+    """Main function to detect environment conditions from camera and LiDAR. `record`: fold
+    this reading into the shared history and state the camera trust reads (the detection
+    thread). False: an answer only, from a copy (GET /environment/status, whose readings
+    went into the history the guidance trusts, 2026-10-23)."""
     global environment_state
 
     results = {
@@ -387,48 +394,59 @@ def detect_environment_conditions(
         }
         results["lighting"] = lighting_result
 
-        if detection_history["fog"]:
-            avg_fog = np.mean(list(detection_history["fog"]))
-            if (
-                abs(results["fog"]["level"] - avg_fog) > 0.4
-            ):  # Significant change threshold
-                detection_history["fog"].clear()
-
-        if detection_history["rain"]:
-            avg_rain = np.mean(list(detection_history["rain"]))
-            if abs(results["rain"]["intensity"] - avg_rain) > 0.4:
-                detection_history["rain"].clear()
-
-        detection_history["fog"].append(results["fog"]["level"])
-        detection_history["rain"].append(results["rain"]["intensity"])
-        detection_history["brightness"].append(results["lighting"]["brightness"])
-
     if lidar_points:
         lidar_result = analyze_lidar_for_weather(lidar_points)
         results["lidar"] = {
             "quality": lidar_result.get("quality", 1.0),
             "interference": lidar_result.get("weather_interference", 0.0),
         }
-        detection_history["lidar_quality"].append(results["lidar"]["quality"])
 
-    if detection_history["fog"]:
-        fog_values = list(detection_history["fog"])
-        # Weight recent values more: [0.5, 0.3, 0.2] for 3 frames
-        weights = np.array([0.5**i for i in range(len(fog_values) - 1, -1, -1)])
-        weights = weights / weights.sum()
-        results["fog"]["level"] = np.average(fog_values, weights=weights)
+    # The history is shared by the detection thread and the web: one at a time (it was
+    # changed and read with no lock), and only a recording caller changes it.
+    with _history_lock:
+        history = (
+            detection_history
+            if record
+            else {k: deque(v, maxlen=v.maxlen) for k, v in detection_history.items()}
+        )
+        if image is not None:
+            if history["fog"]:
+                avg_fog = np.mean(list(history["fog"]))
+                if (
+                    abs(results["fog"]["level"] - avg_fog) > 0.4
+                ):  # Significant change threshold
+                    history["fog"].clear()
 
-    if detection_history["rain"]:
-        rain_values = list(detection_history["rain"])
-        weights = np.array([0.5**i for i in range(len(rain_values) - 1, -1, -1)])
-        weights = weights / weights.sum()
-        results["rain"]["intensity"] = np.average(rain_values, weights=weights)
+            if history["rain"]:
+                avg_rain = np.mean(list(history["rain"]))
+                if abs(results["rain"]["intensity"] - avg_rain) > 0.4:
+                    history["rain"].clear()
 
-    if detection_history["lidar_quality"]:
-        lidar_values = list(detection_history["lidar_quality"])
-        weights = np.array([0.5**i for i in range(len(lidar_values) - 1, -1, -1)])
-        weights = weights / weights.sum()
-        results["lidar"]["quality"] = np.average(lidar_values, weights=weights)
+            history["fog"].append(results["fog"]["level"])
+            history["rain"].append(results["rain"]["intensity"])
+            history["brightness"].append(results["lighting"]["brightness"])
+
+        if lidar_points:
+            history["lidar_quality"].append(results["lidar"]["quality"])
+
+        if history["fog"]:
+            fog_values = list(history["fog"])
+            # Weight recent values more: [0.5, 0.3, 0.2] for 3 frames
+            weights = np.array([0.5**i for i in range(len(fog_values) - 1, -1, -1)])
+            weights = weights / weights.sum()
+            results["fog"]["level"] = np.average(fog_values, weights=weights)
+
+        if history["rain"]:
+            rain_values = list(history["rain"])
+            weights = np.array([0.5**i for i in range(len(rain_values) - 1, -1, -1)])
+            weights = weights / weights.sum()
+            results["rain"]["intensity"] = np.average(rain_values, weights=weights)
+
+        if history["lidar_quality"]:
+            lidar_values = list(history["lidar_quality"])
+            weights = np.array([0.5**i for i in range(len(lidar_values) - 1, -1, -1)])
+            weights = weights / weights.sum()
+            results["lidar"]["quality"] = np.average(lidar_values, weights=weights)
 
     condition = "clear"
     visibility = 1.0
@@ -477,7 +495,7 @@ def detect_environment_conditions(
         else 0.5
     )
 
-    environment_state = {
+    state = {
         "condition": condition,
         "visibility": float(visibility),
         "confidence": float(overall_confidence),
@@ -491,8 +509,9 @@ def detect_environment_conditions(
         "warnings": warnings,
         "last_update": time.time(),
     }
-
-    return environment_state
+    if record:
+        environment_state = state
+    return dict(state)
 
 
 def get_environment_state() -> Dict[str, Any]:
@@ -502,10 +521,9 @@ def get_environment_state() -> Dict[str, Any]:
 
 def clear_detection_history():
     """Clear detection history for immediate reset (useful when conditions change rapidly)"""
-    detection_history["fog"].clear()
-    detection_history["rain"].clear()
-    detection_history["brightness"].clear()
-    detection_history["lidar_quality"].clear()
+    with _history_lock:
+        for values in detection_history.values():
+            values.clear()
     print("[ENV] Detection history cleared for fast reset")
 
 

@@ -165,10 +165,12 @@ async def crossing_websocket(websocket: WebSocket):
             try:
                 msg = await asyncio.wait_for(websocket.receive_text(), timeout=0.1)
                 data = json.loads(msg)
-                if "action" in data:
+                if isinstance(data, dict) and "action" in data:
                     detector.update_crossing_state(data["action"])
             except asyncio.TimeoutError:
                 pass
+            except ValueError:
+                pass  # not JSON: ignored — it closed the stream (scan 2026-10-23)
 
             detector.update_crossing_state()
 

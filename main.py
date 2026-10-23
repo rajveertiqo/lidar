@@ -39,26 +39,34 @@ BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "templates"
 
 
+def _step(what: str, fn, *args) -> None:
+    """One start or stop step: a failing one is logged and the others still run — one
+    raising skipped every step after it (scan 2026-10-23). A guidance loop that will not
+    start still restarts the service: it never feeds the watchdog."""
+    try:
+        fn(*args)
+    except Exception as e:
+        print(f"[ERROR] {what} failed: {type(e).__name__}: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
     setup_signal_handlers()
     reset_all_states()
-    start_camera()
+    _step("camera start", start_camera)
+    _step("gyro start", start_gyro)
+    _step("LiDAR start", start_scanner, asyncio.get_running_loop())
+    _step("radar start", start_radar)
+    from utils.tof_camera import start_tof, stop_tof
 
-    start_gyro()
-
-    loop = asyncio.get_running_loop()
-    start_scanner(loop)
-    start_radar()
-    from utils.tof_camera import start_tof
-
-    start_tof()  # only with TOF_ENABLED (the depth camera)
+    _step("ToF start", start_tof)  # only with TOF_ENABLED (the depth camera)
 
     from utils import pi_voice, service, test_console
+    from utils.walk_recorder import get_recorder
 
-    pi_voice.start()
-    test_console.start()
+    _step("guidance loop start", pi_voice.start)
+    _step("test console start", test_console.start)
 
     heartbeat = asyncio.create_task(_event_loop_heartbeat())
     service.start_watchdog(required=("guidance", "event_loop"))
@@ -95,20 +103,21 @@ async def lifespan(app: FastAPI):
             "or the phone. Bench use only — never with a wearer."
         )
 
-    yield
-
-    service.stopping()
-    heartbeat.cancel()
-    test_console.stop()
-    pi_voice.stop()
-    stop_camera()
-    stop_scanner_thread()
-    stop_radar()
-    from utils.tof_camera import stop_tof
-
-    stop_tof()
-    stop_gyro()
-    print("👋 Application shutdown complete")
+    try:
+        yield
+    finally:
+        _step("watchdog stop", service.stopping)
+        heartbeat.cancel()
+        _step("test console stop", test_console.stop)
+        _step("guidance loop stop", pi_voice.stop)
+        # After the loop, which feeds it: closed whole, not cut off for walk_replay.
+        _step("walk recorder stop", get_recorder().stop)
+        _step("camera stop", stop_camera)
+        _step("LiDAR stop", stop_scanner_thread)
+        _step("radar stop", stop_radar)
+        _step("ToF stop", stop_tof)
+        _step("gyro stop", stop_gyro)
+        print("👋 Application shutdown complete")
 
 
 app = FastAPI(

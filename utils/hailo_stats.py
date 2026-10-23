@@ -22,7 +22,7 @@ def _bucket(model: str):
 
 def record(model: str, infer_ms: float, n_results: int = 0):
     """Report one completed inference. Called from inside the engines."""
-    now = time.time()
+    now = time.monotonic()  # a window: wall-clock steps bent it (scan 2026-10-23)
     with _lock:
         d = _bucket(model)
         d.append((now, infer_ms, n_results))
@@ -45,7 +45,7 @@ def record(model: str, infer_ms: float, n_results: int = 0):
 
 def snapshot():
     """Current per-model FPS/utilization plus the NPU total."""
-    now = time.time()
+    now = time.monotonic()
     cutoff = now - _WINDOW_SEC
     out = {}
     total_util = 0.0

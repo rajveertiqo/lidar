@@ -432,7 +432,9 @@ def get_unified_guidance() -> Dict[str, Any]:
                 via="none",
             )
             test_console.would_say(
-                simple["route_shadow"], simple.get("route_shadow_reason", "")
+                simple["route_shadow"],
+                simple.get("route_shadow_reason", ""),
+                source="route planner",
             )
         except Exception:
             pass

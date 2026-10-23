@@ -110,11 +110,11 @@ def spoken(
     )
 
 
-def would_say(text: str, reason: str = "") -> None:
-    """A LiDAR mover warning that is held but not spoken (LIDAR_MOVERS_SPEAK False)."""
+def would_say(text: str, reason: str = "", source: str = "LiDAR movers") -> None:
+    """A silent trial's sentence, held but not spoken (LIDAR_MOVERS_SPEAK, ROUTE_PLANNER_SPEAK)."""
     _emit(
         f"{_DIM}{_now()}{_RESET}  👁 {_CYN}would say: {text:<35}{_RESET} "
-        f"{_DIM}LiDAR movers, silent  ({reason}){_RESET}"
+        f"{_DIM}{source}, silent  ({reason}){_RESET}"
     )
 
 

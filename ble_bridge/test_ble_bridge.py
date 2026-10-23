@@ -413,7 +413,9 @@ class BridgeTests(unittest.TestCase):
         b.on_walk(make_walk(1))
         b.on_health(make_health())
         clock.t += 0.5
-        events = lambda outs: [d["event"] for c, d in decoded(outs) if d["kind"] == "event"]
+        events = lambda outs: [
+            d["event"] for c, d in decoded(outs) if d["kind"] == "event"
+        ]
         self.assertEqual(events(b.on_unreachable("timed out")), [])
         self.assertEqual(P.unpack_state(b.state_value())["status"], "ok")
         clock.t += UNREACHABLE_AFTER_S  # still no answer: now it is one
@@ -423,7 +425,9 @@ class BridgeTests(unittest.TestCase):
         b, clock = make_bridge()
         b.on_walk(make_walk(1))
         b.on_health(make_health())
-        events = lambda outs: [d["event"] for c, d in decoded(outs) if d["kind"] == "event"]
+        events = lambda outs: [
+            d["event"] for c, d in decoded(outs) if d["kind"] == "event"
+        ]
         seen = []
         for _ in range(int(HEALTH_STALE_S) + 2):  # /guidance/walk answers, /health not
             clock.t += 1

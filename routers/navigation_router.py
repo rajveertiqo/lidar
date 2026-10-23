@@ -47,9 +47,19 @@ async def make_navigation_decision(request: NavigationRequest):
     }
 
     decision = await run_in_threadpool(decisionMaker, sample)
+    if not _has_scan(sample):
+        decision = _no_lidar_decision(decision, "no scan in the request")
     update_navigation_state(decision)
 
     return decision
+
+
+def _has_scan(sample: Any) -> bool:
+    """A request with no scan in it: decisionMaker found nothing near and said "Path
+    clear" (scan 2026-10-23)."""
+    return isinstance(sample, dict) and bool(
+        sample.get("scan_data") or sample.get("precomputed_sectors")
+    )
 
 
 def _lidar_unavailable(lidar: Dict[str, Any]) -> str:
@@ -218,6 +228,8 @@ async def navigation_websocket(websocket: WebSocket):
             data = await websocket.receive_json()
 
             decision = await run_in_threadpool(decisionMaker, data)
+            if not _has_scan(data):
+                decision = _no_lidar_decision(decision, "no scan in the message")
             update_navigation_state(decision)
 
             await websocket.send_json(decision)

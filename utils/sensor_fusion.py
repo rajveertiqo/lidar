@@ -289,8 +289,8 @@ def _bev_shapes() -> List[Dict[str, Any]]:
         from utils.bev_grid import get_grid
 
         snap = get_grid().snapshot()
-        if not snap.get("available") or not snap.get("last_update"):
-            return []
+        if not snap.get("available") or not snap.get("last_update") or snap.get("stale"):
+            return []  # old shapes must not name today's hazards
         return snap.get("objects") or []
     except Exception:
         return []

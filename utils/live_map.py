@@ -50,7 +50,7 @@ KEEP_M = 20.0  # the rolling map: walls farther than this are not shown
 L_HIT, L_FREE, L_MAX, L_MIN = 0.9, 0.35, 3.5, -2.0
 OCC_L = 1.5  # two hits before a cell counts as a wall
 FREE_L = -0.6  # below this a cell has been seen empty
-DECAY = 0.996  # per scan: a wall not seen again fades in ~25 s at 15 Hz
+DECAY = 0.996  # per scan: a wall not seen again fades in ~8-14 s at 15 Hz (weak-strong)
 SCAN_GAP_DEG = 5.0  # a wider gap between returns is unknown, not free floor
 MAX_STEP_M = 0.4  # one scan's walking step; more is a failed match
 WALL_CELLS_MAX = 9000
@@ -61,6 +61,9 @@ GYRO_LAG_S = 0.025  # integrate the gyro this far behind now, so its samples are
 SCAN_WAIT_S = 0.08  # wait this long for the heading tracker's step for a scan
 SCAN_FRESH_S = 1.0  # an older scan is not drawn: the page is live
 IDLE_STOP_S = 30.0  # the worker stops when nobody has looked for this long
+# One GET /map/state keeps it only this long: each kept the worker 30 s, CPU on a hot Pi
+# (scan 2026-10-23). A page streams over the WebSocket, which holds it while open.
+STATE_HOLD_S = 5.0
 HISTORY_S = 3.0
 
 TRACK_HIST_S = 2.0
@@ -605,8 +608,10 @@ class LiveMap:
         self._lock = threading.RLock()
         self._thread: Optional[threading.Thread] = None
         self._clients = 0
-        self._last_access = 0.0
-        self.yaw_setting = "gyro"
+        self._stop_after = 0.0  # monotonic: with no client, the worker stops after this
+        # The gyro only once its axis and sign are commissioned; the page can still choose
+        # it, to commission it (scan 2026-10-23).
+        self.yaw_setting = "gyro" if GYRO_MOUNTING_CONFIRMED else "lidar"
         self.gyro_flip = False
         self._n = int(round(2 * GRID_HALF_M / CELL_M)) + 1
         self._h = self._n // 2
@@ -669,21 +674,24 @@ class LiveMap:
                 self.reset()
             return self.settings()
 
-    def touch(self) -> None:
+    def _hold(self, seconds: float) -> None:
+        self._stop_after = max(self._stop_after, time.monotonic() + seconds)
+
+    def touch(self, hold_s: float = IDLE_STOP_S) -> None:
         with self._lock:
-            self._last_access = time.time()
+            self._hold(hold_s)
             self._ensure_worker()
 
     def acquire(self) -> None:
         with self._lock:
             self._clients += 1
-            self._last_access = time.time()
+            self._hold(IDLE_STOP_S)
             self._ensure_worker()
 
     def release(self) -> None:
         with self._lock:
             self._clients = max(0, self._clients - 1)
-            self._last_access = time.time()
+            self._hold(IDLE_STOP_S)
 
     def _ensure_worker(self) -> None:
         if self._thread is None:
@@ -706,7 +714,7 @@ class LiveMap:
                     ):
                         print(f"[WARN] live map: {self._error} (x{self._error_count})")
             with self._lock:
-                if self._clients <= 0 and time.time() - self._last_access > IDLE_STOP_S:
+                if self._clients <= 0 and time.monotonic() > self._stop_after:
                     self._thread = None
                     return
             time.sleep(POLL_S)
@@ -1542,7 +1550,6 @@ class LiveMap:
         lidar_stamp = float(lidar.get("last_update") or 0.0)
 
         with self._lock:
-            self._last_access = now
             ox, oy, yaw = self.x, self.y, self.yaw
             boards = self._radar_boards(radar)
             turning = self._turn_rate(now) > TURNING_DPS

@@ -16,16 +16,20 @@ def require_admin(x_admin_token: str = Header(default="")) -> None:
     """Allow the request only with the right admin token."""
     token = config.ADMIN_TOKEN
     if not token:
-        raise HTTPException(status_code=503,
-                            detail="no admin token is configured on this device, so "
-                                   "changes to how it steers are refused — start it "
-                                   "with ./start_lidar.sh or the service, which set "
-                                   "SHAPPE_ADMIN_TOKEN from ~/.config/shappe-guide.env "
-                                   "(and add one there if it has none)")
+        raise HTTPException(
+            status_code=503,
+            detail="no admin token is configured on this device, so "
+            "changes to how it steers are refused — start it "
+            "with ./start_lidar.sh or the service, which set "
+            "SHAPPE_ADMIN_TOKEN from ~/.config/shappe-guide.env "
+            "(and add one there if it has none)",
+        )
     if not hmac.compare_digest(x_admin_token.encode("utf-8"), token.encode("utf-8")):
-        raise HTTPException(status_code=401,
-                            detail=f"this changes how the device steers — "
-                                   f"send the admin token in {TOKEN_HEADER}")
+        raise HTTPException(
+            status_code=401,
+            detail=f"this changes how the device steers — "
+            f"send the admin token in {TOKEN_HEADER}",
+        )
 
 
 # ---- Cross-site requests -------------------------------------------------------
@@ -39,14 +43,16 @@ def host_name(host: str) -> str:
     """The name part of a Host header, lower-case: "192.168.0.50:8000" -> "192.168.0.50", "[fe80::1]:8000" -> "fe80::1", "Shappe.local." -> "shappe.local"."""
     try:
         name = urlsplit("//" + (host or "").strip()).hostname or ""
-    except ValueError:                        # "[not closed", a bad IPv6 literal
+    except ValueError:  # "[not closed", a bad IPv6 literal
         return ""
     return name.rstrip(".")
 
 
 def parse_allowed_hosts(text: str) -> frozenset:
     """SHAPPE_ALLOWED_HOSTS's value -> the set of names it lists."""
-    return frozenset(n for n in (host_name(part) for part in (text or "").split(",")) if n)
+    return frozenset(
+        n for n in (host_name(part) for part in (text or "").split(",")) if n
+    )
 
 
 # config.ALLOWED_HOSTS_TEXT is SHAPPE_ALLOWED_HOSTS's value.
@@ -70,11 +76,13 @@ def _page_refusal(what: str, origin: str, host: str, allowed_origins) -> str:
     """The rule shared by HTTP writes and WebSocket handshakes, for a request that carries an Origin (i.e."""
     name = host_name(host)
     if not _host_is_this_device(name):
-        return (f"{what} addressed to host {name or host!r} refused: that is not a "
-                f"name this device answers to, which is what a DNS-rebinding page "
-                f"looks like. Open the device by its IP address, localhost or its "
-                f"own host name (.local), or add the name to {ALLOWED_HOSTS_ENV} "
-                f"(comma-separated) in ~/.config/shappe-guide.env")
+        return (
+            f"{what} addressed to host {name or host!r} refused: that is not a "
+            f"name this device answers to, which is what a DNS-rebinding page "
+            f"looks like. Open the device by its IP address, localhost or its "
+            f"own host name (.local), or add the name to {ALLOWED_HOSTS_ENV} "
+            f"(comma-separated) in ~/.config/shappe-guide.env"
+        )
     if origin in allowed_origins:
         return ""
     try:
@@ -86,8 +94,7 @@ def _page_refusal(what: str, origin: str, host: str, allowed_origins) -> str:
     return f"cross-site {what} from {origin!r} refused"
 
 
-def cross_site_refusal(method: str, origin: str, host: str,
-                       allowed_origins=()) -> str:
+def cross_site_refusal(method: str, origin: str, host: str, allowed_origins=()) -> str:
     """Why a request must be refused as cross-site, or "" to allow it."""
     if method.upper() not in UNSAFE_METHODS or not origin:
         return ""

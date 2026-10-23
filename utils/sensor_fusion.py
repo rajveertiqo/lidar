@@ -5,41 +5,74 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from config import (
-    CAMERA_SECTORS, CAMERA_WIDTH, DETECTION_DISTANCE_HFOV_DEG, FRAME_GRID_COLS,
+    CAMERA_SECTORS,
+    CAMERA_WIDTH,
+    DETECTION_DISTANCE_HFOV_DEG,
+    FRAME_GRID_COLS,
     GUIDANCE_CONE_CENTRES,
-    BEV_SHAPE_IN_HAZARDS, BEV_SHAPE_MATCH_DEG, BEV_SHAPE_MATCH_MM,
-    ENV_IDENTITY_MIN_VISIBILITY, ENV_STALE_S, ENV_TRUST_ENABLED,
-    GUIDANCE_DANGER_MM, GUIDANCE_WARNING_MM, GUIDANCE_SAFE_MM, GUIDANCE_AWARE_MM,
-    LIDAR_MIN_VALID_FRACTION, LIDAR_SECTOR_ORDER, LIDAR_STALE_S, LIDAR_TO_CAMERA,
+    BEV_SHAPE_IN_HAZARDS,
+    BEV_SHAPE_MATCH_DEG,
+    BEV_SHAPE_MATCH_MM,
+    ENV_IDENTITY_MIN_VISIBILITY,
+    ENV_STALE_S,
+    ENV_TRUST_ENABLED,
+    GUIDANCE_DANGER_MM,
+    GUIDANCE_WARNING_MM,
+    GUIDANCE_SAFE_MM,
+    GUIDANCE_AWARE_MM,
+    LIDAR_MIN_VALID_FRACTION,
+    LIDAR_SECTOR_ORDER,
+    LIDAR_STALE_S,
+    LIDAR_TO_CAMERA,
     SIMPLE_CAMERA_FRESH_S,
-    RADAR_AGREE_MM, RADAR_CARDINAL_ARC_SECTORS, RADAR_CONE_TRUST_MM,
-    RADAR_GLASS_GAP_MM, RADAR_PRIORITY,
-    RADAR_SECTORS, RADAR_START_MM,
+    RADAR_AGREE_MM,
+    RADAR_CARDINAL_ARC_SECTORS,
+    RADAR_CONE_TRUST_MM,
+    RADAR_GLASS_GAP_MM,
+    RADAR_PRIORITY,
+    RADAR_SECTORS,
+    RADAR_START_MM,
 )
 from utils.shared_state import (
-    get_lidar_state, get_radar_state, get_camera_state, get_fused_sensor_state,
+    get_lidar_state,
+    get_radar_state,
+    get_camera_state,
+    get_fused_sensor_state,
 )
 
 # Distance thresholds (mm) — single source of truth in config.py.
-DANGER_MM = GUIDANCE_DANGER_MM     # imminent — stop
-WARNING_MM = GUIDANCE_WARNING_MM   # close — caution
-SAFE_MM = GUIDANCE_SAFE_MM         # be aware
-AWARE_MM = GUIDANCE_AWARE_MM       # furthest distance we bother mentioning
+DANGER_MM = GUIDANCE_DANGER_MM  # imminent — stop
+WARNING_MM = GUIDANCE_WARNING_MM  # close — caution
+SAFE_MM = GUIDANCE_SAFE_MM  # be aware
+AWARE_MM = GUIDANCE_AWARE_MM  # furthest distance we bother mentioning
 
 # 8 x 45° LiDAR sectors (clockwise from straight ahead).
 SECTORS = list(LIDAR_SECTOR_ORDER)
 
 # Object identity → how much it raises urgency (moving things matter most).
 _CRITICAL = {
-    "person": 5, "pedestrian": 5,
-    "car": 4, "truck": 4, "bus": 4, "motorcycle": 4, "bicycle": 4,
-    "scooter": 4, "train": 4,
-    "dog": 3, "cat": 3,
+    "person": 5,
+    "pedestrian": 5,
+    "car": 4,
+    "truck": 4,
+    "bus": 4,
+    "motorcycle": 4,
+    "bicycle": 4,
+    "scooter": 4,
+    "train": 4,
+    "dog": 3,
+    "cat": 3,
 }
 
 _SECTOR_CLOCK = {
-    "front": 12, "front_right": 2, "right": 3, "back_right": 5,
-    "back": 6, "back_left": 8, "left": 9, "front_left": 11,
+    "front": 12,
+    "front_right": 2,
+    "right": 3,
+    "back_right": 5,
+    "back": 6,
+    "back_left": 8,
+    "left": 9,
+    "front_left": 11,
 }
 
 _URGENCY_RANK = {"danger": 0, "warning": 1, "caution": 2, "clear": 3}
@@ -100,9 +133,12 @@ def _expected_cardinal_sources() -> Dict[str, tuple]:
     """How many boards each cardinal SHOULD have, from the mount geometry."""
     from config import RADAR_BEAM_H_DEG, RADAR_CARDINAL_CENTRES, _radar_ang_diff
     from utils.radar_calibration import ring_slots
+
     half = RADAR_BEAM_H_DEG / 2.0 + 22.5
-    return {name: tuple(b for b in ring_slots() if _radar_ang_diff(b, centre) < half)
-            for name, centre in RADAR_CARDINAL_CENTRES.items()}
+    return {
+        name: tuple(b for b in ring_slots() if _radar_ang_diff(b, centre) < half)
+        for name, centre in RADAR_CARDINAL_CENTRES.items()
+    }
 
 
 def _lidar_arc_values(cardinal: str, sectors: Dict[str, Any]) -> List[float]:
@@ -115,8 +151,9 @@ def _lidar_arc_values(cardinal: str, sectors: Dict[str, Any]) -> List[float]:
     return vals
 
 
-def _lidar_arc_corroborates(cardinal: str, sectors: Dict[str, Any],
-                            radar_mm: float) -> bool:
+def _lidar_arc_corroborates(
+    cardinal: str, sectors: Dict[str, Any], radar_mm: float
+) -> bool:
     """Did the laser see something at the SAME RANGE as the radar echo?"""
     vals = _lidar_arc_values(cardinal, sectors)
     if not vals:
@@ -124,9 +161,11 @@ def _lidar_arc_corroborates(cardinal: str, sectors: Dict[str, Any],
     return abs(min(vals) - radar_mm) <= RADAR_AGREE_MM
 
 
-def fuse_range(lidar_mm: Optional[float],
-               radar_mm: Optional[float],
-               arc_corroborates: Optional[bool] = None) -> tuple[Optional[float], str, bool]:
+def fuse_range(
+    lidar_mm: Optional[float],
+    radar_mm: Optional[float],
+    arc_corroborates: Optional[bool] = None,
+) -> tuple[Optional[float], str, bool]:
     """Combine the two rangefinders for one direction."""
     if lidar_mm is None and radar_mm is None:
         return None, "none", False
@@ -142,15 +181,19 @@ def fuse_range(lidar_mm: Optional[float],
         return (radar_mm if RADAR_PRIORITY else lidar_mm), "both", False
 
     if radar_mm < lidar_mm:
-        return radar_mm, "radar", (can_be_glass
-                                   and (lidar_mm - radar_mm) >= RADAR_GLASS_GAP_MM)
+        return (
+            radar_mm,
+            "radar",
+            (can_be_glass and (lidar_mm - radar_mm) >= RADAR_GLASS_GAP_MM),
+        )
     return lidar_mm, "lidar", False
 
 
-def merge_navigation_inputs(lidar_sectors: Optional[Dict[str, Any]],
-                            lidar_cones: Optional[Dict[str, Any]],
-                            radar_state: Optional[Dict[str, Any]] = None
-                            ) -> tuple[Dict[str, Any], Dict[str, Any]]:
+def merge_navigation_inputs(
+    lidar_sectors: Optional[Dict[str, Any]],
+    lidar_cones: Optional[Dict[str, Any]],
+    radar_state: Optional[Dict[str, Any]] = None,
+) -> tuple[Dict[str, Any], Dict[str, Any]]:
     """Fold the radar into the inputs the WALKING DECISION actually uses."""
     if radar_state is None:
         radar_state = get_radar_state()
@@ -165,13 +208,17 @@ def merge_navigation_inputs(lidar_sectors: Optional[Dict[str, Any]],
         if radar_mm is None:
             continue
 
-        sec = sectors.setdefault(sector, {"min_dist": None, "min_angle": None, "count": 0})
+        sec = sectors.setdefault(
+            sector, {"min_dist": None, "min_angle": None, "count": 0}
+        )
         lidar_mm = sec.get("min_dist")
-        lidar_mm = float(lidar_mm) if isinstance(lidar_mm, (int, float)) and lidar_mm else None
+        lidar_mm = (
+            float(lidar_mm) if isinstance(lidar_mm, (int, float)) and lidar_mm else None
+        )
 
         fused, _source, _glass = fuse_range(
-            lidar_mm, radar_mm,
-            _lidar_arc_corroborates(sector, sectors, radar_mm))
+            lidar_mm, radar_mm, _lidar_arc_corroborates(sector, sectors, radar_mm)
+        )
         if fused is not None and (lidar_mm is None or fused < lidar_mm):
             sec["min_dist"] = fused
             sec["radar_backed"] = True
@@ -180,7 +227,11 @@ def merge_navigation_inputs(lidar_sectors: Optional[Dict[str, Any]],
         if cones_usable and trusted:
             cone = cones.setdefault(sector, {"min_dist": None})
             cone_mm = cone.get("min_dist")
-            cone_mm = float(cone_mm) if isinstance(cone_mm, (int, float)) and cone_mm else None
+            cone_mm = (
+                float(cone_mm)
+                if isinstance(cone_mm, (int, float)) and cone_mm
+                else None
+            )
             if cone_mm is None or radar_mm < cone_mm:
                 cone["min_dist"] = radar_mm
                 cone["radar_backed"] = True
@@ -194,7 +245,10 @@ def _top_detection(detections: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]
         return None
     return max(
         detections,
-        key=lambda d: (_criticality(d.get("class_name")), float(d.get("confidence", 0.0))),
+        key=lambda d: (
+            _criticality(d.get("class_name")),
+            float(d.get("confidence", 0.0)),
+        ),
     )
 
 
@@ -207,11 +261,13 @@ def _camera_identity_trusted() -> Tuple[bool, str]:
         return True, ""
     try:
         from utils.environment_detection import get_environment_state
+
         env = get_environment_state() or {}
     except Exception:
         return True, ""
 
     from utils.freshness import is_fresh
+
     last = env.get("last_update") or 0
     if not is_fresh(last, ENV_STALE_S):
         return True, ""
@@ -228,6 +284,7 @@ def _bev_shapes() -> List[Dict[str, Any]]:
         return []
     try:
         from utils.bev_grid import get_grid
+
         snap = get_grid().snapshot()
         if not snap.get("available") or not snap.get("last_update"):
             return []
@@ -236,14 +293,16 @@ def _bev_shapes() -> List[Dict[str, Any]]:
         return []
 
 
-def _shape_for(shapes: List[Dict[str, Any]], angle: Optional[float],
-               dist_mm: Optional[float]) -> Optional[str]:
+def _shape_for(
+    shapes: List[Dict[str, Any]], angle: Optional[float], dist_mm: Optional[float]
+) -> Optional[str]:
     """Which grid cluster, if any, is the thing this sector is reporting."""
     if not shapes or angle is None or dist_mm is None:
         return None
 
     hits = [
-        o for o in shapes
+        o
+        for o in shapes
         if _angular_gap(o.get("bearing_deg", 999.0), angle) <= BEV_SHAPE_MATCH_DEG
         and abs((o.get("range_mm") or 1e9) - dist_mm) <= BEV_SHAPE_MATCH_MM
     ]
@@ -266,17 +325,22 @@ def _phrase(hazard: Dict[str, Any]) -> str:
     return ", ".join(parts)
 
 
-def lidar_is_fresh(lidar_state: Optional[Dict[str, Any]],
-                   now: Optional[float] = None) -> bool:
+def lidar_is_fresh(
+    lidar_state: Optional[Dict[str, Any]], now: Optional[float] = None
+) -> bool:
     """Is this LiDAR state a current reading?"""
     from utils.freshness import reading_is_current
+
     if not lidar_state:
         return False
     if lidar_state.get("simulated"):
         return False
     if "last_update" not in lidar_state:
-        return bool(lidar_state.get("sectors") or lidar_state.get("cones")
-                    or lidar_state.get("points"))
+        return bool(
+            lidar_state.get("sectors")
+            or lidar_state.get("cones")
+            or lidar_state.get("points")
+        )
     return reading_is_current(lidar_state, LIDAR_STALE_S, now)
 
 
@@ -284,20 +348,29 @@ def lidar_sparse(lidar_state: Optional[Dict[str, Any]]) -> Optional[str]:
     """Why this scan is too sparse to be a reading (LIDAR_MIN_VALID_FRACTION, NEW-043), or None."""
     frac = (lidar_state or {}).get("valid_fraction")
     if not isinstance(frac, (int, float)) or isinstance(frac, bool):
-        return None                        # not reported (simulated, older reader)
+        return None  # not reported (simulated, older reader)
     if frac >= LIDAR_MIN_VALID_FRACTION:
         return None
-    return (f"the LiDAR is getting almost no returns ({frac:.0%} of the scan, "
-            f"under {LIDAR_MIN_VALID_FRACTION:.0%}) — window blinded, dirty or failing")
+    return (
+        f"the LiDAR is getting almost no returns ({frac:.0%} of the scan, "
+        f"under {LIDAR_MIN_VALID_FRACTION:.0%}) — window blinded, dirty or failing"
+    )
 
 
-def front_glass_coverage(radar_state: Optional[Dict[str, Any]] = None
-                         ) -> Dict[str, Any]:
+def front_glass_coverage(
+    radar_state: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """Can the radar currently see glass AHEAD? {"ok", "reason", "live", "expected"}"""
     from config import RADAR_ENABLED
+
     if not RADAR_ENABLED:
-        return {"ok": False, "reason": "radar disabled in config",
-                "live": [], "expected": [], "settling": False}
+        return {
+            "ok": False,
+            "reason": "radar disabled in config",
+            "live": [],
+            "expected": [],
+            "settling": False,
+        }
     if radar_state is None:
         radar_state = get_radar_state()
     try:
@@ -308,6 +381,7 @@ def front_glass_coverage(radar_state: Optional[Dict[str, Any]] = None
     live = list(row.get("sources_live") or [])
     sources = list(row.get("sources") or [])
     from config import radar_board_key
+
     owed = {radar_board_key(b) for b in expected}
     dark = sorted(owed - set(live))
     if not row.get("online") or row.get("stale"):
@@ -315,44 +389,71 @@ def front_glass_coverage(radar_state: Optional[Dict[str, Any]] = None
     elif row.get("degraded"):
         why = "front radar lagging"
     elif dark or len(live) < max(len(sources), len(expected), 1):
-        why = (f"front radar half-covered ({len(set(live) & owed) if owed else len(live)} of "
-               f"{max(len(sources), len(expected))} boards"
-               + (f"; {', '.join(dark)} dark" if dark else "") + ")")
+        why = (
+            f"front radar half-covered ({len(set(live) & owed) if owed else len(live)} of "
+            f"{max(len(sources), len(expected))} boards"
+            + (f"; {', '.join(dark)} dark" if dark else "")
+            + ")"
+        )
     else:
         why = ""
     sectors = (radar_state or {}).get("sectors") or {}
-    discovered = bool((radar_state or {}).get("boards") or (radar_state or {}).get("missing"))
-    settling = bool(why) and (not discovered or any(
-        (sectors.get(k) or {}).get("phase") in ("starting", "calibrating") for k in owed))
-    return {"ok": not why, "reason": why, "live": live,
-            "expected": [f"{b:g}" for b in expected], "settling": settling}
+    discovered = bool(
+        (radar_state or {}).get("boards") or (radar_state or {}).get("missing")
+    )
+    settling = bool(why) and (
+        not discovered
+        or any(
+            (sectors.get(k) or {}).get("phase") in ("starting", "calibrating")
+            for k in owed
+        )
+    )
+    return {
+        "ok": not why,
+        "reason": why,
+        "live": live,
+        "expected": [f"{b:g}" for b in expected],
+        "settling": settling,
+    }
 
 
-def front_camera_coverage(camera_state: Optional[Dict[str, Any]],
-                          now: Optional[float] = None) -> Dict[str, Any]:
+def front_camera_coverage(
+    camera_state: Optional[Dict[str, Any]], now: Optional[float] = None
+) -> Dict[str, Any]:
     """Can the front camera name what is ahead right now? {"ok", "reason", "settling"} —
     the definition the voice's "Camera off" notice uses. Judged from the camera state
     alone: fresh front detections (so a lost feed, a stopped detector or pictures all
     skipped as corrupted all count), from a real picture that is not black."""
     from utils.freshness import is_fresh
+
     now = time.time() if now is None else now
     front = (camera_state or {}).get("front")
     if not isinstance(front, dict) or not front.get("frame_time"):
         return {"ok": False, "reason": "no front camera pictures yet", "settling": True}
     if front.get("simulated"):
-        return {"ok": False, "reason": "the front camera is simulated", "settling": False}
+        return {
+            "ok": False,
+            "reason": "the front camera is simulated",
+            "settling": False,
+        }
     if not is_fresh(front.get("frame_time"), SIMPLE_CAMERA_FRESH_S, now):
-        return {"ok": False, "settling": False,
-                "reason": "no new front camera pictures (feed lost, detector stopped or "
-                          "every picture corrupted)"}
+        return {
+            "ok": False,
+            "settling": False,
+            "reason": "no new front camera pictures (feed lost, detector stopped or "
+            "every picture corrupted)",
+        }
     if (front.get("view") or {}).get("dark"):
-        return {"ok": False, "settling": False,
-                "reason": "the front camera sees only black (lens covered, unplugged "
-                          "or no light)"}
+        return {
+            "ok": False,
+            "settling": False,
+            "reason": "the front camera sees only black (lens covered, unplugged "
+            "or no light)",
+        }
     return {"ok": True, "reason": "", "settling": False}
 
 
-_QUAD_W = CAMERA_WIDTH / FRAME_GRID_COLS          # one camera's frame in the mosaic
+_QUAD_W = CAMERA_WIDTH / FRAME_GRID_COLS  # one camera's frame in the mosaic
 
 
 def _box_bearings(sector: str, x1: float, x2: float) -> Optional[Tuple[float, float]]:
@@ -362,21 +463,34 @@ def _box_bearings(sector: str, x1: float, x2: float) -> Optional[Tuple[float, fl
     centre = GUIDANCE_CONE_CENTRES.get(sector)
     if centre is None:
         return None
-    edges = [centre + math.degrees(math.atan(
-                 (x - _QUAD_W / 2.0) * math.tan(math.radians(h) / 2.0) / (_QUAD_W / 2.0)))
-             for x in (x1, x2) for h in DETECTION_DISTANCE_HFOV_DEG]
+    edges = [
+        centre
+        + math.degrees(
+            math.atan(
+                (x - _QUAD_W / 2.0) * math.tan(math.radians(h) / 2.0) / (_QUAD_W / 2.0)
+            )
+        )
+        for x in (x1, x2)
+        for h in DETECTION_DISTANCE_HFOV_DEG
+    ]
     return min(edges[:2]) - 1.0, max(edges[2:]) + 1.0
 
 
-def _laser_ranges_mm(lidar_state: Optional[Dict[str, Any]], lo: float, hi: float) -> List[float]:
+def _laser_ranges_mm(
+    lidar_state: Optional[Dict[str, Any]], lo: float, hi: float
+) -> List[float]:
     """The distinct things the laser ranges between two bearings: each the nearest
     return of a run of at least LIDAR_CLUSTER_MIN_POINTS returns no more than
     LIDAR_CLUSTER_WINDOW_MM apart in range (a lone reflection is not a thing)."""
     from config import LIDAR_CLUSTER_MIN_POINTS, LIDAR_CLUSTER_WINDOW_MM
+
     mid, half = (lo + hi) / 2.0, (hi - lo) / 2.0
     pts = (lidar_state or {}).get("points") or {}
-    ds = sorted(float(d) for a, d in zip(pts.get("angles") or [], pts.get("distances") or [])
-                if isinstance(d, (int, float)) and d > 0 and _angular_gap(float(a), mid) <= half)
+    ds = sorted(
+        float(d)
+        for a, d in zip(pts.get("angles") or [], pts.get("distances") or [])
+        if isinstance(d, (int, float)) and d > 0 and _angular_gap(float(a), mid) <= half
+    )
     groups: List[List[float]] = []
     for d in ds:
         if groups and d - groups[-1][-1] <= LIDAR_CLUSTER_WINDOW_MM:
@@ -386,10 +500,13 @@ def _laser_ranges_mm(lidar_state: Optional[Dict[str, Any]], lo: float, hi: float
     return [g[0] for g in groups if len(g) >= LIDAR_CLUSTER_MIN_POINTS]
 
 
-def detection_distance(sector: str, det: Dict[str, Any],
-                       lidar_state: Optional[Dict[str, Any]] = None,
-                       now: Optional[float] = None,
-                       explain: bool = False):
+def detection_distance(
+    sector: str,
+    det: Dict[str, Any],
+    lidar_state: Optional[Dict[str, Any]] = None,
+    now: Optional[float] = None,
+    explain: bool = False,
+):
     """How far away one camera detection is, in feet, and how that is known:
     (feet, "lidar" | "camera" | "camera_cut" | ""), or with `explain`, a dict saying why.
 
@@ -403,15 +520,26 @@ def detection_distance(sector: str, det: Dict[str, Any],
     "tof": with TOF_USE_DISTANCE, the ToF's distance of the nearest surface in the box
     (utils/depth_fusion.py), ahead of all of these; without it, that is only shown
     (`tof_ft`) beside them."""
-    from config import (DETECTION_DISTANCE_AGREE, DETECTION_SEATED_ASPECT,
-                        DETECTION_SEATED_HEIGHT_M, SIMPLE_NAMED_OBJECTS, TOF_USE_DISTANCE)
+    from config import (
+        DETECTION_DISTANCE_AGREE,
+        DETECTION_SEATED_ASPECT,
+        DETECTION_SEATED_HEIGHT_M,
+        SIMPLE_NAMED_OBJECTS,
+        TOF_USE_DISTANCE,
+    )
     from utils.simple_guidance import _object_height_m, _size_range
 
     def result(ft, source, **why):
         if not explain:
             return ft, source
-        return {"sector": sector, "class": det.get("class_name"), "bbox": det.get("bbox"),
-                "distance_ft": ft, "source": source, **why}
+        return {
+            "sector": sector,
+            "class": det.get("class_name"),
+            "bbox": det.get("bbox"),
+            "distance_ft": ft,
+            "source": source,
+            **why,
+        }
 
     try:
         x1, y1, x2, y2 = (float(v) for v in det.get("bbox") or ())
@@ -422,23 +550,41 @@ def detection_distance(sector: str, det: Dict[str, Any],
         return result(None, "", why="no box")
     cls = str(det.get("class_name", "")).lower()
     metres, cut = _size_range(cls, (x1, y1, x2, y2))
-    seated = (SIMPLE_NAMED_OBJECTS.get(cls) == "Person" and not cut
-              and (x2 - x1) >= DETECTION_SEATED_ASPECT * (y2 - y1))
+    seated = (
+        SIMPLE_NAMED_OBJECTS.get(cls) == "Person"
+        and not cut
+        and (x2 - x1) >= DETECTION_SEATED_ASPECT * (y2 - y1)
+    )
     if seated:
-        metres *= DETECTION_SEATED_HEIGHT_M / _object_height_m(cls)   # it assumed standing
+        metres *= DETECTION_SEATED_HEIGHT_M / _object_height_m(
+            cls
+        )  # it assumed standing
     est_mm = metres * 1000.0
-    estimate = {"estimate_ft": round(est_mm / 304.8, 1),
-                "estimate_basis": "sitting person" if seated else "class height",
-                "cut": cut, "bearings_deg": [round(bearings[0], 1), round(bearings[1], 1)]}
+    estimate = {
+        "estimate_ft": round(est_mm / 304.8, 1),
+        "estimate_basis": "sitting person" if seated else "class height",
+        "cut": cut,
+        "bearings_deg": [round(bearings[0], 1), round(bearings[1], 1)],
+    }
     depth = det.get("depth")
     if isinstance(depth, dict) and isinstance(depth.get("distance_m"), (int, float)):
         estimate["tof_ft"] = round(float(depth["distance_m"]) / 0.3048, 1)
         if TOF_USE_DISTANCE:
-            return result(estimate["tof_ft"], "tof", why="measured by the ToF: the nearest "
-                          "surface in the box", tof=depth, **estimate)
+            return result(
+                estimate["tof_ft"],
+                "tof",
+                why="measured by the ToF: the nearest surface in the box",
+                tof=depth,
+                **estimate,
+            )
     if not lidar_is_fresh(lidar_state, now):
-        return result(estimate["estimate_ft"], "camera_cut" if cut else "camera",
-                      laser_ft=[], why="the LiDAR is not current", **estimate)
+        return result(
+            estimate["estimate_ft"],
+            "camera_cut" if cut else "camera",
+            laser_ft=[],
+            why="the LiDAR is not current",
+            **estimate,
+        )
     lo_k, hi_k = DETECTION_DISTANCE_AGREE
     seen = _laser_ranges_mm(lidar_state, *bearings)
     fits = [mm for mm in seen if (cut or lo_k * est_mm <= mm) and mm <= hi_k * est_mm]
@@ -447,19 +593,46 @@ def detection_distance(sector: str, det: Dict[str, Any],
         best = min(fits, key=lambda mm: abs(math.log(mm / est_mm)))
         # The lens angle this box implies, if the laser is right and it stands at its
         # class height: a few of these from a real walk measure SIMPLE_CAMERA_HFOV_DEG.
-        implied = (None if cut or seated else round(math.degrees(2.0 * math.atan(
-            (_QUAD_W / 2.0) / ((y2 - y1) * best / 1000.0 / _object_height_m(cls)))), 1))
-        return result(round(best / 304.8, 1), "lidar", laser_ft=laser_ft,
-                      why="the laser range that fits the box's size",
-                      implied_hfov_deg=implied, **estimate)
-    return result(estimate["estimate_ft"], "camera_cut" if cut else "camera", laser_ft=laser_ft,
-                  why=("nothing the laser ranges there fits the box's size"
-                       if seen else "the laser ranges nothing there"), **estimate)
+        implied = (
+            None
+            if cut or seated
+            else round(
+                math.degrees(
+                    2.0
+                    * math.atan(
+                        (_QUAD_W / 2.0)
+                        / ((y2 - y1) * best / 1000.0 / _object_height_m(cls))
+                    )
+                ),
+                1,
+            )
+        )
+        return result(
+            round(best / 304.8, 1),
+            "lidar",
+            laser_ft=laser_ft,
+            why="the laser range that fits the box's size",
+            implied_hfov_deg=implied,
+            **estimate,
+        )
+    return result(
+        estimate["estimate_ft"],
+        "camera_cut" if cut else "camera",
+        laser_ft=laser_ft,
+        why=(
+            "nothing the laser ranges there fits the box's size"
+            if seen
+            else "the laser ranges nothing there"
+        ),
+        **estimate,
+    )
 
 
-def with_distances(stats: Dict[str, Any],
-                   lidar_state: Optional[Dict[str, Any]] = None,
-                   explain: bool = False) -> Dict[str, Any]:
+def with_distances(
+    stats: Dict[str, Any],
+    lidar_state: Optional[Dict[str, Any]] = None,
+    explain: bool = False,
+) -> Dict[str, Any]:
     """A copy of camera stats/state with `distance_ft` and `distance_source` on every
     detection (with `explain`: each detection's whole reasoning, for /camera/distances)."""
     if lidar_state is None:
@@ -473,7 +646,9 @@ def with_distances(stats: Dict[str, Any],
         dets = []
         for det in entry.get("detections") or []:
             if explain:
-                dets.append(detection_distance(sector, det, lidar_state, now, explain=True))
+                dets.append(
+                    detection_distance(sector, det, lidar_state, now, explain=True)
+                )
                 continue
             ft, source = detection_distance(sector, det, lidar_state, now)
             dets.append({**det, "distance_ft": ft, "distance_source": source})
@@ -481,10 +656,12 @@ def with_distances(stats: Dict[str, Any],
     return out
 
 
-def fresh_camera_state(camera_state: Optional[Dict[str, Any]],
-                       now: Optional[float] = None) -> Dict[str, Any]:
+def fresh_camera_state(
+    camera_state: Optional[Dict[str, Any]], now: Optional[float] = None
+) -> Dict[str, Any]:
     """A copy of the camera state with any quadrant's labels removed that were not captured within SIMPLE_CAMERA_FRESH_S."""
     from utils.freshness import is_fresh
+
     cam = dict(camera_state or {})
     now = time.time() if now is None else now
     shared = cam.get("last_update")
@@ -498,14 +675,17 @@ def fresh_camera_state(camera_state: Optional[Dict[str, Any]],
             continue
         stamp = sec.get("frame_time", shared)
         if stamp is None:
-            continue                          # no clock supplied
+            continue  # no clock supplied
         if not is_fresh(stamp, SIMPLE_CAMERA_FRESH_S, now):
             cam[name] = {**sec, "detections": [], "num_objects": 0, "stale": True}
     return cam
 
 
-def build_hazards(lidar_state: Dict[str, Any], camera_state: Dict[str, Any],
-                  radar_state: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+def build_hazards(
+    lidar_state: Dict[str, Any],
+    camera_state: Dict[str, Any],
+    radar_state: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
     """Combine per-sector RANGE (LiDAR + radar, nearest wins) with per-sector camera identity into one ranked hazard list."""
     if radar_state is None:
         radar_state = get_radar_state()
@@ -523,7 +703,11 @@ def build_hazards(lidar_state: Dict[str, Any], camera_state: Dict[str, Any],
     ranges: Dict[str, tuple] = {}
     for _s in SECTORS:
         _l = (sectors.get(_s) or {}).get("min_dist")
-        _l = float(_l) if isinstance(_l, (int, float)) and _l and _l <= AWARE_MM else None
+        _l = (
+            float(_l)
+            if isinstance(_l, (int, float)) and _l and _l <= AWARE_MM
+            else None
+        )
         _r = _radar_distance(_s, radar_state)
         _arc = _lidar_arc_corroborates(_s, sectors, _r) if _r is not None else None
         _d, _src, _glass = fuse_range(_l, _r, _arc)
@@ -544,7 +728,7 @@ def build_hazards(lidar_state: Dict[str, Any], camera_state: Dict[str, Any],
         obj_name = top.get("class_name") if top else None
         obj_conf = float(top.get("confidence", 0.0)) if top else None
 
-        has_lidar = dist_mm is not None       # "has a fused range", LiDAR and/or radar
+        has_lidar = dist_mm is not None  # "has a fused range", LiDAR and/or radar
         if obj_name is not None and not cam_trusted:
             obj_name, obj_conf = None, None
         has_camera = obj_name is not None
@@ -559,7 +743,9 @@ def build_hazards(lidar_state: Dict[str, Any], camera_state: Dict[str, Any],
 
         contributors = []
         if has_lidar:
-            contributors += ["lidar", "radar"] if range_source == "both" else [range_source]
+            contributors += (
+                ["lidar", "radar"] if range_source == "both" else [range_source]
+            )
         if has_camera:
             contributors.append("camera")
 
@@ -573,7 +759,11 @@ def build_hazards(lidar_state: Dict[str, Any], camera_state: Dict[str, Any],
         use_angle = min_angle is not None and range_source in ("lidar", "both")
         clock = angle_to_clock(min_angle) if use_angle else _SECTOR_CLOCK[sector]
 
-        shape = _shape_for(shapes, min_angle, dist_mm) if range_source in ("lidar", "both") else None
+        shape = (
+            _shape_for(shapes, min_angle, dist_mm)
+            if range_source in ("lidar", "both")
+            else None
+        )
 
         if has_camera:
             obj = obj_name
@@ -605,21 +795,27 @@ def build_hazards(lidar_state: Dict[str, Any], camera_state: Dict[str, Any],
         hazards.append(hazard)
 
     # Rank: most urgent first, then nearest, then most-critical identity.
-    hazards.sort(key=lambda h: (
-        _URGENCY_RANK.get(h["urgency"], 3),
-        h["distance_mm"] if h["distance_mm"] is not None else 10 ** 9,
-        -_criticality(h["object"]),
-    ))
+    hazards.sort(
+        key=lambda h: (
+            _URGENCY_RANK.get(h["urgency"], 3),
+            h["distance_mm"] if h["distance_mm"] is not None else 10**9,
+            -_criticality(h["object"]),
+        )
+    )
     return hazards
 
 
 def _action_for(urgency: Optional[str]) -> str:
-    return {"danger": "stop", "warning": "caution", "caution": "proceed_slow"}.get(urgency, "clear")
+    return {"danger": "stop", "warning": "caution", "caution": "proceed_slow"}.get(
+        urgency, "clear"
+    )
 
 
-def fuse_guidance(lidar_state: Optional[Dict] = None,
-                  camera_state: Optional[Dict] = None,
-                  radar_state: Optional[Dict] = None) -> Dict[str, Any]:
+def fuse_guidance(
+    lidar_state: Optional[Dict] = None,
+    camera_state: Optional[Dict] = None,
+    radar_state: Optional[Dict] = None,
+) -> Dict[str, Any]:
     """Produce one prioritized guidance packet from all three sensors."""
     if lidar_state is None:
         lidar_state = get_lidar_state()
@@ -645,7 +841,9 @@ def fuse_guidance(lidar_state: Optional[Dict] = None,
 
     top = hazards[0]
     action = _action_for(top["urgency"])
-    verb = {"stop": "Stop.", "caution": "Caution.", "proceed_slow": "Careful."}.get(action, "")
+    verb = {"stop": "Stop.", "caution": "Caution.", "proceed_slow": "Careful."}.get(
+        action, ""
+    )
     primary = f"{verb} {top['message']}".strip()
 
     # Detail = the next couple of hazards, so the user has situational context.
@@ -664,9 +862,11 @@ def fuse_guidance(lidar_state: Optional[Dict] = None,
     }
 
 
-def describe_scene(lidar_state: Optional[Dict] = None,
-                   camera_state: Optional[Dict] = None,
-                   radar_state: Optional[Dict] = None) -> Dict[str, Any]:
+def describe_scene(
+    lidar_state: Optional[Dict] = None,
+    camera_state: Optional[Dict] = None,
+    radar_state: Optional[Dict] = None,
+) -> Dict[str, Any]:
     """On-demand 'what's around me?' — a full readout of every direction, so the user can query their surroundings instead of relying on continuous chatter."""
     if lidar_state is None:
         lidar_state = get_lidar_state()
@@ -678,8 +878,11 @@ def describe_scene(lidar_state: Optional[Dict] = None,
     hazards = build_hazards(lidar_state, camera_state, radar_state)
     lidar_live = lidar_is_fresh(lidar_state)
     if not hazards:
-        spoken = ("All directions clear." if lidar_live else
-                  "The LiDAR is not reporting, so I cannot tell what is around you.")
+        spoken = (
+            "All directions clear."
+            if lidar_live
+            else "The LiDAR is not reporting, so I cannot tell what is around you."
+        )
     else:
         spoken = ". ".join(h["message"] for h in hazards) + "."
         if not lidar_live:
@@ -702,10 +905,13 @@ def get_system_health() -> Dict[str, Any]:
 
     try:
         from utils import pi_camera_utils
+
         hailo_ok = bool(getattr(pi_camera_utils, "hailo_ready", False))
         frame_t = float(getattr(pi_camera_utils, "current_frame_t", 0.0) or 0.0)
-        camera_simulated = bool(getattr(pi_camera_utils, "current_frame_simulated", False)
-                                or fused.get("camera_simulated"))
+        camera_simulated = bool(
+            getattr(pi_camera_utils, "current_frame_simulated", False)
+            or fused.get("camera_simulated")
+        )
     except Exception:
         hailo_ok, frame_t, camera_simulated = False, 0.0, False
 
@@ -717,27 +923,35 @@ def get_system_health() -> Dict[str, Any]:
     radar_ok = bool(active.get("radar"))
 
     radar_sectors = (fused.get("radar") or {}).get("sectors") or {}
-    radar_down = sorted(p for p in RADAR_SECTORS
-                        if not (radar_sectors.get(p) or {}).get("online"))
+    radar_down = sorted(
+        p for p in RADAR_SECTORS if not (radar_sectors.get(p) or {}).get("online")
+    )
 
     expected = {c: len(v) for c, v in _expected_cardinal_sources().items()}
     radar_partial = sorted(
-        p for p in RADAR_SECTORS
+        p
+        for p in RADAR_SECTORS
         if (radar_sectors.get(p) or {}).get("online")
         and len((radar_sectors.get(p) or {}).get("sources_live") or [])
-            < max(len((radar_sectors.get(p) or {}).get("sources") or []),
-                  expected.get(p, 0)))
+        < max(
+            len((radar_sectors.get(p) or {}).get("sources") or []), expected.get(p, 0)
+        )
+    )
 
     warnings: List[str] = []
     if lidar_simulated:
         warnings.append("LiDAR is SIMULATED — no real ranging; do not navigate")
     elif sparse and active.get("lidar"):
-        warnings.append("LiDAR getting almost no returns (blinded, dirty or failing) — "
-                        "rely on your cane")
+        warnings.append(
+            "LiDAR getting almost no returns (blinded, dirty or failing) — "
+            "rely on your cane"
+        )
     elif not lidar_ok:
         warnings.append("LiDAR signal lost — rely on your cane")
     if camera_simulated:
-        warnings.append("Camera is SIMULATED — no real images; object identification off")
+        warnings.append(
+            "Camera is SIMULATED — no real images; object identification off"
+        )
     elif not camera_ok:
         if not frames_ok:
             warnings.append("Camera feed lost — object identification off")
@@ -745,87 +959,139 @@ def get_system_health() -> Dict[str, Any]:
             warnings.append("Object detection stalled — object identification off")
         # else: the camera is delivering and the NPU is the cause, said below.
     if not hailo_ok:
-        warnings.append("Detection engine not ready"
-                        + (" — object identification off" if frames_ok else ""))
+        warnings.append(
+            "Detection engine not ready"
+            + (" — object identification off" if frames_ok else "")
+        )
     detection_reduced = ""
     try:
         from utils import pi_camera_utils as _pc
+
         cover = _pc.detection_coverage()
         if cover.get("reason") == "seg_view_priority":
             detection_reduced = cover["reason"]
-            warnings.append("Side and back object detection paused — a "
-                            "segmentation debug view is open")
-        bad = sorted(s for s, c in (_pc.corruption() or {}).items()
-                     if c.get("pictures", 0) >= 5 and c.get("share", 0.0) >= 0.2)
+            warnings.append(
+                "Side and back object detection paused — a "
+                "segmentation debug view is open"
+            )
+        bad = sorted(
+            s
+            for s, c in (_pc.corruption() or {}).items()
+            if c.get("pictures", 0) >= 5 and c.get("share", 0.0) >= 0.2
+        )
         if bad:
-            warnings.append(f"Camera picture corrupted ({', '.join(bad)}) — those frames "
-                            f"are skipped; the camera board's 4-in-1 merge is faulty")
+            warnings.append(
+                f"Camera picture corrupted ({', '.join(bad)}) — those frames "
+                f"are skipped; the camera board's 4-in-1 merge is faulty"
+            )
         views = _pc.camera_views() or {}
         now = time.time()
-        looked = {c: v for c, v in views.items() if now - float(v.get("at") or 0.0) <= 10.0}
-        dark = [c for c in ("front", "right", "left", "back") if (looked.get(c) or {}).get("dark")]
+        looked = {
+            c: v for c, v in views.items() if now - float(v.get("at") or 0.0) <= 10.0
+        }
+        dark = [
+            c
+            for c in ("front", "right", "left", "back")
+            if (looked.get(c) or {}).get("dark")
+        ]
         if dark:
-            warnings.append(f"Camera sees only black ({', '.join(dark)}) — lens covered, "
-                            f"unplugged or no light; nothing is named "
-                            f"{'there' if len(dark) == 1 else 'in those directions'}")
-        blurred = [c for c in ("front", "right", "left", "back")
-                   if (looked.get(c) or {}).get("blurred")]
+            warnings.append(
+                f"Camera sees only black ({', '.join(dark)}) — lens covered, "
+                f"unplugged or no light; nothing is named "
+                f"{'there' if len(dark) == 1 else 'in those directions'}"
+            )
+        blurred = [
+            c
+            for c in ("front", "right", "left", "back")
+            if (looked.get(c) or {}).get("blurred")
+        ]
         if blurred:
-            warnings.append(f"Camera picture blurred ({', '.join(blurred)}) — lens dirty, "
-                            f"covered or out of focus; objects may not be named")
+            warnings.append(
+                f"Camera picture blurred ({', '.join(blurred)}) — lens dirty, "
+                f"covered or out of focus; objects may not be named"
+            )
         if cover.get("reason") == "cameras_missing":
             detection_reduced = cover["reason"]
-            missing = [c for c in ("front", "right", "left", "back")
-                       if c not in (cover.get("sectors_detected") or [])]
-            warnings.append(f"No camera connected: {', '.join(missing)} — no object "
-                            f"detection {'there' if len(missing) == 1 else 'in those directions'}")
+            missing = [
+                c
+                for c in ("front", "right", "left", "back")
+                if c not in (cover.get("sectors_detected") or [])
+            ]
+            warnings.append(
+                f"No camera connected: {', '.join(missing)} — no object "
+                f"detection {'there' if len(missing) == 1 else 'in those directions'}"
+            )
         elif cover.get("reason") == "camera_fallback":
             detection_reduced = cover["reason"]
-            warnings.append("The 4-camera picture stayed corrupted — only the front camera "
-                            "is in use (automatic fallback until the app restarts)")
+            warnings.append(
+                "The 4-camera picture stayed corrupted — only the front camera "
+                "is in use (automatic fallback until the app restarts)"
+            )
         elif cover.get("reason") == "single_camera":
             detection_reduced = cover["reason"]
             only = ", ".join(cover.get("sectors_detected") or []) or "one"
-            warnings.append(f"Only the {only} camera is in use (CAMERA_SINGLE_CHANNEL) — "
-                            f"no object detection anywhere else")
+            warnings.append(
+                f"Only the {only} camera is in use (CAMERA_SINGLE_CHANNEL) — "
+                f"no object detection anywhere else"
+            )
     except Exception:
         pass
     tof = None
     try:
         from config import TOF_ENABLED
+
         if TOF_ENABLED:
             from utils.tof_camera import tof_status
+
             tof = tof_status()
             if not tof.get("ok") or tof.get("age_s") is None or tof["age_s"] > 1.0:
-                warnings.append("Depth camera (ToF) not delivering — distances come from "
-                                "box sizes and the LiDAR"
-                                + (f" ({tof['error']})" if tof.get("error") else ""))
+                warnings.append(
+                    "Depth camera (ToF) not delivering — distances come from "
+                    "box sizes and the LiDAR"
+                    + (f" ({tof['error']})" if tof.get("error") else "")
+                )
             elif (tof.get("calibration") or {}).get("source") != "bench":
-                warnings.append("Depth camera not calibrated — its dots are placed by the "
-                                "design, not measured (tools/tof_calibrate.py)")
+                warnings.append(
+                    "Depth camera not calibrated — its dots are placed by the "
+                    "design, not measured (tools/tof_calibrate.py)"
+                )
     except Exception:
         pass
-    lagging = sorted(p for p in RADAR_SECTORS
-                     if (radar_sectors.get(p) or {}).get("degraded"))
+    lagging = sorted(
+        p for p in RADAR_SECTORS if (radar_sectors.get(p) or {}).get("degraded")
+    )
     if lagging:
-        warnings.append(f"Radar delayed {', '.join(lagging)} — distances may be out of date")
+        warnings.append(
+            f"Radar delayed {', '.join(lagging)} — distances may be out of date"
+        )
 
     if not radar_ok:
         warnings.append("Radar offline — glass may not be detected")
     elif radar_down:
-        warnings.append(f"Radar down {', '.join(radar_down)} — glass may not be "
-                        f"detected {'there' if len(radar_down) == 1 else 'in those directions'}")
+        warnings.append(
+            f"Radar down {', '.join(radar_down)} — glass may not be "
+            f"detected {'there' if len(radar_down) == 1 else 'in those directions'}"
+        )
 
     if radar_partial:
-        warnings.append(f"Radar half-covered {', '.join(radar_partial)} — glass may "
-                        f"be missed to one side")
+        warnings.append(
+            f"Radar half-covered {', '.join(radar_partial)} — glass may "
+            f"be missed to one side"
+        )
 
     # The same definition the voice's "Glass sensor off" notice uses.
     front_glass = front_glass_coverage(fused.get("radar"))
 
-    all_ok = (lidar_ok and camera_ok and hailo_ok and radar_ok
-              and not radar_down and not radar_partial and not lagging
-              and not warnings)
+    all_ok = (
+        lidar_ok
+        and camera_ok
+        and hailo_ok
+        and radar_ok
+        and not radar_down
+        and not radar_partial
+        and not lagging
+        and not warnings
+    )
     return {
         "all_ok": all_ok,
         "radar_partial": radar_partial,

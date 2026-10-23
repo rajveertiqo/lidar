@@ -41,12 +41,18 @@ def main():
     engine = seg_inference.SegmentationEngine(hef)
 
     cls_channels = {engine._out_shapes[g["cls"]][-1] for _grid, g, _s in engine._scales}
-    print(f"outputs: {len(engine._scales)} scales + prototypes {engine._out_shapes[engine._proto_name]}")
+    print(
+        f"outputs: {len(engine._scales)} scales + prototypes {engine._out_shapes[engine._proto_name]}"
+    )
     if cls_channels != {len(names)}:
-        sys.exit(f"MISMATCH: the model has {sorted(cls_channels)} class channels but "
-                 f"{meta_path} names {len(names)} classes — wrong metadata.yaml for this model")
+        sys.exit(
+            f"MISMATCH: the model has {sorted(cls_channels)} class channels but "
+            f"{meta_path} names {len(names)} classes — wrong metadata.yaml for this model"
+        )
     print(f"classes ({len(names)}): {', '.join(names[i] for i in sorted(names))}")
-    print(f"walkable (drawn bright): {', '.join(names[i] for i in engine.walkable_ids) or 'none'}")
+    print(
+        f"walkable (drawn bright): {', '.join(names[i] for i in engine.walkable_ids) or 'none'}"
+    )
 
     palette, _ = seg_inference._build_palette(names)
     out_dir = Path("check_hef_out")
@@ -58,20 +64,31 @@ def main():
         class_map, infer_ms = engine.infer_class_map(img)
         times.append((time.perf_counter() - t0) * 1000.0)
         total = class_map.size
-        shares = {names[int(c)]: n / total for c, n in zip(*np.unique(class_map, return_counts=True))
-                  if int(c) != BACKGROUND_ID and int(c) in names}
-        seen = ", ".join(f"{k} {v:.0%}" for k, v in sorted(shares.items(), key=lambda kv: -kv[1]))
-        print(f"  {Path(pic).name}: {seen or 'nothing'}  ({infer_ms:.0f} ms on the NPU)")
+        shares = {
+            names[int(c)]: n / total
+            for c, n in zip(*np.unique(class_map, return_counts=True))
+            if int(c) != BACKGROUND_ID and int(c) in names
+        }
+        seen = ", ".join(
+            f"{k} {v:.0%}" for k, v in sorted(shares.items(), key=lambda kv: -kv[1])
+        )
+        print(
+            f"  {Path(pic).name}: {seen or 'nothing'}  ({infer_ms:.0f} ms on the NPU)"
+        )
         base = np.asarray(img.resize(class_map.shape[::-1]), dtype=np.float32)
         colour = palette[class_map].astype(np.float32)
         mask = (class_map != BACKGROUND_ID)[..., None]
         blend = np.where(mask, 0.45 * base + 0.55 * colour, base).astype(np.uint8)
-        side = np.concatenate([np.asarray(img.resize(class_map.shape[::-1])), blend], axis=1)
+        side = np.concatenate(
+            [np.asarray(img.resize(class_map.shape[::-1])), blend], axis=1
+        )
         Image.fromarray(side).save(out_dir / f"{Path(pic).stem}-check.jpg", quality=85)
     engine.close()
     if times:
-        print(f"\n{len(times)} pictures, {np.median(times):.0f} ms each (whole call); "
-              f"overlays in {out_dir}/")
+        print(
+            f"\n{len(times)} pictures, {np.median(times):.0f} ms each (whole call); "
+            f"overlays in {out_dir}/"
+        )
 
 
 if __name__ == "__main__":

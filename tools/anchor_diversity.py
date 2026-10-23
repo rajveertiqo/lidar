@@ -42,8 +42,13 @@ def identifiability(zs, rel_noise, tolerance):
     """Would a scale+offset fit on these anchors have been identifiable?"""
     n = len(zs)
     if n < MIN_ANCHORS:
-        return {"n": n, "cv": 0.0, "scale_err": float("inf"),
-                "ok": False, "why": "too few anchors"}
+        return {
+            "n": n,
+            "cv": 0.0,
+            "scale_err": float("inf"),
+            "ok": False,
+            "why": "too few anchors",
+        }
 
     u = [1.0 / z for z in zs]
     mean_u = statistics.fmean(u)
@@ -51,8 +56,13 @@ def identifiability(zs, rel_noise, tolerance):
     cv = (std_u / mean_u) if mean_u > 0 else 0.0
 
     if cv <= 1e-9:
-        return {"n": n, "cv": cv, "scale_err": float("inf"),
-                "ok": False, "why": "no depth diversity"}
+        return {
+            "n": n,
+            "cv": cv,
+            "scale_err": float("inf"),
+            "ok": False,
+            "why": "no depth diversity",
+        }
 
     err = rel_noise / (math.sqrt(n) * cv)
     return {
@@ -111,17 +121,26 @@ def report(per_view, hfov, rel_noise, tolerance, n_scans):
     total = len(all_rows)
     ok = sum(1 for r in all_rows if r["ok"])
     few = sum(1 for r in all_rows if r["why"] == "too few anchors")
-    flat = sum(1 for r in all_rows if r["why"] in
-               ("no depth diversity", "insufficient depth diversity"))
+    flat = sum(
+        1
+        for r in all_rows
+        if r["why"] in ("no depth diversity", "insufficient depth diversity")
+    )
 
     lines += [
         "  " + "-" * 72,
         f"  OVERALL: {ok}/{total} ({ok / total:.0%}) of (scan, view) pairs support "
-        f"an identifiable scale+offset fit." if total else "  no data",
+        f"an identifiable scale+offset fit."
+        if total
+        else "  no data",
         "",
         "  Of the failures:",
-        f"    too few anchors in view        {few:>6}  ({few / total:.0%})" if total else "",
-        f"    insufficient depth diversity   {flat:>6}  ({flat / total:.0%})" if total else "",
+        f"    too few anchors in view        {few:>6}  ({few / total:.0%})"
+        if total
+        else "",
+        f"    insufficient depth diversity   {flat:>6}  ({flat / total:.0%})"
+        if total
+        else "",
     ]
     return "\n".join(l for l in lines if l is not None)
 
@@ -132,36 +151,47 @@ def verdict(per_view, tolerance):
     if not all_rows:
         return ""
     rate = sum(1 for r in all_rows if r["ok"]) / len(all_rows)
-    flat = sum(1 for r in all_rows
-               if r["why"] in ("no depth diversity", "insufficient depth diversity"))
+    flat = sum(
+        1
+        for r in all_rows
+        if r["why"] in ("no depth diversity", "insufficient depth diversity")
+    )
     flat_share = flat / len(all_rows)
 
     out = ["", "READ THIS AS:"]
     if rate >= 0.6:
-        out.append(f"  {rate:.0%} — the scan band usually identifies a fit. E2 is "
-                   f"worth running as specified; report metrics on the "
-                   f"identifiable subset AND the rest, separately.")
+        out.append(
+            f"  {rate:.0%} — the scan band usually identifies a fit. E2 is "
+            f"worth running as specified; report metrics on the "
+            f"identifiable subset AND the rest, separately."
+        )
     elif rate >= 0.25:
-        out.append(f"  {rate:.0%} — E2 works on a minority of frames. As specified "
-                   f"it will help sometimes and hurt otherwise, which is what "
-                   f"page 8 already showed. Do NOT average over both; the "
-                   f"refusal path has to be a first-class output, and the "
-                   f"headline metric has to be conditioned on it.")
+        out.append(
+            f"  {rate:.0%} — E2 works on a minority of frames. As specified "
+            f"it will help sometimes and hurt otherwise, which is what "
+            f"page 8 already showed. Do NOT average over both; the "
+            f"refusal path has to be a first-class output, and the "
+            f"headline metric has to be conditioned on it."
+        )
     else:
-        out.append(f"  {rate:.0%} — the scan band rarely identifies a fit on this "
-                   f"rig. E2 as specified is not the main line. Either constrain "
-                   f"the offset (fit SCALE ONLY, b fixed, which needs no "
-                   f"diversity) or go to E5, where the network learns the "
-                   f"completion instead of a 2-parameter fit recovering it.")
+        out.append(
+            f"  {rate:.0%} — the scan band rarely identifies a fit on this "
+            f"rig. E2 as specified is not the main line. Either constrain "
+            f"the offset (fit SCALE ONLY, b fixed, which needs no "
+            f"diversity) or go to E5, where the network learns the "
+            f"completion instead of a 2-parameter fit recovering it."
+        )
 
     if flat_share > 0.4:
         out.append("")
-        out.append(f"  {flat_share:.0%} of all pairs fail on DEPTH DIVERSITY, not "
-                   f"anchor count. More LiDAR points would not help. What helps "
-                   f"is anchors at genuinely different depths in one view — "
-                   f"which a planar scanner facing a wall cannot produce, and "
-                   f"which accumulating the band ACROSS MOTION can "
-                   f"(utils/heading_tracker already supplies the pose).")
+        out.append(
+            f"  {flat_share:.0%} of all pairs fail on DEPTH DIVERSITY, not "
+            f"anchor count. More LiDAR points would not help. What helps "
+            f"is anchors at genuinely different depths in one view — "
+            f"which a planar scanner facing a wall cannot produce, and "
+            f"which accumulating the band ACROSS MOTION can "
+            f"(utils/heading_tracker already supplies the pose)."
+        )
     return "\n".join(out)
 
 
@@ -178,11 +208,11 @@ def collect_live(host, port, n_scans, timeout):
                 msg = await asyncio.wait_for(ws.recv(), timeout=5)
                 pts = json.loads(msg).get("points") or {}
                 if pts.get("angles") and pts.get("distances"):
-                    scans.append({"angles": pts["angles"],
-                                  "distances": pts["distances"]})
+                    scans.append(
+                        {"angles": pts["angles"], "distances": pts["distances"]}
+                    )
                     if len(scans) % 25 == 0:
-                        print(f"  ... {len(scans)}/{n_scans} scans",
-                              file=sys.stderr)
+                        print(f"  ... {len(scans)}/{n_scans} scans", file=sys.stderr)
         return scans
 
     return asyncio.run(_run())
@@ -190,8 +220,8 @@ def collect_live(host, port, n_scans, timeout):
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--live", action="store_true", help="capture from the server")
     ap.add_argument("--host", default="localhost")
     ap.add_argument("--port", type=int, default=8000)
@@ -200,10 +230,17 @@ def main() -> int:
     ap.add_argument("--save", metavar="FILE", help="write captured scans for replay")
     ap.add_argument("--replay", metavar="FILE", help="analyse a saved capture")
     ap.add_argument("--fov", type=float, default=DEFAULT_HFOV_DEG)
-    ap.add_argument("--fov-sweep", action="store_true",
-                    help="repeat across plausible FOVs, since it is uncalibrated")
-    ap.add_argument("--noise", type=float, default=DEFAULT_PRIOR_REL_NOISE,
-                    help="assumed relative inverse-depth error of the prior")
+    ap.add_argument(
+        "--fov-sweep",
+        action="store_true",
+        help="repeat across plausible FOVs, since it is uncalibrated",
+    )
+    ap.add_argument(
+        "--noise",
+        type=float,
+        default=DEFAULT_PRIOR_REL_NOISE,
+        help="assumed relative inverse-depth error of the prior",
+    )
     ap.add_argument("--tolerance", type=float, default=DEFAULT_TOLERANCE)
     args = ap.parse_args()
 
@@ -211,13 +248,18 @@ def main() -> int:
         scans = json.load(open(args.replay))["scans"]
         print(f"Replaying {len(scans)} scans from {args.replay}\n")
     elif args.live:
-        print(f"Capturing {args.scans} scans from {args.host}:{args.port} ...",
-              file=sys.stderr)
+        print(
+            f"Capturing {args.scans} scans from {args.host}:{args.port} ...",
+            file=sys.stderr,
+        )
         try:
             scans = collect_live(args.host, args.port, args.scans, args.timeout)
         except Exception as e:
-            print(f"capture failed: {type(e).__name__}: {e}\n"
-                  f"Is the server running?  ./start_lidar.sh", file=sys.stderr)
+            print(
+                f"capture failed: {type(e).__name__}: {e}\n"
+                f"Is the server running?  ./start_lidar.sh",
+                file=sys.stderr,
+            )
             return 1
         if args.save:
             Path(args.save).write_text(json.dumps({"scans": scans}))
@@ -238,8 +280,10 @@ def main() -> int:
         print()
 
     if args.fov_sweep:
-        print("If the identifiable rate moves materially across those three, the "
-              "uncalibrated FOV is doing the work and C0 has to happen first.")
+        print(
+            "If the identifiable rate moves materially across those three, the "
+            "uncalibrated FOV is doing the work and C0 has to happen first."
+        )
     return 0
 
 

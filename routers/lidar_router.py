@@ -7,7 +7,10 @@ from fastapi.responses import Response
 from starlette.websockets import WebSocketState
 
 from config import (
-    LIDAR_SECTORS, LIDAR_WARNING_DISTANCE, LIDAR_MAX_DISTANCE, BEV_ENABLED,
+    LIDAR_SECTORS,
+    LIDAR_WARNING_DISTANCE,
+    LIDAR_MAX_DISTANCE,
+    BEV_ENABLED,
 )
 from utils.lidar_utils import add_client, reader_health, remove_client
 from utils.shared_state import get_lidar_state
@@ -39,7 +42,7 @@ async def config():
     return {
         "sectors": LIDAR_SECTORS,
         "warning_distance": LIDAR_WARNING_DISTANCE,
-        "max_distance": LIDAR_MAX_DISTANCE
+        "max_distance": LIDAR_MAX_DISTANCE,
     }
 
 
@@ -47,6 +50,7 @@ async def config():
 def reader():
     """Is the serial reader keeping up?"""
     from utils.sensor_fusion import lidar_is_fresh
+
     state = get_lidar_state()
     last = state.get("last_update") or 0.0
     return {
@@ -63,16 +67,14 @@ def reader():
 @router.get("/sectors")
 async def get_sectors():
     """Get sector definitions"""
-    return {
-        "sectors": LIDAR_SECTORS,
-        "sector_names": list(LIDAR_SECTORS.keys())
-    }
+    return {"sectors": LIDAR_SECTORS, "sector_names": list(LIDAR_SECTORS.keys())}
 
 
 @router.get("/movers")
 async def lidar_movers():
     """Things the LiDAR sees moving by themselves: where, how fast, and which is coming at the user (utils/lidar_movers)."""
     from utils.lidar_movers import get_movers
+
     return get_movers().snapshot()
 
 
@@ -82,6 +84,7 @@ async def bev_state():
     if not BEV_ENABLED:
         return {"available": False, "error": "BEV_ENABLED is False"}
     from utils.bev_grid import get_grid
+
     return get_grid().snapshot()
 
 
@@ -92,14 +95,23 @@ async def bev_summary():
         return {"available": False, "error": "BEV_ENABLED is False"}
 
     from utils.bev_grid import get_grid
+
     snap = get_grid().snapshot()
     if not snap.get("available"):
         return snap
 
     lines = []
     for o in snap.get("objects", [])[:8]:
-        glass = " (GLASS — radar only, laser saw through it)" if o["radar_confirmed"] else ""
-        seen = f" [camera sees: {', '.join(o['camera_candidates'])}]" if o["camera_candidates"] else ""
+        glass = (
+            " (GLASS — radar only, laser saw through it)"
+            if o["radar_confirmed"]
+            else ""
+        )
+        seen = (
+            f" [camera sees: {', '.join(o['camera_candidates'])}]"
+            if o["camera_candidates"]
+            else ""
+        )
         lines.append(
             f"{o['kind']} {o['length_mm'] / 1000:.1f} m long, "
             f"{o['clock']} o'clock, {o['range_ft']:.1f} ft{glass}{seen}"
@@ -133,8 +145,10 @@ def bev_image(scale: int = 2):
         return Response(content=b"", status_code=404)
 
     from utils.bev_grid import get_grid
+
     png = get_grid().render_png(scale=max(1, min(4, scale)))
     if png is None:
         return Response(content=b"", status_code=503)
-    return Response(content=png, media_type="image/png",
-                    headers={"Cache-Control": "no-store"})
+    return Response(
+        content=png, media_type="image/png", headers={"Cache-Control": "no-store"}
+    )

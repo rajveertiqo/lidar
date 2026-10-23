@@ -29,8 +29,9 @@ def read_system() -> Dict[str, Any]:
     if now - _throttle_cache["at"] >= _THROTTLE_CACHE_S:
         _throttle_cache["at"] = now
         try:
-            out = subprocess.run(["vcgencmd", "get_throttled"], capture_output=True,
-                                 text=True, timeout=2).stdout
+            out = subprocess.run(
+                ["vcgencmd", "get_throttled"], capture_output=True, text=True, timeout=2
+            ).stdout
             _throttle_cache["value"] = int(out.strip().split("=", 1)[1], 16)
         except Exception:
             _throttle_cache["value"] = 0
@@ -44,16 +45,23 @@ class HttpSource:
         self.base = base.rstrip("/")
         self.timeout = timeout
 
-    def _request(self, path: str, body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _request(
+        self, path: str, body: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         data = None if body is None else json.dumps(body).encode()
-        req = urllib.request.Request(self.base + path, data=data,
-                                     headers={"Accept": "application/json",
-                                              **({"Content-Type": "application/json"} if data else {})})
+        req = urllib.request.Request(
+            self.base + path,
+            data=data,
+            headers={
+                "Accept": "application/json",
+                **({"Content-Type": "application/json"} if data else {}),
+            },
+        )
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 return json.loads(resp.read().decode())
         except urllib.error.HTTPError as exc:
-            if exc.code == 503 and path == "/health":     # "down" still carries a body
+            if exc.code == 503 and path == "/health":  # "down" still carries a body
                 return json.loads(exc.read().decode())
             raise
 
@@ -78,87 +86,209 @@ class HttpSource:
 
 # --- the mock device -------------------------------------------------------
 
-def make_walk(cue: int, instruction: str = "", announced: str = "", speak: bool = False,
-              urgent: bool = False, front_ft: Optional[float] = None, stale: bool = False,
-              audio_enabled: bool = True, device_voice_usable: bool = False,
-              accepted_seq: Optional[int] = None, obstacles: Optional[List[Dict]] = None,
-              age_s: float = 0.05) -> Dict[str, Any]:
+
+def make_walk(
+    cue: int,
+    instruction: str = "",
+    announced: str = "",
+    speak: bool = False,
+    urgent: bool = False,
+    front_ft: Optional[float] = None,
+    stale: bool = False,
+    audio_enabled: bool = True,
+    device_voice_usable: bool = False,
+    accepted_seq: Optional[int] = None,
+    obstacles: Optional[List[Dict]] = None,
+    age_s: float = 0.05,
+) -> Dict[str, Any]:
     """A /guidance/walk snapshot with the fields the bridge reads, shaped as latest_guidance()."""
     return {
-        "notify": {"speak": speak, "cue_seq": cue, "instruction": announced,
-                   "level": "urgent" if urgent else "advisory", "source": "simple-guidance",
-                   "reason": "", "quiet_reason": "" if speak else "nothing new to say",
-                   "pi_voice": {"enabled": True, "audio_enabled": audio_enabled,
-                                "running": device_voice_usable, "usable": device_voice_usable,
-                                "sink_usable": device_voice_usable,
-                                "accepted_seq": accepted_seq, "output": None, "error": ""}},
-        "path": {"instruction": instruction, "front_ft": front_ft, "action": "",
-                 "rule": "", "reason": "mock", "turn_side": None, "obstacle": None},
-        "obstacles": {"level": "clear", "summary": "", "count": len(obstacles or []),
-                      "items": obstacles or []},
+        "notify": {
+            "speak": speak,
+            "cue_seq": cue,
+            "instruction": announced,
+            "level": "urgent" if urgent else "advisory",
+            "source": "simple-guidance",
+            "reason": "",
+            "quiet_reason": "" if speak else "nothing new to say",
+            "pi_voice": {
+                "enabled": True,
+                "audio_enabled": audio_enabled,
+                "running": device_voice_usable,
+                "usable": device_voice_usable,
+                "sink_usable": device_voice_usable,
+                "accepted_seq": accepted_seq,
+                "output": None,
+                "error": "",
+            },
+        },
+        "path": {
+            "instruction": instruction,
+            "front_ft": front_ft,
+            "action": "",
+            "rule": "",
+            "reason": "mock",
+            "turn_side": None,
+            "obstacle": None,
+        },
+        "obstacles": {
+            "level": "clear",
+            "summary": "",
+            "count": len(obstacles or []),
+            "items": obstacles or [],
+        },
         "loop": {"age_s": None if stale else age_s, "stale": stale},
     }
 
 
-def make_health(status: str = "ok", lidar: bool = True, radar: bool = True,
-                camera: bool = True, hailo: bool = True, warnings: Optional[List[str]] = None,
-                guiding: bool = True) -> Dict[str, Any]:
+def make_health(
+    status: str = "ok",
+    lidar: bool = True,
+    radar: bool = True,
+    camera: bool = True,
+    hailo: bool = True,
+    warnings: Optional[List[str]] = None,
+    guiding: bool = True,
+) -> Dict[str, Any]:
     """As main.health_check: `guiding` is the guidance LOOP ticking (it keeps ticking
     when the LiDAR is lost — it is what says "Guidance stopped, use your cane"); a lost LiDAR shows as
     status "down" with lidar_ok False."""
-    return {"status": status, "guiding": guiding,
-            "sensors": {"lidar_ok": lidar, "radar_ok": radar, "camera_ok": camera,
-                        "hailo_ok": hailo},
-            "radar_down": [] if radar else ["front", "left", "right", "back"],
-            "warnings": warnings or [],
-            "guidance_loop": {"running": True, "last_ok_age_s": 0.1, "error": ""},
-            "service": {}}
+    return {
+        "status": status,
+        "guiding": guiding,
+        "sensors": {
+            "lidar_ok": lidar,
+            "radar_ok": radar,
+            "camera_ok": camera,
+            "hailo_ok": hailo,
+        },
+        "radar_down": [] if radar else ["front", "left", "right", "back"],
+        "warnings": warnings or [],
+        "guidance_loop": {"running": True, "last_ok_age_s": 0.1, "error": ""},
+        "service": {},
+    }
 
 
 # Each step: (seconds into the scenario, what changes). "say" steps the cue.
 SCENARIOS: Dict[str, List[Dict[str, Any]]] = {
     "sidewalk": [
         {"at": 0.0, "now": "Walk straight", "say": "Walk straight", "front_ft": 30.0},
-        {"at": 4.0, "now": "Person ahead", "say": "Person ahead", "front_ft": 11.0,
-         "obstacles": [{"object": "person", "clock": 12, "sector": "front",
-                        "distance_ft": 11.0, "urgency": "clear", "source": "both"}]},
-        {"at": 8.0, "now": "Person in front, turn left", "say": "Person in front, turn left",
-         "urgent": True, "front_ft": 3.5,
-         "obstacles": [{"object": "person", "clock": 12, "sector": "front",
-                        "distance_ft": 3.5, "urgency": "warning", "source": "both"}]},
+        {
+            "at": 4.0,
+            "now": "Person ahead",
+            "say": "Person ahead",
+            "front_ft": 11.0,
+            "obstacles": [
+                {
+                    "object": "person",
+                    "clock": 12,
+                    "sector": "front",
+                    "distance_ft": 11.0,
+                    "urgency": "clear",
+                    "source": "both",
+                }
+            ],
+        },
+        {
+            "at": 8.0,
+            "now": "Person in front, turn left",
+            "say": "Person in front, turn left",
+            "urgent": True,
+            "front_ft": 3.5,
+            "obstacles": [
+                {
+                    "object": "person",
+                    "clock": 12,
+                    "sector": "front",
+                    "distance_ft": 3.5,
+                    "urgency": "warning",
+                    "source": "both",
+                }
+            ],
+        },
         {"at": 12.0, "now": "Walk straight", "say": "Walk straight", "front_ft": 25.0},
-        {"at": 16.0, "now": "Pole ahead, turn slightly right", "say": "Pole ahead, turn slightly right",
-         "front_ft": 8.0},
-        {"at": 20.0, "now": "Vehicle approaching, move right", "say": "Vehicle approaching, move right",
-         "urgent": True, "front_ft": 20.0},
+        {
+            "at": 16.0,
+            "now": "Pole ahead, turn slightly right",
+            "say": "Pole ahead, turn slightly right",
+            "front_ft": 8.0,
+        },
+        {
+            "at": 20.0,
+            "now": "Vehicle approaching, move right",
+            "say": "Vehicle approaching, move right",
+            "urgent": True,
+            "front_ft": 20.0,
+        },
         {"at": 24.0, "now": "Walk straight", "say": "Walk straight", "front_ft": 30.0},
     ],
     "glass_door": [
         {"at": 0.0, "now": "Walk straight", "say": "Walk straight", "front_ft": 14.0},
         {"at": 3.0, "now": "Glass ahead", "say": "Glass ahead", "front_ft": 9.0},
-        {"at": 6.0, "now": "Blocked by glass", "say": "Blocked by glass", "urgent": True,
-         "front_ft": 3.6},
-        {"at": 9.0, "now": "Turn right", "say": "Turn right", "urgent": True, "front_ft": 3.6},
+        {
+            "at": 6.0,
+            "now": "Blocked by glass",
+            "say": "Blocked by glass",
+            "urgent": True,
+            "front_ft": 3.6,
+        },
+        {
+            "at": 9.0,
+            "now": "Turn right",
+            "say": "Turn right",
+            "urgent": True,
+            "front_ft": 3.6,
+        },
         {"at": 13.0, "now": "Walk straight", "say": "Walk straight", "front_ft": 22.0},
     ],
     "sensor_failure": [
         {"at": 0.0, "now": "Walk straight", "say": "Walk straight", "front_ft": 20.0},
-        {"at": 4.0, "health": {"status": "degraded", "radar": False,
-                               "warnings": ["Radar offline — glass may not be detected"]},
-         "front_glass_ok": False},
+        {
+            "at": 4.0,
+            "health": {
+                "status": "degraded",
+                "radar": False,
+                "warnings": ["Radar offline — glass may not be detected"],
+            },
+            "front_glass_ok": False,
+        },
         {"at": 7.0, "now": "Walk straight", "say": "Glass sensor off"},
-        {"at": 11.0, "health": {"status": "down", "lidar": False, "radar": False,
-                                "warnings": ["LiDAR signal lost — rely on your cane"]},
-         "now": "Guidance stopped, use your cane", "say": "Guidance stopped, use your cane"},
-        {"at": 17.0, "health": {"status": "ok"}, "front_glass_ok": True,
-         "now": "Walk straight", "say": "Walk straight", "front_ft": 20.0},
+        {
+            "at": 11.0,
+            "health": {
+                "status": "down",
+                "lidar": False,
+                "radar": False,
+                "warnings": ["LiDAR signal lost — rely on your cane"],
+            },
+            "now": "Guidance stopped, use your cane",
+            "say": "Guidance stopped, use your cane",
+        },
+        {
+            "at": 17.0,
+            "health": {"status": "ok"},
+            "front_glass_ok": True,
+            "now": "Walk straight",
+            "say": "Walk straight",
+            "front_ft": 20.0,
+        },
     ],
     "service_crash": [
         {"at": 0.0, "now": "Walk straight", "say": "Walk straight", "front_ft": 20.0},
         {"at": 4.0, "unreachable": "connection refused"},
-        {"at": 10.0, "restart": True, "now": "", "health": {"status": "down", "lidar": False}},
-        {"at": 13.0, "health": {"status": "ok"}, "now": "Walk straight", "say": "Walk straight",
-         "front_ft": 20.0},
+        {
+            "at": 10.0,
+            "restart": True,
+            "now": "",
+            "health": {"status": "down", "lidar": False},
+        },
+        {
+            "at": 13.0,
+            "health": {"status": "ok"},
+            "now": "Walk straight",
+            "say": "Walk straight",
+            "front_ft": 20.0,
+        },
     ],
     "thermal": [
         {"at": 0.0, "now": "Walk straight", "say": "Walk straight", "front_ft": 20.0},
@@ -171,16 +301,24 @@ SCENARIOS: Dict[str, List[Dict[str, Any]]] = {
 class MockSource:
     """Replays a scripted scenario on a loop, with the same methods as HttpSource."""
 
-    def __init__(self, scenario: str = "sidewalk", clock=time.monotonic,
-                 audio_enabled: bool = True, device_voice: bool = False, loop_s: float = 30.0):
+    def __init__(
+        self,
+        scenario: str = "sidewalk",
+        clock=time.monotonic,
+        audio_enabled: bool = True,
+        device_voice: bool = False,
+        loop_s: float = 30.0,
+    ):
         if scenario not in SCENARIOS:
-            raise ValueError(f"unknown scenario {scenario!r}; one of {', '.join(SCENARIOS)}")
+            raise ValueError(
+                f"unknown scenario {scenario!r}; one of {', '.join(SCENARIOS)}"
+            )
         self.steps = SCENARIOS[scenario]
         self.clock = clock
         self.audio_enabled, self.device_voice = audio_enabled, device_voice
         self.loop_s = max(loop_s, self.steps[-1]["at"] + 4.0)
         self.t0 = clock()
-        self.cue = 7                 # an arbitrary start: the bridge must only learn it
+        self.cue = 7  # an arbitrary start: the bridge must only learn it
         self._applied = -1
         self._cycle = -1
         self._said_at = -1e9
@@ -206,7 +344,7 @@ class MockSource:
             self._applied = i
             self.unreachable = step.get("unreachable", "")
             if step.get("restart"):
-                self.cue = 0                     # a restarted service counts from zero
+                self.cue = 0  # a restarted service counts from zero
             if "health" in step:
                 self.health_kw = dict(step["health"])
             if "front_glass_ok" in step:
@@ -229,13 +367,19 @@ class MockSource:
 
     def walk(self) -> Dict[str, Any]:
         self._check()
-        speaking = self.clock() - self._said_at < 0.25     # the admitting tick, roughly
-        return make_walk(self.cue, self.now_text, self.announced, speak=speaking,
-                         urgent=self.urgent, front_ft=self.front_ft,
-                         audio_enabled=self.audio_enabled,
-                         device_voice_usable=self.device_voice,
-                         accepted_seq=self.cue if self.device_voice else None,
-                         obstacles=self.obstacles)
+        speaking = self.clock() - self._said_at < 0.25  # the admitting tick, roughly
+        return make_walk(
+            self.cue,
+            self.now_text,
+            self.announced,
+            speak=speaking,
+            urgent=self.urgent,
+            front_ft=self.front_ft,
+            audio_enabled=self.audio_enabled,
+            device_voice_usable=self.device_voice,
+            accepted_seq=self.cue if self.device_voice else None,
+            obstacles=self.obstacles,
+        )
 
     def health(self) -> Dict[str, Any]:
         self._check()
@@ -250,10 +394,19 @@ class MockSource:
 
     def speech_log(self, limit: int) -> Dict[str, Any]:
         self._check()
-        return {"lines": [{"time": time.strftime("%H:%M:%S"), "source": "simple-guidance",
-                           "level": "urgent" if self.urgent else "advisory",
-                           "text": self.announced, "cue_seq": self.cue, "via": "none",
-                           "outcome": "muted"}][-limit:]}
+        return {
+            "lines": [
+                {
+                    "time": time.strftime("%H:%M:%S"),
+                    "source": "simple-guidance",
+                    "level": "urgent" if self.urgent else "advisory",
+                    "text": self.announced,
+                    "cue_seq": self.cue,
+                    "via": "none",
+                    "outcome": "muted",
+                }
+            ][-limit:]
+        }
 
     def mark(self, kind: str, note: str) -> Dict[str, Any]:
         self._check()

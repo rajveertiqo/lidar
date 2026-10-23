@@ -16,8 +16,14 @@ _THERMAL_ZONE = "/sys/class/thermal/thermal_zone0/temp"
 UV_NOW, CAPPED_NOW, THROTTLED_NOW, SOFT_TEMP_NOW = 1 << 0, 1 << 1, 1 << 2, 1 << 3
 
 _lock = threading.Lock()
-_state: Dict[str, Any] = {"soc_c": None, "throttled": None, "power_low": False,
-                          "hot": False, "readable": False, "checked_mono": None}
+_state: Dict[str, Any] = {
+    "soc_c": None,
+    "throttled": None,
+    "power_low": False,
+    "hot": False,
+    "readable": False,
+    "checked_mono": None,
+}
 _uv_at: Optional[float] = None
 _thread: Optional[threading.Thread] = None
 
@@ -32,15 +38,17 @@ def _read_soc() -> Optional[float]:
 
 def _read_throttled() -> Optional[int]:
     try:
-        out = subprocess.run(["vcgencmd", "get_throttled"], capture_output=True,
-                             text=True, timeout=2).stdout
+        out = subprocess.run(
+            ["vcgencmd", "get_throttled"], capture_output=True, text=True, timeout=2
+        ).stdout
         return int(out.strip().split("=", 1)[1], 16)
     except Exception:
         return None
 
 
-def poll_once(mono: Optional[float] = None, soc: Any = False,
-              throttled: Any = False) -> Dict[str, Any]:
+def poll_once(
+    mono: Optional[float] = None, soc: Any = False, throttled: Any = False
+) -> Dict[str, Any]:
     """Read both sources once (or take `soc` / `throttled` as given, for tests) and update the state."""
     global _uv_at
     mono = time.monotonic() if mono is None else mono
@@ -49,21 +57,29 @@ def poll_once(mono: Optional[float] = None, soc: Any = False,
     with _lock:
         if throttled is not None and throttled & UV_NOW:
             _uv_at = mono
-        power_low = _uv_at is not None and 0.0 <= mono - _uv_at <= PI_UNDERVOLTAGE_HOLD_S
+        power_low = (
+            _uv_at is not None and 0.0 <= mono - _uv_at <= PI_UNDERVOLTAGE_HOLD_S
+        )
         # Capped / throttled are set by under-voltage as well as by heat (0x50005 is the
         # classic weak supply): they mean heat only while the supply is fine. The soft
         # temperature limit is heat alone.
         thr = throttled or 0
         thermal = bool(thr & SOFT_TEMP_NOW) or (
-            bool(thr & (CAPPED_NOW | THROTTLED_NOW)) and not power_low)
+            bool(thr & (CAPPED_NOW | THROTTLED_NOW)) and not power_low
+        )
         hot = _state["hot"]
         if thermal or (soc is not None and soc >= PI_HOT_C):
             hot = True
         elif soc is None or soc < PI_HOT_CLEAR_C:
             hot = False
-        _state.update(soc_c=soc, throttled=throttled, power_low=power_low, hot=hot,
-                      readable=soc is not None or throttled is not None,
-                      checked_mono=mono)
+        _state.update(
+            soc_c=soc,
+            throttled=throttled,
+            power_low=power_low,
+            hot=hot,
+            readable=soc is not None or throttled is not None,
+            checked_mono=mono,
+        )
         return dict(_state)
 
 

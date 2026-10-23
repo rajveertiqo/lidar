@@ -9,8 +9,12 @@ import urllib.request
 
 OK, WARN, FAIL, NA = "OK", "WARN", "FAIL", "--"
 
-_MARK = {OK: "\033[0;32m  OK  \033[0m", WARN: "\033[1;33m WARN \033[0m",
-         FAIL: "\033[0;31m FAIL \033[0m", NA: "\033[0;90m  --  \033[0m"}
+_MARK = {
+    OK: "\033[0;32m  OK  \033[0m",
+    WARN: "\033[1;33m WARN \033[0m",
+    FAIL: "\033[0;31m FAIL \033[0m",
+    NA: "\033[0;90m  --  \033[0m",
+}
 
 MM_PER_FT = 304.8
 
@@ -48,8 +52,13 @@ def checks(a, b, dt, guidance, radar, fused=None):
     out = []
 
     if not a.get("available"):
-        out.append((FAIL, "grid available",
-                    a.get("error") or "BEV_ENABLED is False in config.py"))
+        out.append(
+            (
+                FAIL,
+                "grid available",
+                a.get("error") or "BEV_ENABLED is False in config.py",
+            )
+        )
         return out
     out.append((OK, "grid available", "module loaded, OpenCV present"))
 
@@ -57,26 +66,46 @@ def checks(a, b, dt, guidance, radar, fused=None):
     fa, fb = a.get("frames") or 0, b.get("frames") or 0
     rate = (fb - fa) / dt if dt else 0.0
     if fb == 0:
-        out.append((FAIL, "scans arriving",
-                    "no scan has ever reached the grid — is the LiDAR on "
-                    "/dev/ttyUSB0 and the scanner thread running?"))
+        out.append(
+            (
+                FAIL,
+                "scans arriving",
+                "no scan has ever reached the grid — is the LiDAR on "
+                "/dev/ttyUSB0 and the scanner thread running?",
+            )
+        )
     elif fb == fa:
-        out.append((FAIL, "scans arriving",
-                    f"frame count frozen at {fb} — the grid is serving a stale "
-                    f"snapshot. Check the LiDAR analysis thread"))
+        out.append(
+            (
+                FAIL,
+                "scans arriving",
+                f"frame count frozen at {fb} — the grid is serving a stale "
+                f"snapshot. Check the LiDAR analysis thread",
+            )
+        )
     elif rate < 8.0:
-        out.append((WARN, "scans arriving",
-                    f"{rate:.1f} Hz — the A2M12 should feed ~15 Hz at 900 RPM. "
-                    f"Accumulation is thinner than designed"))
+        out.append(
+            (
+                WARN,
+                "scans arriving",
+                f"{rate:.1f} Hz — the A2M12 should feed ~15 Hz at 900 RPM. "
+                f"Accumulation is thinner than designed",
+            )
+        )
     else:
         out.append((OK, "scans arriving", f"{rate:.1f} Hz, {fb} frames total"))
 
     if b.get("registered"):
         out.append((OK, "registration", "ego-motion applied, scans accumulating"))
     else:
-        out.append((WARN, "registration",
-                    f"resetting each frame ({b.get('reset_reason') or 'unknown'})"
-                    f" — degraded to single-sweep. Safe, but no accumulation"))
+        out.append(
+            (
+                WARN,
+                "registration",
+                f"resetting each frame ({b.get('reset_reason') or 'unknown'})"
+                f" — degraded to single-sweep. Safe, but no accumulation",
+            )
+        )
 
     # ---- is extraction fresh and affordable? ----
     age = time.time() - (b.get("last_update") or 0)
@@ -86,27 +115,51 @@ def checks(a, b, dt, guidance, radar, fused=None):
     elif ms is None:
         out.append((WARN, "extraction", "no timing reported"))
     elif ms > 20.0:
-        out.append((WARN, "extraction",
-                    f"{ms:.1f} ms — shares a thread with the STOP decision's "
-                    f"inputs; consider raising BEV_CELL_MM"))
+        out.append(
+            (
+                WARN,
+                "extraction",
+                f"{ms:.1f} ms — shares a thread with the STOP decision's "
+                f"inputs; consider raising BEV_CELL_MM",
+            )
+        )
     else:
-        out.append((OK, "extraction", f"{ms:.1f} ms, {age:.1f} s ago, "
-                                      f"{b.get('cells_occupied', 0)} cells occupied"))
+        out.append(
+            (
+                OK,
+                "extraction",
+                f"{ms:.1f} ms, {age:.1f} s ago, "
+                f"{b.get('cells_occupied', 0)} cells occupied",
+            )
+        )
 
-    secs = ((radar or {}).get("sectors") or {})
-    live = [d for d in ("front", "right", "back", "left")
-            if (secs.get(d) or {}).get("online")]
+    secs = (radar or {}).get("sectors") or {}
+    live = [
+        d
+        for d in ("front", "right", "back", "left")
+        if (secs.get(d) or {}).get("online")
+    ]
     if not radar:
         out.append((WARN, "glass detection", "/radar/state unavailable"))
     elif not live:
-        out.append((FAIL, "glass detection",
-                    "NO radar direction online — glass is UNDETECTABLE. This is "
-                    "the grid's main reason to exist; see start_lidar.sh's radar "
-                    "check"))
+        out.append(
+            (
+                FAIL,
+                "glass detection",
+                "NO radar direction online — glass is UNDETECTABLE. This is "
+                "the grid's main reason to exist; see start_lidar.sh's radar "
+                "check",
+            )
+        )
     elif len(live) < 4:
-        out.append((WARN, "glass detection",
-                    f"only {'/'.join(live)} online — glass is undetectable on "
-                    f"the other arcs"))
+        out.append(
+            (
+                WARN,
+                "glass detection",
+                f"only {'/'.join(live)} online — glass is undetectable on "
+                f"the other arcs",
+            )
+        )
     else:
         out.append((OK, "glass detection", "all four directions live"))
 
@@ -116,41 +169,72 @@ def checks(a, b, dt, guidance, radar, fused=None):
     for o in objs:
         kinds[o["kind"]] = kinds.get(o["kind"], 0) + 1
     if not objs:
-        out.append((WARN, "shapes resolving",
-                    "no clusters — point the rig at a wall 1-3 m away"))
+        out.append(
+            (
+                WARN,
+                "shapes resolving",
+                "no clusters — point the rig at a wall 1-3 m away",
+            )
+        )
     else:
         named = kinds.get("wall", 0) + kinds.get("pole", 0)
         detail = ", ".join(f"{n} {k}" for k, n in sorted(kinds.items()))
-        out.append((OK if named else WARN, "shapes resolving",
-                    detail + ("" if named else
-                              "  (nothing resolved as wall/post — those are the "
-                              "two that reach the hazard list)")))
+        out.append(
+            (
+                OK if named else WARN,
+                "shapes resolving",
+                detail
+                + (
+                    ""
+                    if named
+                    else "  (nothing resolved as wall/post — those are the "
+                    "two that reach the hazard list)"
+                ),
+            )
+        )
 
     # ---- is any of it REACHING guidance? ----
     if not guidance:
         out.append((NA, "shape -> hazards", "/guidance/walk unavailable"))
         return out
 
-    items = ((fused or {}).get("hazards")
-             or (guidance.get("obstacles") or {}).get("items") or [])
+    items = (
+        (fused or {}).get("hazards")
+        or (guidance.get("obstacles") or {}).get("items")
+        or []
+    )
     shaped = [i for i in items if i.get("shape")]
     promotable = kinds.get("wall", 0) + kinds.get("pole", 0)
     if not items:
         out.append((NA, "shape -> hazards", "no hazards in range to carry a shape"))
     elif shaped:
-        out.append((OK, "shape -> hazards",
-                    f"{len(shaped)} of {len(items)} hazards carry a shape "
-                    f"({', '.join(sorted({i['shape'] for i in shaped}))})"))
+        out.append(
+            (
+                OK,
+                "shape -> hazards",
+                f"{len(shaped)} of {len(items)} hazards carry a shape "
+                f"({', '.join(sorted({i['shape'] for i in shaped}))})",
+            )
+        )
     elif not promotable:
-        out.append((NA, "shape -> hazards",
-                    "nothing in view is wall- or post-shaped; only those two "
-                    "are promoted"))
+        out.append(
+            (
+                NA,
+                "shape -> hazards",
+                "nothing in view is wall- or post-shaped; only those two are promoted",
+            )
+        )
     else:
-        out.append((WARN, "shape -> hazards",
-                    f"{promotable} wall/post cluster(s) resolved but none of the "
-                    f"{len(items)} hazards matched one — they sit outside "
-                    f"BEV_SHAPE_MATCH_DEG/_MM of any sector minimum, or the "
-                    f"sector did not cluster-confirm a return there"))
+        out.append(
+            (
+                WARN,
+                "shape -> hazards",
+                f"{promotable} wall/post cluster(s) resolved but none of the "
+                f"{len(items)} hazards matched one — they sit outside "
+                f"BEV_SHAPE_MATCH_DEG/_MM of any sector minimum, or the "
+                f"sector did not cluster-confirm a return there",
+            )
+        )
 
     return out
 
@@ -169,19 +253,27 @@ def render(a, b, dt, extra, base):
         lines.append("  (nothing resolved)")
     for o in objs:
         tag = "  <- GLASS, radar only" if o.get("radar_confirmed") else ""
-        lines.append(f"  {o['kind']:<9} {o['range_ft']:>5.1f} ft  "
-                     f"{o['clock']:>2} o'clock  {o['length_mm'] / 1000:.1f} m long{tag}")
+        lines.append(
+            f"  {o['kind']:<9} {o['range_ft']:>5.1f} ft  "
+            f"{o['clock']:>2} o'clock  {o['length_mm'] / 1000:.1f} m long{tag}"
+        )
     for g in (b.get("gaps") or [])[:3]:
-        lines.append(f"  {'opening':<9} {g['range_ft']:>5.1f} ft  "
-                     f"{g['clock']:>2} o'clock  {g['width_ft']:.1f} ft wide")
+        lines.append(
+            f"  {'opening':<9} {g['range_ft']:>5.1f} ft  "
+            f"{g['clock']:>2} o'clock  {g['width_ft']:.1f} ft wide"
+        )
     for w in (b.get("unknown_wedges") or [])[:3]:
-        lines.append(f"  {'blind arc':<9} {'—':>5}     "
-                     f"{w['centre_deg']:>3.0f}°       {w['width_deg']:.0f}° wide")
+        lines.append(
+            f"  {'blind arc':<9} {'—':>5}     "
+            f"{w['centre_deg']:>3.0f}°       {w['width_deg']:.0f}° wide"
+        )
 
-    lines += ["",
-              "  Top-down picture:  " + base + "/lidar/bev/image?scale=2",
-              "  Raw extraction:    " + base + "/lidar/bev",
-              "  Plain sentences:   " + base + "/lidar/bev/summary"]
+    lines += [
+        "",
+        "  Top-down picture:  " + base + "/lidar/bev/image?scale=2",
+        "  Raw extraction:    " + base + "/lidar/bev",
+        "  Plain sentences:   " + base + "/lidar/bev/summary",
+    ]
     return "\n".join(lines)
 
 
@@ -242,14 +334,16 @@ Each is written as: what to do -> what proves it worked.
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--host", default="localhost")
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--watch", action="store_true", help="redraw until Ctrl+C")
     ap.add_argument("--interval", type=float, default=2.0)
-    ap.add_argument("--checklist", action="store_true",
-                    help="print the physical tests and exit")
+    ap.add_argument(
+        "--checklist", action="store_true", help="print the physical tests and exit"
+    )
     args = ap.parse_args()
 
     if args.checklist:
@@ -261,17 +355,21 @@ def main() -> int:
         while True:
             a, b, dt, extra, err = collect(base)
             if a is None:
-                print(f"BEV grid check — {base}\n\n  [{_MARK[FAIL]}] endpoint"
-                      f"          {err}\n\n  Is the server running? "
-                      f"./start_lidar.sh")
+                print(
+                    f"BEV grid check — {base}\n\n  [{_MARK[FAIL]}] endpoint"
+                    f"          {err}\n\n  Is the server running? "
+                    f"./start_lidar.sh"
+                )
                 if not args.watch:
                     return 1
             else:
                 out = render(a, b, dt, extra, base)
                 print("\033[2J\033[H" + out if args.watch else out)
             if not args.watch:
-                bad = any(s == FAIL for s, _, _ in
-                          checks(a, b, dt, *(extra or (None, None, None))))
+                bad = any(
+                    s == FAIL
+                    for s, _, _ in checks(a, b, dt, *(extra or (None, None, None)))
+                )
                 return 1 if bad else 0
             time.sleep(max(0.5, args.interval - 1.0))
     except KeyboardInterrupt:

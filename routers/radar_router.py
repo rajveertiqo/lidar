@@ -10,21 +10,47 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 import config as _config
 from config import (
-    GUIDANCE_AWARE_MM, GUIDANCE_DANGER_MM, GUIDANCE_SAFE_MM, GUIDANCE_WARNING_MM,
-    RADAR_AGREE_MM, RADAR_BAUDRATE, RADAR_ENABLED, RADAR_END_MM,
-    RADAR_GLASS_GAP_MM, RADAR_MAX_LAG_S,
-    RADAR_BEAM_H_DEG, RADAR_BEARING_OFFSET_DEG, RADAR_BEARING_STEP_DEG,
-    RADAR_PORT_EXCLUDE, RADAR_PRIORITY,
-    RADAR_PROFILE, RADAR_SECTORS,
-    RADAR_STALE_S, RADAR_START_MM, RADAR_UPDATE_RATE, radar_board_key,
-    radar_sector_label, radar_sector_start,
+    GUIDANCE_AWARE_MM,
+    GUIDANCE_DANGER_MM,
+    GUIDANCE_SAFE_MM,
+    GUIDANCE_WARNING_MM,
+    RADAR_AGREE_MM,
+    RADAR_BAUDRATE,
+    RADAR_ENABLED,
+    RADAR_END_MM,
+    RADAR_GLASS_GAP_MM,
+    RADAR_MAX_LAG_S,
+    RADAR_BEAM_H_DEG,
+    RADAR_BEARING_OFFSET_DEG,
+    RADAR_BEARING_STEP_DEG,
+    RADAR_PORT_EXCLUDE,
+    RADAR_PRIORITY,
+    RADAR_PROFILE,
+    RADAR_SECTORS,
+    RADAR_STALE_S,
+    RADAR_START_MM,
+    RADAR_UPDATE_RATE,
+    radar_board_key,
+    radar_sector_label,
+    radar_sector_start,
 )
 from utils.radar_calibration import (
-    CalibrationRejected, CalibrationSaveError,
-    board_keys, cardinal_sources, get_bearings, ring_slots, status, validate_request,
+    CalibrationRejected,
+    CalibrationSaveError,
+    board_keys,
+    cardinal_sources,
+    get_bearings,
+    ring_slots,
+    status,
+    validate_request,
 )
 from utils.access import require_admin
-from utils.radar_utils import apply_calibration, discovery_info, restart_radar, restart_status
+from utils.radar_utils import (
+    apply_calibration,
+    discovery_info,
+    restart_radar,
+    restart_status,
+)
 from utils.walk_policy import _mm_to_ft
 from utils.sensor_fusion import build_hazards
 from utils.shared_state import get_camera_state, get_lidar_state, get_radar_state
@@ -61,7 +87,9 @@ async def radar_map():
             "lag_s": sec.get("lag_s"),
             "age_s": round(age, 2) if age is not None else None,
             "ft": _mm_to_ft(sec.get("min_dist")),
-            "peaks_ft": [f for f in (_mm_to_ft(x) for x in (sec.get("peaks_mm") or [])) if f],
+            "peaks_ft": [
+                f for f in (_mm_to_ft(x) for x in (sec.get("peaks_mm") or [])) if f
+            ],
             "error": sec.get("error"),
         }
         if b.get("bearing") is None:
@@ -70,16 +98,29 @@ async def radar_map():
         else:
             placed[float(b["bearing"])] = row
 
-    slots = [{"bearing": b, "key": radar_board_key(b),
-              "sector": radar_sector_start(b), "sector_label": radar_sector_label(b),
-              "board": placed.get(b)}
-             for b in ring_slots()]
+    slots = [
+        {
+            "bearing": b,
+            "key": radar_board_key(b),
+            "sector": radar_sector_start(b),
+            "sector_label": radar_sector_label(b),
+            "board": placed.get(b),
+        }
+        for b in ring_slots()
+    ]
     known = {s["bearing"] for s in slots}
     # A board measured OFF the intended grid still gets its own wedge.
-    slots += [{"bearing": bg, "key": r["key"],
-               "sector": radar_sector_start(bg), "sector_label": radar_sector_label(bg),
-               "board": r}
-              for bg, r in placed.items() if bg not in known]
+    slots += [
+        {
+            "bearing": bg,
+            "key": r["key"],
+            "sector": radar_sector_start(bg),
+            "sector_label": radar_sector_label(bg),
+            "board": r,
+        }
+        for bg, r in placed.items()
+        if bg not in known
+    ]
     slots.sort(key=lambda s: s["bearing"])
 
     srcs = cardinal_sources()
@@ -96,8 +137,11 @@ async def radar_map():
     restart = restart_status()
     blind = [c for c in RADAR_SECTORS if not cardinals[c]["online"]]
     restart["directions_without_radar"] = blind if restart["in_progress"] else []
-    restart["age_s"] = (round(now - restart["since"], 1)
-                        if restart["in_progress"] and restart["since"] else None)
+    restart["age_s"] = (
+        round(now - restart["since"], 1)
+        if restart["in_progress"] and restart["since"]
+        else None
+    )
 
     return {
         "enabled": RADAR_ENABLED,
@@ -174,12 +218,18 @@ async def calibrate(request: Request):
     """Record measured bearings and make them take effect -- live if it can."""
     raw = await _read_body(request, _CALIBRATE_MAX_BODY_BYTES)
     if raw is None:
-        return _refuse(f"request body larger than {_CALIBRATE_MAX_BODY_BYTES} bytes", 413)
+        return _refuse(
+            f"request body larger than {_CALIBRATE_MAX_BODY_BYTES} bytes", 413
+        )
     try:
-        payload = json.loads(raw, object_pairs_hook=_refuse_duplicate_keys) if raw else None
+        payload = (
+            json.loads(raw, object_pairs_hook=_refuse_duplicate_keys) if raw else None
+        )
     except _DuplicateKey as exc:
-        return _refuse(f"duplicate key {str(exc.args[0])[:64]!r} in the request — "
-                       f"send each board once; nothing was recorded")
+        return _refuse(
+            f"duplicate key {str(exc.args[0])[:64]!r} in the request — "
+            f"send each board once; nothing was recorded"
+        )
     except (ValueError, RecursionError):
         return _refuse("request body is not valid JSON")
     if not isinstance(payload, dict):
@@ -188,8 +238,9 @@ async def calibrate(request: Request):
     discovered = [e.get("serial") for e in discovery_info().get("found") or []]
     connected = [b.get("serial") for b in get_radar_state().get("boards") or []]
     try:
-        clean = validate_request(payload.get("bearings"),
-                                 discovered=discovered, connected=connected)
+        clean = validate_request(
+            payload.get("bearings"), discovered=discovered, connected=connected
+        )
     except CalibrationRejected as exc:
         return _refuse(str(exc))
 
@@ -197,7 +248,7 @@ async def calibrate(request: Request):
         result = await run_in_threadpool(apply_calibration, clean)
     except CalibrationSaveError as exc:
         return _refuse(str(exc), 500)
-    except ValueError as exc:                       # two boards on one slot
+    except ValueError as exc:  # two boards on one slot
         return _refuse(str(exc))
 
     bearings = result["bearings"]
@@ -224,6 +275,7 @@ async def calibrate(request: Request):
 async def radar_movers():
     """Echoes closing in by themselves, and the one only the radar hears coming at the user (utils/radar_movers)."""
     from utils.radar_movers import get_radar_movers
+
     return get_radar_movers().snapshot()
 
 
@@ -293,8 +345,10 @@ async def boards():
         "expected": len(get_bearings()),
         "missing": snap.get("missing", []),
         "unverified": [b["serial"] for b in found if b.get("provisional")],
-        "refused": _refused_boards(discovery_info().get("found") or [],
-                                   streaming={b.get("serial") for b in found}),
+        "refused": _refused_boards(
+            discovery_info().get("found") or [],
+            streaming={b.get("serial") for b in found},
+        ),
     }
 
 
@@ -306,6 +360,7 @@ def comparison():
     hazards = {h["sector"]: h for h in build_hazards(lidar, get_camera_state(), radar)}
 
     from utils.sensor_fusion import lidar_is_fresh
+
     lidar_age = time.time() - (lidar.get("last_update") or 0)
     lidar_stale = not lidar_is_fresh(lidar)
 
@@ -315,20 +370,24 @@ def comparison():
         radar_sec = radar.get("sectors", {}).get(sector) or {}
         hazard = hazards.get(sector)
         online = bool(radar_sec.get("online"))
-        rows.append({
-            "sector": sector,
-            "lidar_mm": None if lidar_stale else lidar_sec.get("min_dist"),
-            "radar_mm": radar_sec.get("min_dist"),
-            "radar_online": online,
-            "radar_stale": bool(radar_sec.get("stale")),
-            "radar_degraded": bool(radar_sec.get("degraded")),
-            "radar_lag_s": radar_sec.get("lag_s"),
-            "fused_mm": hazard["distance_mm"] if hazard else None,
-            "range_source": hazard["range_source"] if hazard else None,
-            "glass_suspected": (
-                bool(hazard["glass_suspected"]) if hazard and not lidar_stale else False
-            ),
-        })
+        rows.append(
+            {
+                "sector": sector,
+                "lidar_mm": None if lidar_stale else lidar_sec.get("min_dist"),
+                "radar_mm": radar_sec.get("min_dist"),
+                "radar_online": online,
+                "radar_stale": bool(radar_sec.get("stale")),
+                "radar_degraded": bool(radar_sec.get("degraded")),
+                "radar_lag_s": radar_sec.get("lag_s"),
+                "fused_mm": hazard["distance_mm"] if hazard else None,
+                "range_source": hazard["range_source"] if hazard else None,
+                "glass_suspected": (
+                    bool(hazard["glass_suspected"])
+                    if hazard and not lidar_stale
+                    else False
+                ),
+            }
+        )
     return {
         "comparison": rows,
         "enabled": RADAR_ENABLED,
@@ -342,13 +401,23 @@ def comparison():
 def _refused_boards(discovered, streaming):
     """Discovered boards that are not streaming, each with the reason."""
     return [
-        {"serial": e.get("serial"), "device": e.get("device"),
-         "hub_port": e.get("hub_port"), "usb_path": e.get("usb_path"),
-         "rss_version": e.get("rss"), "online": False, "phase": "refused",
-         "reason": (e.get("refused")
-                    or "bearing not measured — calibrate it before it can be used"),
-         "reconnects": 0, "peaks_mm": []}
-        for e in discovered if e.get("serial") not in streaming
+        {
+            "serial": e.get("serial"),
+            "device": e.get("device"),
+            "hub_port": e.get("hub_port"),
+            "usb_path": e.get("usb_path"),
+            "rss_version": e.get("rss"),
+            "online": False,
+            "phase": "refused",
+            "reason": (
+                e.get("refused")
+                or "bearing not measured — calibrate it before it can be used"
+            ),
+            "reconnects": 0,
+            "peaks_mm": [],
+        }
+        for e in discovered
+        if e.get("serial") not in streaming
     ]
 
 
@@ -375,7 +444,7 @@ def _board_rows():
             "phase": sec.get("phase"),
             "online": bool(sec.get("online")),
             "degraded": bool(sec.get("degraded")),
-            "stale": bool(sec.get("stale")),        # the row's own verdict: see /map
+            "stale": bool(sec.get("stale")),  # the row's own verdict: see /map
             "mm": sec.get("min_dist"),
             "ft": _mm_to_ft(sec.get("min_dist")),
             "peaks_mm": list(sec.get("peaks_mm") or []),
@@ -424,11 +493,18 @@ async def diagnostics():
             "excluded_ports": list(RADAR_PORT_EXCLUDE),
         },
         "layout": {
-            "positions": placed,            # serial -> measured bearing
-            "ring": list(ring_slots()),     # the intended mount
+            "positions": placed,  # serial -> measured bearing
+            "ring": list(ring_slots()),  # the intended mount
             # `centre` equals `start` here — see the convention note above.
-            "sectors": [{"start": b, "centre": b, "key": radar_board_key(b),
-                         "label": f"{b:.0f}\u00b0"} for b in ring_slots()],
+            "sectors": [
+                {
+                    "start": b,
+                    "centre": b,
+                    "key": radar_board_key(b),
+                    "label": f"{b:.0f}\u00b0",
+                }
+                for b in ring_slots()
+            ],
             "unmeasured": [s for s, b in bearings.items() if b is None],
         },
         "cardinal_sources": {k: list(v) for k, v in cardinal_sources().items()},
@@ -449,12 +525,16 @@ async def radar_health():
     unmeasured = [s for s, b in get_bearings().items() if b is None]
 
     sectors = snap.get("sectors", {}) or {}
-    blind = sorted(c for c in RADAR_SECTORS
-                   if not (sectors.get(c) or {}).get("online"))
+    blind = sorted(c for c in RADAR_SECTORS if not (sectors.get(c) or {}).get("online"))
 
     return {
-        "ok": bool(RADAR_ENABLED and found and len(live) == len(found)
-                   and not lagging and not blind),
+        "ok": bool(
+            RADAR_ENABLED
+            and found
+            and len(live) == len(found)
+            and not lagging
+            and not blind
+        ),
         "enabled": RADAR_ENABLED,
         "discovered": len(found),
         "streaming": len(live),

@@ -51,7 +51,8 @@ async def lifespan(app: FastAPI):
     start_scanner(loop)
     start_radar()
     from utils.tof_camera import start_tof
-    start_tof()                       # only with TOF_ENABLED (the depth camera)
+
+    start_tof()  # only with TOF_ENABLED (the depth camera)
 
     from utils import pi_voice, service, test_console
 
@@ -75,7 +76,9 @@ async def lifespan(app: FastAPI):
     print(
         f"📝 Speech log: http://{lan_ip}:{SERVER_PORT}/guidance/log/text   (and logs/speech_*.log)"
     )
-    print(f"🗺  Live map:   http://{lan_ip}:{SERVER_PORT}/map   (3D test page, display only)")
+    print(
+        f"🗺  Live map:   http://{lan_ip}:{SERVER_PORT}/map   (3D test page, display only)"
+    )
     print("⏹  Ctrl+C to stop")
     if not ADMIN_TOKEN:
         print(
@@ -84,9 +87,12 @@ async def lifespan(app: FastAPI):
             "the service set one)"
         )
     from config import AUDIO_ENABLED
+
     if not AUDIO_ENABLED:
-        print("⚠  AUDIO_ENABLED is False in config.py: NOTHING will be spoken, on the Pi "
-              "or the phone. Bench use only — never with a wearer.")
+        print(
+            "⚠  AUDIO_ENABLED is False in config.py: NOTHING will be spoken, on the Pi "
+            "or the phone. Bench use only — never with a wearer."
+        )
 
     yield
 
@@ -98,6 +104,7 @@ async def lifespan(app: FastAPI):
     stop_scanner_thread()
     stop_radar()
     from utils.tof_camera import stop_tof
+
     stop_tof()
     stop_gyro()
     print("👋 Application shutdown complete")
@@ -116,9 +123,16 @@ async def _invalid_request(request, exc):
     """422 without echoing the input back: FastAPI's own reply copies the whole body into
     the error, and a deeply nested one overflowed the encoder (a 500 and a log line the size
     of the body, fuzz test 2026-10-22)."""
-    detail = [{"type": e.get("type"), "loc": [str(p) for p in e.get("loc", ())][:8],
-               "msg": str(e.get("msg", ""))[:200]} for e in exc.errors()[:20]]
+    detail = [
+        {
+            "type": e.get("type"),
+            "loc": [str(p) for p in e.get("loc", ())][:8],
+            "msg": str(e.get("msg", ""))[:200],
+        }
+        for e in exc.errors()[:20]
+    ]
     return JSONResponse({"detail": detail}, status_code=422)
+
 
 _NO_FRAMING = {
     "X-Frame-Options": "DENY",
@@ -238,18 +252,27 @@ def health_check():
     warnings = list(sensors.get("warnings", []))
     system = pi_health.read()
     if system.get("power_low"):
-        warnings.append("Under-voltage: the battery or power supply is failing — the device "
-                        "may switch off")
+        warnings.append(
+            "Under-voltage: the battery or power supply is failing — the device "
+            "may switch off"
+        )
     if system.get("hot"):
         soc = system.get("soc_c")
-        warnings.append("The Pi is overheating" + (f" ({soc:.0f} C)" if soc is not None else "")
-                        + " or throttling — guidance may slow down")
+        warnings.append(
+            "The Pi is overheating"
+            + (f" ({soc:.0f} C)" if soc is not None else "")
+            + " or throttling — guidance may slow down"
+        )
     if not voice.get("audio_enabled"):
-        warnings.append("Audio is switched off in config (AUDIO_ENABLED) — nothing is "
-                        "spoken, on the Pi or the phone")
+        warnings.append(
+            "Audio is switched off in config (AUDIO_ENABLED) — nothing is "
+            "spoken, on the Pi or the phone"
+        )
     elif not voice.get("usable"):
-        warnings.append(f"The Pi voice cannot be heard ({voice.get('error') or 'no wearable audio output'})"
-                        " — only the phone can speak")
+        warnings.append(
+            f"The Pi voice cannot be heard ({voice.get('error') or 'no wearable audio output'})"
+            " — only the phone can speak"
+        )
     # "starting": the start-up hold is still holding every warning back (2026-10-21);
     # "down" with audio off: nothing can tell the wearer anything.
     if not (guiding and sensors.get("lidar_ok")) or not voice.get("audio_enabled"):
@@ -257,8 +280,13 @@ def health_check():
     elif not ready:
         status = "starting"
     else:
-        status = ("ok" if sensors.get("all_ok") and not system.get("power_low")
-                  and not system.get("hot") else "degraded")
+        status = (
+            "ok"
+            if sensors.get("all_ok")
+            and not system.get("power_low")
+            and not system.get("hot")
+            else "degraded"
+        )
     body = {
         "status": status,
         "guiding": guiding,
@@ -269,8 +297,14 @@ def health_check():
         },
         "radar_down": sensors.get("radar_down", []),
         "warnings": warnings,
-        "voice": {k: voice.get(k) for k in ("audio_enabled", "running", "usable", "output", "error")},
-        "system": {k: system.get(k) for k in ("soc_c", "throttled", "power_low", "hot", "readable")},
+        "voice": {
+            k: voice.get(k)
+            for k in ("audio_enabled", "running", "usable", "output", "error")
+        },
+        "system": {
+            k: system.get(k)
+            for k in ("soc_c", "throttled", "power_low", "hot", "readable")
+        },
         "guidance_loop": loop,
         "service": service.status(),
     }

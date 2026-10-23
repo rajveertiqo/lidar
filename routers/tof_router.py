@@ -18,12 +18,15 @@ router = APIRouter(prefix="/tof", tags=["ToF depth"])
 
 def _need_tof():
     if not TOF_ENABLED:
-        raise HTTPException(status_code=404, detail="the ToF is off (config TOF_ENABLED)")
+        raise HTTPException(
+            status_code=404, detail="the ToF is off (config TOF_ENABLED)"
+        )
 
 
 def _front_picture():
     """(BGR copy of the front camera's newest picture, when it was captured), or (None, 0)."""
     from utils import pi_camera_utils as pc
+
     with pc.frame_lock:
         mosaic, t, meta = pc.current_frame, pc.current_frame_t, pc.current_quad_meta
         if mosaic is None:
@@ -35,11 +38,15 @@ def _front_picture():
 
 def _jpeg(img) -> Response:
     import cv2
+
     ok, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
     if not ok:
         raise HTTPException(status_code=500, detail="could not encode the picture")
-    return Response(content=buf.tobytes(), media_type="image/jpeg",
-                    headers={"Cache-Control": "no-store"})
+    return Response(
+        content=buf.tobytes(),
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.get("/status")
@@ -48,6 +55,7 @@ def status():
     if not TOF_ENABLED:
         return {"enabled": False}
     from utils.tof_camera import tof_status
+
     return tof_status()
 
 
@@ -57,12 +65,15 @@ def depth_preview():
     _need_tof()
     import cv2
     from utils.tof_camera import latest_raw
+
     raw = latest_raw()
     if raw is None:
         raise HTTPException(status_code=503, detail="no ToF frame yet")
     depth = raw[1]
     hue = (np.clip(depth / TOF_MAX_MM, 0.0, 1.0) * 120.0).astype(np.uint8)
-    hsv = np.dstack([hue, np.full_like(hue, 255), np.where(depth > 0, 255, 0).astype(np.uint8)])
+    hsv = np.dstack(
+        [hue, np.full_like(hue, 255), np.where(depth > 0, 255, 0).astype(np.uint8)]
+    )
     img = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
     return _jpeg(cv2.resize(img, None, fx=4, fy=4, interpolation=cv2.INTER_NEAREST))
 
@@ -76,6 +87,7 @@ def overlay():
     from config import TOF_PAIR_MAX_S
     from utils.depth_fusion import draw_overlay
     from utils.tof_camera import nearest
+
     picture, t = _front_picture()
     if picture is None:
         raise HTTPException(status_code=503, detail="no camera picture yet")
@@ -94,6 +106,7 @@ async def capture_pair():
     def save():
         import cv2
         from utils.tof_camera import latest_raw
+
         deadline = time.time() + 2.0
         while time.time() < deadline:
             picture, t_cam = _front_picture()
@@ -102,24 +115,36 @@ async def capture_pair():
                 break
             time.sleep(0.02)
         else:
-            raise HTTPException(status_code=503, detail="no camera picture and ToF frame "
-                                                        "within 50 ms of each other in 2 s")
+            raise HTTPException(
+                status_code=503,
+                detail="no camera picture and ToF frame "
+                "within 50 ms of each other in 2 s",
+            )
         t_tof, depth, ir = raw
         if ir is None:
-            raise HTTPException(status_code=503, detail="this SDK gives no brightness "
-                                                        "picture to find the board in")
+            raise HTTPException(
+                status_code=503,
+                detail="this SDK gives no brightness picture to find the board in",
+            )
         os.makedirs(TOF_CALIBRATION_PAIRS_DIR, exist_ok=True)
-        n = 1 + sum(1 for f in os.listdir(TOF_CALIBRATION_PAIRS_DIR) if f.endswith("_cam.png"))
+        n = 1 + sum(
+            1 for f in os.listdir(TOF_CALIBRATION_PAIRS_DIR) if f.endswith("_cam.png")
+        )
         stem = os.path.join(TOF_CALIBRATION_PAIRS_DIR, f"{n:03d}")
         lo, hi = np.percentile(ir[ir > 0], [1, 99]) if np.any(ir > 0) else (0.0, 1.0)
-        ir8 = (np.clip((ir - lo) / max(hi - lo, 1e-6), 0.0, 1.0) * 255.0).astype(np.uint8)
+        ir8 = (np.clip((ir - lo) / max(hi - lo, 1e-6), 0.0, 1.0) * 255.0).astype(
+            np.uint8
+        )
         cv2.imwrite(stem + "_cam.png", picture)
         cv2.imwrite(stem + "_tof.png", ir8)
         np.save(stem + "_depth.npy", depth.astype(np.float32))
         with open(stem + "_meta.json", "w") as f:
             json.dump({"camera_t": t_cam, "tof_t": t_tof}, f)
-        return {"saved": os.path.basename(stem), "pairs": n,
-                "gap_ms": round(abs(t_tof - t_cam) * 1000.0, 1)}
+        return {
+            "saved": os.path.basename(stem),
+            "pairs": n,
+            "gap_ms": round(abs(t_tof - t_cam) * 1000.0, 1),
+        }
 
     return await run_in_threadpool(save)
 
@@ -129,4 +154,5 @@ def reload():
     """Re-read the calibration file after tools/tof_calibrate.py solve."""
     _need_tof()
     from utils.depth_fusion import reload_calibration
+
     return reload_calibration()

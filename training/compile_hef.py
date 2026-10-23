@@ -22,7 +22,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-PI_HAILORT = "5.1"            # `pip list | grep hailort` on the Pi
+PI_HAILORT = "5.1"  # `pip list | grep hailort` on the Pi
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
@@ -30,22 +30,36 @@ def calibration_set(folder: Path, count: int) -> np.ndarray:
     """`count` pictures spread evenly over the folder, as the device feeds them."""
     files = sorted(p for p in folder.iterdir() if p.suffix.lower() in IMAGE_EXT)
     if len(files) < 64:
-        sys.exit(f"only {len(files)} pictures in {folder}; give at least 64 (500+ is better)")
+        sys.exit(
+            f"only {len(files)} pictures in {folder}; give at least 64 (500+ is better)"
+        )
     step = max(1, len(files) // count)
     picks = files[::step][:count]
-    arr = np.stack([np.asarray(Image.open(p).convert("RGB").resize((640, 640)),
-                               dtype=np.float32) for p in picks])
+    arr = np.stack(
+        [
+            np.asarray(
+                Image.open(p).convert("RGB").resize((640, 640)), dtype=np.float32
+            )
+            for p in picks
+        ]
+    )
     print(f"calibration: {len(arr)} pictures from {folder}")
     return arr
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("onnx")
-    ap.add_argument("--calib", required=True, help="folder of pictures like the device's "
-                    "(dataset/images/train)")
-    ap.add_argument("--count", type=int, default=512, help="calibration pictures (default 512)")
+    ap.add_argument(
+        "--calib",
+        required=True,
+        help="folder of pictures like the device's (dataset/images/train)",
+    )
+    ap.add_argument(
+        "--count", type=int, default=512, help="calibration pictures (default 512)"
+    )
     ap.add_argument("--end-nodes", help="end_nodes.json (default: next to the .onnx)")
     ap.add_argument("--out", default="best.hef")
     ap.add_argument("--hw-arch", default="hailo10h")
@@ -57,25 +71,34 @@ def main():
     version = getattr(hailo_sdk_client, "__version__", "?")
     print(f"Dataflow Compiler {version}")
     if not str(version).startswith(PI_HAILORT):
-        print(f"WARNING: the Pi runs HailoRT {PI_HAILORT}.x — a .hef from compiler {version} "
-              f"may not load there. Use the {PI_HAILORT}.x compiler if you can.")
+        print(
+            f"WARNING: the Pi runs HailoRT {PI_HAILORT}.x — a .hef from compiler {version} "
+            f"may not load there. Use the {PI_HAILORT}.x compiler if you can."
+        )
 
     onnx_path = Path(args.onnx)
-    nodes_path = Path(args.end_nodes) if args.end_nodes else onnx_path.with_name("end_nodes.json")
+    nodes_path = (
+        Path(args.end_nodes)
+        if args.end_nodes
+        else onnx_path.with_name("end_nodes.json")
+    )
     nodes = json.loads(nodes_path.read_text())
     print(f"end nodes from {nodes_path}: {len(nodes['end_nodes'])}")
 
     runner = ClientRunner(hw_arch=args.hw_arch)
     runner.translate_onnx_model(
-        str(onnx_path), "shappe_seg",
+        str(onnx_path),
+        "shappe_seg",
         start_node_names=[nodes.get("start_node", "images")],
         end_node_names=nodes["end_nodes"],
-        net_input_shapes={nodes.get("start_node", "images"): nodes["input_shape"]})
+        net_input_shapes={nodes.get("start_node", "images"): nodes["input_shape"]},
+    )
     runner.save_har(str(Path(args.out).with_suffix(".parsed.har")))
 
     # The app hands the chip 0-255 RGB; the model was trained on 0-1.
-    runner.load_model_script("normalization1 = normalization([0.0, 0.0, 0.0], "
-                             "[255.0, 255.0, 255.0])\n")
+    runner.load_model_script(
+        "normalization1 = normalization([0.0, 0.0, 0.0], [255.0, 255.0, 255.0])\n"
+    )
     runner.optimize(calibration_set(Path(args.calib), args.count))
     runner.save_har(str(Path(args.out).with_suffix(".quantized.har")))
 

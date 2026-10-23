@@ -38,7 +38,12 @@ CAMERA_RETRY_BACKOFF_S = (2.0, 5.0, 10.0)
 CAMERA_SINGLE_CHANNEL = None
 CAMERA_HAT_I2C_BUS = 11
 CAMERA_HAT_ADDRESS = 0x24
-CAMERA_HAT_CHANNEL = {"right": 0, "front": 1, "left": 2, "back": 3}  # measured 2026-10-08
+CAMERA_HAT_CHANNEL = {
+    "right": 0,
+    "front": 1,
+    "left": 2,
+    "back": 3,
+}  # measured 2026-10-08
 
 # Cycle through the cameras one at a time (when CAMERA_SINGLE_CHANNEL is None): the
 # board's one-camera path is clean even while its 4-in-1 merge is not. It switches camera
@@ -305,6 +310,7 @@ def radar_ring() -> tuple:
     """The ring boards' bearings from RADAR_BEARINGS, in bearing order (used by the live map)."""
     return tuple(sorted({b % 360.0 for b in RADAR_BEARINGS.values()}))
 
+
 RADAR_CONE_TRUST_MM = GUIDANCE_CORRIDOR_HALF_WIDTH_MM / math.sin(
     math.radians(RADAR_BEARING_OFFSET_DEG + RADAR_BEAM_H_DEG / 2)
 )
@@ -384,9 +390,13 @@ WALK_GLASS_GAP_FT = 2.0  # LiDAR farther than radar by this much = glass (~0.6 m
 
 HEADING_ENABLED = True
 HEADING_BIN_DEG = 1.0  # range profile resolution used for scan matching
-HEADING_INTERP_MAX_GAP_DEG = 3.0  # never interpolate a bin across a wider gap in the scan
+HEADING_INTERP_MAX_GAP_DEG = (
+    3.0  # never interpolate a bin across a wider gap in the scan
+)
 HEADING_INTERP_MAX_JUMP_MM = 300.0  # ...nor across a range step this big (two objects)
-HEADING_FIT_MAX_RESEEDS = 4  # times the yaw + translation fit may restart from its own answer
+HEADING_FIT_MAX_RESEEDS = (
+    4  # times the yaw + translation fit may restart from its own answer
+)
 HEADING_MAX_YAW_STEP_DEG = 25.0  # widest rotation searched between two scans
 # (25 deg at 15 Hz = 375 deg/s — far beyond a walk)
 HEADING_MATCH_MIN_BINS = 40  # too few overlapping bins = no honest estimate
@@ -685,15 +695,21 @@ MOTION_TRACKER_WARN = True  # its closest-approach warning stands in for lidar_m
 MOTION_GATE_CHI2 = 9.21  # 99 % for two degrees of freedom
 MOTION_GATE_M = 1.0  # and no farther than this from where a track should be...
 MOTION_GATE_VEHICLE_M = 2.0  # ...or this for a vehicle (a camera's range is rough)
-MOTION_GATE_NEW_EXTRA_M = 1.0  # a track with under CONFIRM_HITS sightings: this much more
+MOTION_GATE_NEW_EXTRA_M = (
+    1.0  # a track with under CONFIRM_HITS sightings: this much more
+)
 MOTION_LOST_S = 0.8  # a track unseen this long is dropped
 MOTION_ACCEL_PERSON = 1.2  # m/s^2 of random acceleration a person's model allows
 MOTION_ACCEL_ALONG = 1.5  # a moving vehicle's, along its heading...
 MOTION_ACCEL_ACROSS = 0.4  # ...and across it: a car brakes, it does not slide sideways
 MOTION_CONFIRM_HITS = 6
 MOTION_CONFIRM_S = 0.6
-MOTION_SIGNIFICANCE = 3.0  # moving: speed at least this many sigma, in its own direction
-MOTION_VEHICLE_STEADY_S = 0.8  # a vehicle's heading must hold within STEADY_DEG this long
+MOTION_SIGNIFICANCE = (
+    3.0  # moving: speed at least this many sigma, in its own direction
+)
+MOTION_VEHICLE_STEADY_S = (
+    0.8  # a vehicle's heading must hold within STEADY_DEG this long
+)
 MOTION_VEHICLE_STEADY_DEG = 20.0  # (a track that swapped between two cars swings)
 MOTION_VEHICLE_MIN_TRAVEL_M = 1.0  # and it must have gone this far in the last second
 MOTION_CAMERA_SECTORS = ("front",)  # the cameras whose people and vehicles are followed
@@ -712,11 +728,15 @@ MOTION_PREDICT_MAX_SD_M = 0.8  # past this a prediction says too little to act o
 # that gives ROUTE_NEED_M — at walking pace, at half pace, or not at all (wait, or step
 # aside from something coming at the user).
 ROUTE_PLANNER_ENABLED = True
-ROUTE_PLANNER_SPEAK = False  # False: its turn side and steering are shown and logged as "would say"
+ROUTE_PLANNER_SPEAK = (
+    False  # False: its turn side and steering are shown and logged as "would say"
+)
 ROUTE_LANE_HALF_M = 0.30  # half the lane: the user's half-width and a margin
 ROUTE_LANE_TIGHT_M = 0.22  # the user's half-width alone, when nothing wider fits
 ROUTE_REACH_M = 4.5
-ROUTE_NEED_M = 2.4  # clear walking wanted at walking pace (half pace: half, at least 1.2)
+ROUTE_NEED_M = (
+    2.4  # clear walking wanted at walking pace (half pace: half, at least 1.2)
+)
 ROUTE_STEP_DEG = 5
 ROUTE_MAX_TURN_DEG = 90
 ROUTE_STEER_MAX_DEG = 35  # a way this far off straight is "turn slightly"
@@ -741,18 +761,24 @@ LIDAR_BLIND_ARCS_DEG = ((170.0, 290.0),)
 # CamArray is on CAM1): /boot/firmware/config.txt needs dtoverlay=arducam-pivariety,cam0
 # there instead of dtoverlay=imx519,cam0, and the SDK: pip install ArducamDepthCamera.
 TOF_ENABLED = False
-TOF_USE_DISTANCE = False  # False: the ToF's distance is only shown beside the box-size one
+TOF_USE_DISTANCE = (
+    False  # False: the ToF's distance is only shown beside the box-size one
+)
 TOF_CSI_PORT = 0
 TOF_RANGE_MM = 4000  # the SDK's range setting (2000 or 4000)
 TOF_FRAME_TIMEOUT_MS = 500
 TOF_RETRY_BACKOFF_S = (2.0, 5.0, 10.0)
-TOF_MIN_CONFIDENCE = 30.0  # depth pixels the sensor is less sure of than this are dropped
+TOF_MIN_CONFIDENCE = (
+    30.0  # depth pixels the sensor is less sure of than this are dropped
+)
 TOF_MIN_MM = 150.0
 TOF_MAX_MM = 4000.0
 # Is the SDK's distance along each pixel's ray (True) or along the lens axis? Bench check:
 # tools/tof_calibrate.py wall, pointed square-on at a flat wall.
 TOF_DEPTH_IS_RADIAL = True
-TOF_PAIR_MAX_S = 0.06  # a camera picture uses the ToF frame captured nearest it, within this
+TOF_PAIR_MAX_S = (
+    0.06  # a camera picture uses the ToF frame captured nearest it, within this
+)
 TOF_BUFFER_FRAMES = 8
 # Until tools/tof_calibrate.py writes TOF_CALIBRATION_FILE (checkerboard on the bench),
 # both lenses are taken as ideal and placed as in the 3D design ("aimed apart").
@@ -762,14 +788,16 @@ TOF_SIZE_PX = (240, 180)
 TOF_DIAGONAL_FOV_DEG = 70.0  # Arducam's figure; on the 4:3 sensor about 58.5 x 45.6 deg
 # The detector's front picture: the IMX519's 66 deg across all 4656 px, centre-cropped to
 # 3840 x 2160 (ScalerCrop, measured 2026-10-08) and halved twice to the 960 x 540 quadrant:
-# about 56.4 x 33.5 deg. (SIMPLE_CAMERA_HFOV_DEG still assumes 70 for box sizes.)
+# about 56.4 x 33.5 deg. (SIMPLE_CAMERA_HFOV_DEG, below, is derived from these.)
 FUSION_CAMERA_LENS_HFOV_DEG = 66.0
 FUSION_CAMERA_SENSOR_PX = (4656, 3496)
 FUSION_CAMERA_CROP_PX = (3840, 2160)
 # Where the ToF sits against the camera, in the camera's frame (x right, y down, z ahead):
 FUSION_TOF_OFFSET_M = (0.0, 0.038, 0.006)  # 3.8 cm below, 6 mm ahead
 FUSION_TOF_DOWN_DEG = 20.0  # aimed this much further down (camera 10, ToF 30)
-FUSION_CAMERA_DOWN_DEG = 10.0  # the camera below level: turns a 3D point into a distance along the ground
+FUSION_CAMERA_DOWN_DEG = (
+    10.0  # the camera below level: turns a 3D point into a distance along the ground
+)
 # A box's distance: the nearest surface inside it (not the wall behind a person). The box
 # is first trimmed (sides, top, bottom: the ground at its feet), then the depth points are
 # grouped where they are no more than GROUP_M apart; the nearest group holding at least
@@ -779,7 +807,9 @@ TOF_BOX_GROUP_M = 0.30
 TOF_BOX_MIN_POINTS = 6
 TOF_BOX_MIN_SHARE = 0.20
 TOF_RANGE_SD_M = 0.05  # how far off a ToF distance is (1 sigma), plus...
-TOF_RANGE_SD_FRAC = 0.02  # ...this much of it (the motion tracker's camera error ellipse)
+TOF_RANGE_SD_FRAC = (
+    0.02  # ...this much of it (the motion tracker's camera error ellipse)
+)
 
 TRAFFIC_SIGN_STALE_S = 5.0
 
@@ -805,7 +835,9 @@ SPEECH_LOG_KEEP_LINES = 400
 # for tools/walk_replay.py. Off unless SHAPPE_RECORD_WALK=1 or POST /guidance/record.
 WALK_RECORD = os.environ.get("SHAPPE_RECORD_WALK", "") == "1"
 WALK_RECORD_DIR = os.path.join(_APP_DIR, "logs", "walks")
-WALK_RECORD_MAX_MB = 500  # uncompressed; a recording stops itself here (~1 h of walking)
+WALK_RECORD_MAX_MB = (
+    500  # uncompressed; a recording stops itself here (~1 h of walking)
+)
 
 SPEECH_LOG_KEEP_RUNS = 200
 
@@ -1057,9 +1089,13 @@ SIMPLE_VEHICLE_EGO_MARGIN = 1.5
 # the car approaching. The cost: a user who IS standing still there is warned of a slowly
 # creeping vehicle later (it must close ~1.8 m/s faster). 0.0 restores the old behaviour.
 SIMPLE_VEHICLE_PACE_UNKNOWN_MPS = HEADING_NOMINAL_SPEED_MPS
-SIMPLE_CAMERA_HFOV_DEG = (
-    70.0  # ASSUMED, not measured; drives every camera range estimate
-)
+# Drives every camera range and bearing estimate. From the measured geometry above
+# (FUSION_CAMERA_*: the IMX519's 66 deg across 4656 px, centre-cropped to 3840 px) = 56.3 deg,
+# not the 70 assumed until 2026-10-23, which put every box-size range ~23% too near and
+# side bearings up to ~7 deg too far out.
+SIMPLE_CAMERA_HFOV_DEG = 2.0 * math.degrees(math.atan(
+    math.tan(math.radians(FUSION_CAMERA_LENS_HFOV_DEG) / 2.0)
+    * FUSION_CAMERA_CROP_PX[0] / FUSION_CAMERA_SENSOR_PX[0]))
 SIMPLE_VEHICLE_MISS_M = 2.0
 SIMPLE_VEHICLE_IDLE_RATE = 0.05
 SIMPLE_VEHICLE_IDLE_SLIDE = 0.05

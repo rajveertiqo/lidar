@@ -30,20 +30,34 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from config import (
-    HEADING_NOMINAL_SPEED_MPS, LIDAR_BLIND_ARCS_DEG, LIDAR_MOVERS_MIN_RANGE_MM,
-    RADAR_BEAM_H_DEG, RADAR_END_MM,
-    RADAR_AGREE_MM, GLASS_LASER_BEYOND_MM, ROUTE_AROUND_M, ROUTE_HOLD_S, ROUTE_LANE_HALF_M,
-    ROUTE_LANE_TIGHT_M, ROUTE_LOOKAHEAD_S, ROUTE_MAX_TURN_DEG, ROUTE_NEED_M, ROUTE_REACH_M,
-    ROUTE_STEER_MAX_DEG, ROUTE_STEP_ASIDE_M, ROUTE_STEP_DEG, SIMPLE_NAMED_OBJECTS,
+    HEADING_NOMINAL_SPEED_MPS,
+    LIDAR_BLIND_ARCS_DEG,
+    LIDAR_MOVERS_MIN_RANGE_MM,
+    RADAR_BEAM_H_DEG,
+    RADAR_END_MM,
+    RADAR_AGREE_MM,
+    GLASS_LASER_BEYOND_MM,
+    ROUTE_AROUND_M,
+    ROUTE_HOLD_S,
+    ROUTE_LANE_HALF_M,
+    ROUTE_LANE_TIGHT_M,
+    ROUTE_LOOKAHEAD_S,
+    ROUTE_MAX_TURN_DEG,
+    ROUTE_NEED_M,
+    ROUTE_REACH_M,
+    ROUTE_STEER_MAX_DEG,
+    ROUTE_STEP_ASIDE_M,
+    ROUTE_STEP_DEG,
+    SIMPLE_NAMED_OBJECTS,
     SIMPLE_OBJECT_MIN_CONF,
 )
 from utils.motion_tracker import gap_at, predicted_sd
 
-_USER_RAD_M = 0.25             # the user's own body, for meeting a moving thing
-_CLOSING_M = 0.05              # a meeting counts only when it gets nearer than it is now
+_USER_RAD_M = 0.25  # the user's own body, for meeting a moving thing
+_CLOSING_M = 0.05  # a meeting counts only when it gets nearer than it is now
 _SLOW_FRACTION = 0.5
 _MIN_NEED_M = 1.2
-_TRACK_PAD_M = 0.35            # laser returns this near a moving track are that track
+_TRACK_PAD_M = 0.35  # laser returns this near a moving track are that track
 _ARC_STEP_DEG = 5.0
 _WORDS = {c.lower(): w for c, w in SIMPLE_NAMED_OBJECTS.items()}
 
@@ -76,8 +90,10 @@ class _Points:
     def add(self, x: float, y: float, tag: str, check_movers: bool = False) -> None:
         if x < -1.0 or x > ROUTE_REACH_M + 0.5 or abs(y) > ROUTE_REACH_M + 0.5:
             return
-        if check_movers and any(gap_at(tr, 0.0, x, y) < _TRACK_PAD_M for tr in self._moving):
-            return                       # that is a moving thing: planned for in time instead
+        if check_movers and any(
+            gap_at(tr, 0.0, x, y) < _TRACK_PAD_M for tr in self._moving
+        ):
+            return  # that is a moving thing: planned for in time instead
         self.xs.append(x)
         self.ys.append(y)
         self.tags.append(tag)
@@ -96,8 +112,11 @@ def _laser(lidar_state: Dict[str, Any]) -> List[Tuple[float, float, float, float
     return out
 
 
-def _blind_fill(points: _Points, laser: List[Tuple[float, float, float, float]],
-                radar_state: Optional[Dict[str, Any]]) -> List[str]:
+def _blind_fill(
+    points: _Points,
+    laser: List[Tuple[float, float, float, float]],
+    radar_state: Optional[Dict[str, Any]],
+) -> List[str]:
     """Fill each arc the LiDAR cannot see; returns notes on how."""
     notes = []
     if not LIDAR_BLIND_ARCS_DEG:
@@ -110,15 +129,16 @@ def _blind_fill(points: _Points, laser: List[Tuple[float, float, float, float]],
         # A surface seen at each edge runs on into the arc, straight, up to its middle.
         mid = (arc[0] + (((arc[1] - arc[0]) % 360.0) / 2.0)) % 360.0
         for edge, step in ((arc[0], -1), (arc[1], 1)):
-            near = [p for p in by_bearing
-                    if 0.0 < (step * _wrap(p[0] - edge)) <= 8.0]   # just outside this edge
+            near = [
+                p for p in by_bearing if 0.0 < (step * _wrap(p[0] - edge)) <= 8.0
+            ]  # just outside this edge
             near.sort(key=lambda p: abs(_wrap(p[0] - edge)))
             if len(near) < 2:
                 continue
             a, b = near[0], near[min(len(near) - 1, 3)]
             seg = math.hypot(a[2] - b[2], a[3] - b[3])
             if seg < 0.02 or seg > 0.6:
-                continue                                       # not one surface
+                continue  # not one surface
             ux, uy = (a[2] - b[2]) / seg, (a[3] - b[3]) / seg
             prev = _wrap(a[0] - mid)
             t = 0.1
@@ -126,7 +146,7 @@ def _blind_fill(points: _Points, laser: List[Tuple[float, float, float, float]],
                 x, y = a[2] + ux * t, a[3] + uy * t
                 off = _wrap(math.degrees(math.atan2(y, x)) - mid)
                 if abs(off) >= abs(prev) or off * prev < 0:
-                    break                                      # reached the middle, or turned away
+                    break  # reached the middle, or turned away
                 prev = off
                 points.add(x, y, "blind arc (carried)")
                 known_x.append(x)
@@ -137,25 +157,37 @@ def _blind_fill(points: _Points, laser: List[Tuple[float, float, float, float]],
         covered = [False] * (int(span // _ARC_STEP_DEG) + 1)
         half = RADAR_BEAM_H_DEG / 2.0
         for key, row in secs.items():
-            if not str(key).startswith("deg") or not row.get("online") or row.get("degraded"):
+            if (
+                not str(key).startswith("deg")
+                or not row.get("online")
+                or row.get("degraded")
+            ):
                 continue
             try:
                 board = float(str(key)[3:])
             except ValueError:
                 continue
-            idx = [i for i in range(len(covered))
-                   if abs(_wrap(arc[0] + i * _ARC_STEP_DEG - board)) <= half]
+            idx = [
+                i
+                for i in range(len(covered))
+                if abs(_wrap(arc[0] + i * _ARC_STEP_DEG - board)) <= half
+            ]
             if not idx:
                 continue
             echo = RADAR_END_MM / 1000.0
             for mm in sorted(float(v) for v in (row.get("peaks_mm") or []) if v):
                 e = mm / 1000.0
                 lo, hi = e - RADAR_AGREE_MM / 1000.0, e + GLASS_LASER_BEYOND_MM / 1000.0
-                seen = any(lo <= p[1] <= hi and abs(_wrap(p[0] - board)) <= half + 10.0
-                           for p in laser)
-                seen = seen or any(lo <= math.hypot(x, y) <= hi
-                                   and abs(_wrap(math.degrees(math.atan2(y, x)) - board)) <= half + 10.0
-                                   for x, y in zip(known_x, known_y))
+                seen = any(
+                    lo <= p[1] <= hi and abs(_wrap(p[0] - board)) <= half + 10.0
+                    for p in laser
+                )
+                seen = seen or any(
+                    lo <= math.hypot(x, y) <= hi
+                    and abs(_wrap(math.degrees(math.atan2(y, x)) - board))
+                    <= half + 10.0
+                    for x, y in zip(known_x, known_y)
+                )
                 if not seen:
                     echo = e
                     break
@@ -165,15 +197,18 @@ def _blind_fill(points: _Points, laser: List[Tuple[float, float, float, float]],
                 points.add(x, y, "blind arc (radar)")
             notes.append(f"{key}: {echo:.1f} m")
         for i, ok in enumerate(covered):
-            if not ok:                                         # no board hears it: nothing known
+            if not ok:  # no board hears it: nothing known
                 x, y = _xy(arc[0] + i * _ARC_STEP_DEG, 0.3)
                 points.add(x, y, "blind arc (unknown)")
     return notes
 
 
-def _camera_faces(points: _Points, camera_state: Optional[Dict[str, Any]], now: float) -> None:
+def _camera_faces(
+    points: _Points, camera_state: Optional[Dict[str, Any]], now: float
+) -> None:
     """The near face of each thing the front camera names, at the range its size gives."""
     from utils import simple_guidance as sg
+
     cam = camera_state or {}
     if not sg._camera_sees(cam, now):
         return
@@ -189,7 +224,7 @@ def _camera_faces(points: _Points, camera_state: Optional[Dict[str, Any]], now: 
             continue
         if x2 <= x1 or y2 <= y1:
             continue
-        rng, _cut = sg._box_range(det, cls, (x1, y1, x2, y2))     # measured, with the ToF
+        rng, _cut = sg._box_range(det, cls, (x1, y1, x2, y2))  # measured, with the ToF
         if rng > ROUTE_REACH_M + 0.5:
             continue
         b1 = math.degrees(math.atan((x1 - sg._QUAD_W / 2.0) / focal))
@@ -200,7 +235,9 @@ def _camera_faces(points: _Points, camera_state: Optional[Dict[str, Any]], now: 
             points.add(x, y, f"camera:{word}", check_movers=True)
 
 
-def _clear_along(points: _Points, h_deg: float, half: float) -> Tuple[float, Optional[int]]:
+def _clear_along(
+    points: _Points, h_deg: float, half: float
+) -> Tuple[float, Optional[int]]:
     """How far (m) the user's lane can go in direction h before it touches a point, and which."""
     sn, cs = math.sin(math.radians(h_deg)), math.cos(math.radians(h_deg))
     best, who = ROUTE_REACH_M, None
@@ -216,8 +253,12 @@ def _clear_along(points: _Points, h_deg: float, half: float) -> Tuple[float, Opt
     return max(0.0, best), who
 
 
-def _meets(moving: List[Dict[str, Any]], h_deg: float, pace: float,
-           at: Tuple[float, float] = (0.0, 0.0)) -> Tuple[float, Optional[Dict[str, Any]]]:
+def _meets(
+    moving: List[Dict[str, Any]],
+    h_deg: float,
+    pace: float,
+    at: Tuple[float, float] = (0.0, 0.0),
+) -> Tuple[float, Optional[Dict[str, Any]]]:
     """Walking direction h at `pace` from `at`: how far before a moving thing's predicted body
     (grown by one standard deviation) meets the user, and which; (inf, None) if none does."""
     dx, dy = math.cos(math.radians(h_deg)), math.sin(math.radians(h_deg))
@@ -239,7 +280,7 @@ class RoutePlanner:
 
     def __init__(self):
         self._lock = threading.Lock()
-        self._held: Optional[Tuple[float, float]] = None     # (world heading deg, when)
+        self._held: Optional[Tuple[float, float]] = None  # (world heading deg, when)
         self._last: Dict[str, Any] = {}
 
     def reset(self) -> None:
@@ -250,19 +291,25 @@ class RoutePlanner:
         with self._lock:
             return dict(self._last)
 
-    def plan(self, lidar_state: Optional[Dict[str, Any]],
-             radar_state: Optional[Dict[str, Any]] = None,
-             camera_state: Optional[Dict[str, Any]] = None,
-             tracks: Optional[Dict[str, Any]] = None,
-             motion: Optional[Dict[str, Any]] = None,
-             glass: Optional[Dict[str, Any]] = None,
-             now: Optional[float] = None) -> Dict[str, Any]:
+    def plan(
+        self,
+        lidar_state: Optional[Dict[str, Any]],
+        radar_state: Optional[Dict[str, Any]] = None,
+        camera_state: Optional[Dict[str, Any]] = None,
+        tracks: Optional[Dict[str, Any]] = None,
+        motion: Optional[Dict[str, Any]] = None,
+        glass: Optional[Dict[str, Any]] = None,
+        now: Optional[float] = None,
+    ) -> Dict[str, Any]:
         """The plan for this poll. `tracks` is motion_tracker's snapshot, `motion`
         heading_tracker's state, `glass` {"ahead_m": .., "side": .., "side_m": ..}."""
         now = time.time() if now is None else now
         snap = tracks or {}
-        moving = [] if snap.get("stale") else [tr for tr in snap.get("tracks") or []
-                                                if tr.get("moving")]
+        moving = (
+            []
+            if snap.get("stale")
+            else [tr for tr in snap.get("tracks") or [] if tr.get("moving")]
+        )
         points = _Points(moving)
         laser = _laser(lidar_state or {})
         for _a, _r, x, y in laser:
@@ -272,7 +319,9 @@ class RoutePlanner:
             for o in range(-30, 31, 5):
                 x, y = _xy(o, float(g["ahead_m"]))
                 points.add(x, y, "glass")
-        elif g.get("side") in ("left", "right") and isinstance(g.get("side_m"), (int, float)):
+        elif g.get("side") in ("left", "right") and isinstance(
+            g.get("side_m"), (int, float)
+        ):
             sign = -1.0 if g["side"] == "left" else 1.0
             for o in range(25, 61, 5):
                 x, y = _xy(sign * o, float(g["side_m"]))
@@ -280,7 +329,7 @@ class RoutePlanner:
         try:
             _camera_faces(points, camera_state, now)
         except Exception:
-            pass                                      # advisory: a bad frame costs only its objects
+            pass  # advisory: a bad frame costs only its objects
         blind = _blind_fill(points, laser, radar_state)
 
         heads = list(range(-ROUTE_MAX_TURN_DEG, ROUTE_MAX_TURN_DEG + 1, ROUTE_STEP_DEG))
@@ -305,7 +354,9 @@ class RoutePlanner:
 
         def open_side(k: int) -> float:
             sign = math.copysign(1, heads[k]) if heads[k] else 0
-            return sum(c for h, c in zip(heads, clear) if h and math.copysign(1, h) == sign)
+            return sum(
+                c for h, c in zip(heads, clear) if h and math.copysign(1, h) == sign
+            )
 
         def choose(ok) -> int:
             if ok(k0):
@@ -316,26 +367,39 @@ class RoutePlanner:
             for k, h in enumerate(heads):
                 if not ok(k):
                     continue
-                if pick < 0 or abs(h) < abs(heads[pick]) or (
-                        abs(h) == abs(heads[pick]) and open_side(k) > open_side(pick)):
+                if (
+                    pick < 0
+                    or abs(h) < abs(heads[pick])
+                    or (abs(h) == abs(heads[pick]) and open_side(k) > open_side(pick))
+                ):
                     pick = k
             return pick
 
         k_static = choose(lambda k: clear[k] >= min(ROUTE_NEED_M, far) - 0.05)
-        pace = float((motion or {}).get("speed_mps") or 0.0) if (motion or {}).get("speed_trusted") else 0.0
+        pace = (
+            float((motion or {}).get("speed_mps") or 0.0)
+            if (motion or {}).get("speed_trusted")
+            else 0.0
+        )
         walk = min(1.6, max(0.8, pace or HEADING_NOMINAL_SPEED_MPS))
         speed, pick, cause, effective = "wait", -1, None, clear
         for mode, sp in (("walk", walk), ("slow", walk * _SLOW_FRACTION)):
             need = min(max(_MIN_NEED_M, sp * 2.0), far) - 0.05
-            met = [_meets(moving, h, sp) if moving else (float("inf"), None) for h in heads]
+            met = [
+                _meets(moving, h, sp) if moving else (float("inf"), None) for h in heads
+            ]
             eff = [min(c, m[0]) for c, m in zip(clear, met)]
             if mode == "walk":
                 effective = eff
                 cause = met[k_static][1]
             # A moving thing may bend the way by a small turn at most; a big swerve round it
             # (toward traffic, say) is worse than slowing down or waiting for it to pass.
-            k = choose(lambda k: eff[k] >= need
-                       and abs(heads[k] - heads[k_static]) <= ROUTE_STEER_MAX_DEG)
+            k = choose(
+                lambda k: (
+                    eff[k] >= need
+                    and abs(heads[k] - heads[k_static]) <= ROUTE_STEER_MAX_DEG
+                )
+            )
             if k >= 0:
                 speed, pick = mode, k
                 if mode == "slow":
@@ -351,7 +415,10 @@ class RoutePlanner:
                 t = 0.1
                 while t <= 3.0 + 1e-6:
                     gg = gap_at(tr, t, 0.0, 0.0)
-                    if gg - _USER_RAD_M - predicted_sd(tr, t) < 0.0 and gg < g0 - _CLOSING_M:
+                    if (
+                        gg - _USER_RAD_M - predicted_sd(tr, t) < 0.0
+                        and gg < g0 - _CLOSING_M
+                    ):
                         coming = tr
                         break
                     t += 0.1
@@ -361,11 +428,17 @@ class RoutePlanner:
                 cause = coming
                 best = None
                 for h in range(-165, 181, 15):
-                    if _clear_along(points, h, ROUTE_LANE_TIGHT_M)[0] < ROUTE_STEP_ASIDE_M:
+                    if (
+                        _clear_along(points, h, ROUTE_LANE_TIGHT_M)[0]
+                        < ROUTE_STEP_ASIDE_M
+                    ):
                         continue
                     d = _meets(moving, h, walk * _SLOW_FRACTION)[0]
-                    if best is None or d > best[1] + 0.05 or (abs(d - best[1]) <= 0.05
-                                                               and abs(h) < abs(best[0])):
+                    if (
+                        best is None
+                        or d > best[1] + 0.05
+                        or (abs(d - best[1]) <= 0.05 and abs(h) < abs(best[0]))
+                    ):
                         best = (h, d)
                 if best is not None:
                     step_aside = best[0]
@@ -381,12 +454,15 @@ class RoutePlanner:
                 self._held = None
         side = "right" if head > 0 else "left" if head < 0 else None
         if step_aside is not None and abs(step_aside) > 120:
-            side = None                               # only back is clear: no side to step to
+            side = None  # only back is clear: no side to step to
         _, blocker = found[k0]
         out = {
             "ok": True,
-            "head_deg": head, "side": side,
-            "dist_m": round(ROUTE_STEP_ASIDE_M if step_aside is not None else clear[pick], 2),
+            "head_deg": head,
+            "side": side,
+            "dist_m": round(
+                ROUTE_STEP_ASIDE_M if step_aside is not None else clear[pick], 2
+            ),
             "straight_m": round(clear[k0], 2),
             "around": far < ROUTE_AROUND_M,
             "speed": "slow" if step_aside is not None else speed,
@@ -395,9 +471,23 @@ class RoutePlanner:
             "lane_m": round(2 * lane, 2),
             "pace_mps": round(walk, 2),
             "blocker": points.tags[blocker] if blocker is not None else None,
-            "cause": ({k: cause.get(k) for k in ("id", "word", "x_m", "y_m", "distance_m",
-                                                 "bearing_deg", "own_speed_mps", "speed_sd")}
-                      if cause else None),
+            "cause": (
+                {
+                    k: cause.get(k)
+                    for k in (
+                        "id",
+                        "word",
+                        "x_m",
+                        "y_m",
+                        "distance_m",
+                        "bearing_deg",
+                        "own_speed_mps",
+                        "speed_sd",
+                    )
+                }
+                if cause
+                else None
+            ),
             "heads_deg": heads,
             "clear_m": [round(c, 2) for c in clear],
             "safe_m": [round(min(e, ROUTE_REACH_M), 2) for e in effective],

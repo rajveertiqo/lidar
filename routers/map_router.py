@@ -13,8 +13,8 @@ router = APIRouter(prefix="/map", tags=["Map"])
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 
-_PUSH_S = 0.1          # ten updates a second
-_MAP_EVERY = 5         # the remembered walls go with every 5th (twice a second)
+_PUSH_S = 0.1  # ten updates a second
+_MAP_EVERY = 5  # the remembered walls go with every 5th (twice a second)
 
 
 @router.get("", response_class=HTMLResponse)

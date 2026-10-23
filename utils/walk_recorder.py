@@ -55,15 +55,21 @@ class WalkRecorder:
             if self._path is not None:
                 return self._status()
             os.makedirs(WALK_RECORD_DIR, exist_ok=True)
-            safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in label.strip())[:40]
+            safe = "".join(
+                c if c.isalnum() or c in "-_" else "-" for c in label.strip()
+            )[:40]
             name = time.strftime("walk-%Y%m%d-%H%M%S") + (f"-{safe}" if safe else "")
             self._path = os.path.join(WALK_RECORD_DIR, name + ".jsonl.gz")
             self._started = time.time()
             self._ticks = self._dropped = self._bytes = 0
             self._error = ""
             self._queue = queue.Queue(maxsize=200)
-            self._thread = threading.Thread(target=self._write, args=(self._path, self._queue),
-                                            name="walk-recorder", daemon=True)
+            self._thread = threading.Thread(
+                target=self._write,
+                args=(self._path, self._queue),
+                name="walk-recorder",
+                daemon=True,
+            )
             self._thread.start()
             print(f"[REC] recording the walk to {self._path}")
             return self._status()
@@ -95,20 +101,30 @@ class WalkRecorder:
             return self._status()
 
     def _status(self) -> Dict[str, Any]:
-        return {"recording": self._path is not None, "file": self._path,
-                "started": self._started, "ticks": self._ticks, "dropped": self._dropped,
-                "megabytes": round(self._bytes / 1e6, 2), "error": self._error}
+        return {
+            "recording": self._path is not None,
+            "file": self._path,
+            "started": self._started,
+            "ticks": self._ticks,
+            "dropped": self._dropped,
+            "megabytes": round(self._bytes / 1e6, 2),
+            "error": self._error,
+        }
 
     # ---- feed (guidance thread) -----------------------------------------
 
-    def tick(self, now: float, mono: float, inputs: Dict[str, Any],
-             output: Dict[str, Any]) -> None:
+    def tick(
+        self, now: float, mono: float, inputs: Dict[str, Any], output: Dict[str, Any]
+    ) -> None:
         """One guidance tick. Never raises — a recording must never stop guidance."""
         if self._path is None:
             return
         try:
-            line = json.dumps({"t": now, "mono": mono, "in": inputs, "out": output},
-                              default=_plain, separators=(",", ":"))
+            line = json.dumps(
+                {"t": now, "mono": mono, "in": inputs, "out": output},
+                default=_plain,
+                separators=(",", ":"),
+            )
         except Exception as e:
             self._error = f"encode: {type(e).__name__}: {e}"
             return
@@ -117,8 +133,12 @@ class WalkRecorder:
     def mark(self, kind: str, text: str = "") -> None:
         if self._path is None:
             return
-        self._put(json.dumps({"t": time.time(), "mono": time.monotonic(),
-                              "mark": kind, "text": text}), counts=False)
+        self._put(
+            json.dumps(
+                {"t": time.time(), "mono": time.monotonic(), "mark": kind, "text": text}
+            ),
+            counts=False,
+        )
 
     def _put(self, line: str, counts: bool) -> None:
         try:
@@ -145,7 +165,9 @@ class WalkRecorder:
                         fh.flush()
                         last_flush = time.monotonic()
                     if self._bytes >= limit:
-                        self._error = f"stopped at WALK_RECORD_MAX_MB ({WALK_RECORD_MAX_MB} MB)"
+                        self._error = (
+                            f"stopped at WALK_RECORD_MAX_MB ({WALK_RECORD_MAX_MB} MB)"
+                        )
                         print(f"[REC] {self._error}")
                         with self._lock:
                             if self._path == path:

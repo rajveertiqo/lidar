@@ -50,8 +50,8 @@ APP_PATH = "/org/shappe/ble"
 ADV_PATH = APP_PATH + "/advertisement0"
 AGENT_PATH = APP_PATH + "/agent"
 
-POLL_S = 0.1          # /guidance/walk: the loop ticks at 5 Hz; polling at 10 Hz adds <=100 ms
-HEALTH_S = 1.0        # /health, /guidance/status and the Pi's thermals
+POLL_S = 0.1  # /guidance/walk: the loop ticks at 5 Hz; polling at 10 Hz adds <=100 ms
+HEALTH_S = 1.0  # /health, /guidance/status and the Pi's thermals
 
 # Characteristic flags per security level (BlueZ org.bluez.GattCharacteristic1 "Flags").
 # "encrypt-*" needs an encrypted link (any bond, Just Works included) and answers an
@@ -59,16 +59,26 @@ HEALTH_S = 1.0        # /health, /guidance/status and the Pi's thermals
 # needs a MITM-protected bond (passkey / numeric comparison) and answers 0x05.
 # "open" is for a desk test only — it lets ANY nearby phone read the alerts.
 SECURITY = {
-    "open": {"read": ["read"], "notify": ["read", "notify"], "notify_only": ["notify"],
-             "write": ["write"]},
-    "encrypt": {"read": ["encrypt-read"], "notify": ["encrypt-read", "encrypt-notify"],
-                "notify_only": ["encrypt-notify"], "write": ["encrypt-write"]},
-    "authenticated": {"read": ["encrypt-authenticated-read"],
-                      "notify": ["encrypt-authenticated-read", "encrypt-authenticated-notify"],
-                      "notify_only": ["encrypt-authenticated-notify"],
-                      "write": ["encrypt-authenticated-write"]},
+    "open": {
+        "read": ["read"],
+        "notify": ["read", "notify"],
+        "notify_only": ["notify"],
+        "write": ["write"],
+    },
+    "encrypt": {
+        "read": ["encrypt-read"],
+        "notify": ["encrypt-read", "encrypt-notify"],
+        "notify_only": ["encrypt-notify"],
+        "write": ["encrypt-write"],
+    },
+    "authenticated": {
+        "read": ["encrypt-authenticated-read"],
+        "notify": ["encrypt-authenticated-read", "encrypt-authenticated-notify"],
+        "notify_only": ["encrypt-authenticated-notify"],
+        "write": ["encrypt-authenticated-write"],
+    },
 }
-MAX_NAME_BYTES = 8    # legacy advert: flags 3 + 128-bit UUID 18 + name (2 + n) <= 31
+MAX_NAME_BYTES = 8  # legacy advert: flags 3 + 128-bit UUID 18 + name (2 + n) <= 31
 
 
 class InvalidArgs(dbus.exceptions.DBusException):
@@ -117,10 +127,15 @@ class Service(dbus.service.Object):
         return dbus.ObjectPath(self.path)
 
     def get_properties(self):
-        return {GATT_SERVICE_IFACE: {
-            "UUID": self.uuid, "Primary": True,
-            "Characteristics": dbus.Array([c.get_path() for c in self.characteristics], signature="o"),
-        }}
+        return {
+            GATT_SERVICE_IFACE: {
+                "UUID": self.uuid,
+                "Primary": True,
+                "Characteristics": dbus.Array(
+                    [c.get_path() for c in self.characteristics], signature="o"
+                ),
+            }
+        }
 
     @dbus.service.method(DBUS_PROP_IFACE, in_signature="s", out_signature="a{sv}")
     def GetAll(self, interface):
@@ -130,10 +145,17 @@ class Service(dbus.service.Object):
 
 
 class Characteristic(dbus.service.Object):
-    def __init__(self, bus, service: Service, index: int, uuid: str, flags: List[str],
-                 read: Optional[Callable[[], bytes]] = None,
-                 write: Optional[Callable[[bytes, Dict[str, Any]], None]] = None,
-                 on_subscribe: Optional[Callable[[], None]] = None):
+    def __init__(
+        self,
+        bus,
+        service: Service,
+        index: int,
+        uuid: str,
+        flags: List[str],
+        read: Optional[Callable[[], bytes]] = None,
+        write: Optional[Callable[[bytes, Dict[str, Any]], None]] = None,
+        on_subscribe: Optional[Callable[[], None]] = None,
+    ):
         self.path = f"{service.path}/char{index}"
         self.service, self.uuid, self.flags = service, uuid, flags
         self.read_cb, self.write_cb, self.on_subscribe = read, write, on_subscribe
@@ -145,8 +167,13 @@ class Characteristic(dbus.service.Object):
         return dbus.ObjectPath(self.path)
 
     def get_properties(self):
-        return {GATT_CHRC_IFACE: {"Service": self.service.get_path(), "UUID": self.uuid,
-                                  "Flags": dbus.Array(self.flags, signature="s")}}
+        return {
+            GATT_CHRC_IFACE: {
+                "Service": self.service.get_path(),
+                "UUID": self.uuid,
+                "Flags": dbus.Array(self.flags, signature="s"),
+            }
+        }
 
     @dbus.service.method(DBUS_PROP_IFACE, in_signature="s", out_signature="a{sv}")
     def GetAll(self, interface):
@@ -159,7 +186,7 @@ class Characteristic(dbus.service.Object):
         if self.read_cb is None:
             raise NotSupported()
         value = self.read_cb() or b""
-        offset = int(options.get("offset", 0))          # GATT long read (Read Blob)
+        offset = int(options.get("offset", 0))  # GATT long read (Read Blob)
         if offset > len(value):
             raise InvalidOffset()
         return _bytes(value[offset:])
@@ -200,12 +227,14 @@ class Advertisement(dbus.service.Object):
         super().__init__(bus, ADV_PATH)
 
     def get_properties(self):
-        return {LE_ADV_IFACE: {
-            "Type": "peripheral",
-            "ServiceUUIDs": dbus.Array([P.SERVICE_UUID], signature="s"),
-            "LocalName": dbus.String(self.name),
-            "Discoverable": dbus.Boolean(True),
-        }}
+        return {
+            LE_ADV_IFACE: {
+                "Type": "peripheral",
+                "ServiceUUIDs": dbus.Array([P.SERVICE_UUID], signature="s"),
+                "LocalName": dbus.String(self.name),
+                "Discoverable": dbus.Boolean(True),
+            }
+        }
 
     @dbus.service.method(DBUS_PROP_IFACE, in_signature="s", out_signature="a{sv}")
     def GetAll(self, interface):
@@ -281,9 +310,12 @@ def find_adapter(bus, name: Optional[str]) -> Optional[str]:
 def _identity(mock: bool) -> Dict[str, Any]:
     def _cmd(*argv: str) -> str:
         try:
-            return subprocess.run(argv, capture_output=True, text=True, timeout=2).stdout.strip()
+            return subprocess.run(
+                argv, capture_output=True, text=True, timeout=2
+            ).stdout.strip()
         except Exception:
             return ""
+
     try:
         with open("/proc/device-tree/model") as fh:
             hw = fh.read().strip("\x00\n ")
@@ -296,14 +328,23 @@ def _identity(mock: bool) -> Dict[str, Any]:
         "mock": mock,
         "manufacturer": "Shappe project (prototype)",
         "model": "Shappe Guide MOCK" if mock else "Shappe Guide (Raspberry Pi 5)",
-        "hardware": hw, "firmware": platform.release(),
+        "hardware": hw,
+        "firmware": platform.release(),
         "software": f"guide {sha}{dirty}; ble-bridge 0.1; protocol {P.PROTOCOL_VERSION}",
     }
 
 
 class Server:
-    def __init__(self, bus, adapter: str, bridge: Bridge, source: Any, security: str,
-                 pair_window_s: float, name: str):
+    def __init__(
+        self,
+        bus,
+        adapter: str,
+        bridge: Bridge,
+        source: Any,
+        security: str,
+        pair_window_s: float,
+        name: str,
+    ):
         self.bus, self.adapter, self.bridge, self.source = bus, adapter, bridge, source
         self.name = name
         self.pair_until = time.monotonic() + pair_window_s
@@ -316,24 +357,38 @@ class Server:
 
         self.app = Application(bus)
         dis = Service(bus, 0, P.DIS_UUID)
-        for i, (uuid, value) in enumerate((
+        for i, (uuid, value) in enumerate(
+            (
                 (P.DIS_MANUFACTURER_UUID, ident["manufacturer"]),
                 (P.DIS_MODEL_UUID, ident["model"]),
                 (P.DIS_HARDWARE_REV_UUID, ident["hardware"]),
                 (P.DIS_FIRMWARE_REV_UUID, ident["firmware"]),
-                (P.DIS_SOFTWARE_REV_UUID, ident["software"]))):
-            Characteristic(bus, dis, i, uuid, ["read"], read=lambda v=value: v.encode()[:180])
+                (P.DIS_SOFTWARE_REV_UUID, ident["software"]),
+            )
+        ):
+            Characteristic(
+                bus, dis, i, uuid, ["read"], read=lambda v=value: v.encode()[:180]
+            )
         nav = Service(bus, 1, P.SERVICE_UUID)
         self.chars = {
-            "info": Characteristic(bus, nav, 0, P.PROTOCOL_INFO_UUID, flags["read"],
-                                   read=self._read_info),
-            "alert": Characteristic(bus, nav, 1, P.ALERT_UUID, flags["notify"],
-                                    read=self._read_alert),
-            "state": Characteristic(bus, nav, 2, P.STATE_UUID, flags["notify"],
-                                    read=self._read_state,
-                                    on_subscribe=lambda: self.send(self.bridge.tick(force=True))),
-            "command": Characteristic(bus, nav, 3, P.COMMAND_UUID, flags["write"],
-                                      write=self._on_write),
+            "info": Characteristic(
+                bus, nav, 0, P.PROTOCOL_INFO_UUID, flags["read"], read=self._read_info
+            ),
+            "alert": Characteristic(
+                bus, nav, 1, P.ALERT_UUID, flags["notify"], read=self._read_alert
+            ),
+            "state": Characteristic(
+                bus,
+                nav,
+                2,
+                P.STATE_UUID,
+                flags["notify"],
+                read=self._read_state,
+                on_subscribe=lambda: self.send(self.bridge.tick(force=True)),
+            ),
+            "command": Characteristic(
+                bus, nav, 3, P.COMMAND_UUID, flags["write"], write=self._on_write
+            ),
             "events": Characteristic(bus, nav, 4, P.EVENTS_UUID, flags["notify_only"]),
         }
         self.app.services += [dis, nav]
@@ -343,13 +398,22 @@ class Server:
     # --- reads: one whole frame, served by GATT long reads if over the MTU ---
 
     def _read_info(self) -> bytes:
-        return P.encode(P.T_PROTOCOL_INFO, P.json_bytes(self.bridge.protocol_info()), 0, 517)[0]
+        return P.encode(
+            P.T_PROTOCOL_INFO, P.json_bytes(self.bridge.protocol_info()), 0, 517
+        )[0]
 
     def _read_alert(self) -> bytes:
         rec = self.bridge.alert_value()
         if rec is None:
-            rec = P.pack_alert(self.bridge.epoch, 0, None, P.PHRASE_NONE, P.LEVEL_NONE,
-                               P.AF_REPLAY, None)
+            rec = P.pack_alert(
+                self.bridge.epoch,
+                0,
+                None,
+                P.PHRASE_NONE,
+                P.LEVEL_NONE,
+                P.AF_REPLAY,
+                None,
+            )
         return P.encode(P.T_ALERT, rec, 0)[0]
 
     def _read_state(self) -> bytes:
@@ -360,7 +424,9 @@ class Server:
     def _on_write(self, value: bytes, options: Dict[str, Any]) -> None:
         mtu = options.get("mtu")
         if mtu:
-            self.bridge.set_mtu(link=int(mtu))      # what BlueZ negotiated caps the app's claim
+            self.bridge.set_mtu(
+                link=int(mtu)
+            )  # what BlueZ negotiated caps the app's claim
         try:
             done = self.reassembler.feed(value, time.monotonic())
         except P.ProtocolError as exc:
@@ -370,24 +436,36 @@ class Server:
             return
         msg_type, _seq, payload = done
         if msg_type != P.T_COMMAND:
-            self.send(self.bridge.bad_frame("BAD_FRAME", f"type 0x{msg_type:02x} is not a command"))
+            self.send(
+                self.bridge.bad_frame(
+                    "BAD_FRAME", f"type 0x{msg_type:02x} is not a command"
+                )
+            )
             return
         # A command may wait on HTTP: never on the D-Bus thread.
-        threading.Thread(target=lambda: self.post(self.bridge.on_command(payload)),
-                         name="ble-command", daemon=True).start()
+        threading.Thread(
+            target=lambda: self.post(self.bridge.on_command(payload)),
+            name="ble-command",
+            daemon=True,
+        ).start()
 
     # --- sending (D-Bus main loop thread only) ---
 
     def send(self, outs: List[Out]) -> bool:
         for char, msg_type, payload in outs:
             if not self.chars[char].notifying:
-                continue    # nobody subscribed: nothing is queued and no seq is used up
+                continue  # nobody subscribed: nothing is queued and no seq is used up
             try:
                 self._send_one(char, msg_type, payload)
-            except Exception as exc:      # one bad message must not lose the rest (STATE, alerts)
-                self.bridge.log("send", f"{char} message 0x{msg_type:02x} not sent: "
-                                        f"{type(exc).__name__}: {exc}")
-        return False                      # as a GLib idle callback: run once
+            except (
+                Exception
+            ) as exc:  # one bad message must not lose the rest (STATE, alerts)
+                self.bridge.log(
+                    "send",
+                    f"{char} message 0x{msg_type:02x} not sent: "
+                    f"{type(exc).__name__}: {exc}",
+                )
+        return False  # as a GLib idle callback: run once
 
     def _send_one(self, char: str, msg_type: int, payload: bytes) -> None:
         mtu = self.bridge.att_mtu
@@ -399,7 +477,9 @@ class Server:
             # A reply too big for this link (the MTU can fall after it was built): the app
             # still gets an answer to its command, as TOO_LARGE.
             self.bridge.log("send-reply", f"reply not sent ({exc}); answered TOO_LARGE")
-            frames = P.encode(msg_type, self.bridge.too_large(payload, str(exc)), self.seq[char], mtu)
+            frames = P.encode(
+                msg_type, self.bridge.too_large(payload, str(exc)), self.seq[char], mtu
+            )
         self.seq[char] = (self.seq[char] + 1) & 0xFFFF
         for frame in frames:
             self.chars[char].notify(frame)
@@ -421,13 +501,17 @@ class Server:
                     outs += self.bridge.on_walk(self.source.walk())
                     if started >= next_health:
                         next_health = started + HEALTH_S
-                        outs += self.bridge.on_health(self.source.health(),
-                                                      self.source.system_health(),
-                                                      self.source.system())
+                        outs += self.bridge.on_health(
+                            self.source.health(),
+                            self.source.system_health(),
+                            self.source.system(),
+                        )
                 except Exception as exc:
                     outs += self.bridge.on_unreachable(f"{type(exc).__name__}: {exc}")
                 outs += self.bridge.tick()
-            except Exception as exc:      # a bug or a value nobody expected: log it, poll again
+            except (
+                Exception
+            ) as exc:  # a bug or a value nobody expected: log it, poll again
                 self.bridge.log("poll", f"poll loop: {type(exc).__name__}: {exc}")
             self.post(outs)
             self.stop.wait(max(0.0, POLL_S - (time.monotonic() - started)))
@@ -451,7 +535,7 @@ class Server:
 
     def set_connected(self, path, connected: bool) -> None:
         if connected == (path in self.connected):
-            return                        # already known: one connect and one disconnect each
+            return  # already known: one connect and one disconnect each
         who = self._describe(path)
         if connected:
             self.connected.add(path)
@@ -473,7 +557,7 @@ class Server:
             props = dbus.Interface(self.bus.get_object(BLUEZ, path), DBUS_PROP_IFACE)
             return f"{props.Get(DEVICE_IFACE, 'Alias')} {props.Get(DEVICE_IFACE, 'Address')}"
         except dbus.exceptions.DBusException:
-            return str(path)              # already removed
+            return str(path)  # already removed
 
 
 def check(bus, adapter_name: Optional[str]) -> int:
@@ -486,31 +570,65 @@ def check(bus, adapter_name: Optional[str]) -> int:
     a = props.GetAll(ADAPTER_IFACE)
     adv = props.GetAll(LE_ADV_MANAGER_IFACE)
     print(f"adapter      {adapter} {a.get('Address')} alias={a.get('Alias')}")
-    print(f"powered      {bool(a.get('Powered'))} (PowerState={a.get('PowerState', '?')})")
-    print(f"pairable     {bool(a.get('Pairable'))}  discoverable={bool(a.get('Discoverable'))}")
+    print(
+        f"powered      {bool(a.get('Powered'))} (PowerState={a.get('PowerState', '?')})"
+    )
+    print(
+        f"pairable     {bool(a.get('Pairable'))}  discoverable={bool(a.get('Discoverable'))}"
+    )
     print(f"roles        {[str(r) for r in a.get('Roles', [])]}")
-    print(f"advertising  {int(adv.get('ActiveInstances', 0))} active of "
-          f"{int(adv.get('SupportedInstances', 0))}; includes={[str(i) for i in adv.get('SupportedIncludes', [])]}")
+    print(
+        f"advertising  {int(adv.get('ActiveInstances', 0))} active of "
+        f"{int(adv.get('SupportedInstances', 0))}; includes={[str(i) for i in adv.get('SupportedIncludes', [])]}"
+    )
     if not a.get("Powered"):
-        print("NOTE: adapter is off. If PowerState is off-blocked: sudo rfkill unblock bluetooth")
+        print(
+            "NOTE: adapter is off. If PowerState is off-blocked: sudo rfkill unblock bluetooth"
+        )
     return 0
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Shappe BLE bridge (PROTOTYPE)")
-    ap.add_argument("--check", action="store_true", help="inspect BlueZ and the adapter, then exit")
-    ap.add_argument("--mock", choices=sorted(SCENARIOS), help="serve a scripted fake device")
-    ap.add_argument("--mock-audio", choices=("on", "off"), default="on",
-                    help="mock: the device's AUDIO_ENABLED (off = the app must make no sound)")
-    ap.add_argument("--mock-device-voice", action="store_true",
-                    help="mock: pretend the Pi's own voice speaks every cue (app must not repeat it)")
-    ap.add_argument("--url", default="http://127.0.0.1:8000", help="navigation service base URL")
-    ap.add_argument("--adapter", default=None, help="e.g. hci0 (default: the first LE adapter)")
-    ap.add_argument("--name", default=None, help="advertised name, <= 8 bytes (default Shappe / Shappe-M)")
+    ap.add_argument(
+        "--check", action="store_true", help="inspect BlueZ and the adapter, then exit"
+    )
+    ap.add_argument(
+        "--mock", choices=sorted(SCENARIOS), help="serve a scripted fake device"
+    )
+    ap.add_argument(
+        "--mock-audio",
+        choices=("on", "off"),
+        default="on",
+        help="mock: the device's AUDIO_ENABLED (off = the app must make no sound)",
+    )
+    ap.add_argument(
+        "--mock-device-voice",
+        action="store_true",
+        help="mock: pretend the Pi's own voice speaks every cue (app must not repeat it)",
+    )
+    ap.add_argument(
+        "--url", default="http://127.0.0.1:8000", help="navigation service base URL"
+    )
+    ap.add_argument(
+        "--adapter", default=None, help="e.g. hci0 (default: the first LE adapter)"
+    )
+    ap.add_argument(
+        "--name",
+        default=None,
+        help="advertised name, <= 8 bytes (default Shappe / Shappe-M)",
+    )
     ap.add_argument("--security", choices=sorted(SECURITY), default="encrypt")
-    ap.add_argument("--pair-window", type=float, default=180.0,
-                    help="seconds after start during which a new phone may pair")
-    ap.add_argument("--state-file", default=os.path.expanduser("~/.local/state/shappe-ble/state.json"))
+    ap.add_argument(
+        "--pair-window",
+        type=float,
+        default=180.0,
+        help="seconds after start during which a new phone may pair",
+    )
+    ap.add_argument(
+        "--state-file",
+        default=os.path.expanduser("~/.local/state/shappe-ble/state.json"),
+    )
     args = ap.parse_args()
 
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
@@ -526,21 +644,36 @@ def main() -> int:
     try:
         adapter_props.Set(ADAPTER_IFACE, "Powered", dbus.Boolean(True))
     except dbus.exceptions.DBusException as exc:
-        print(f"[ble] cannot power the adapter: {exc.get_dbus_message()}\n"
-              f"      if it is rfkill-blocked: sudo rfkill unblock bluetooth")
+        print(
+            f"[ble] cannot power the adapter: {exc.get_dbus_message()}\n"
+            f"      if it is rfkill-blocked: sudo rfkill unblock bluetooth"
+        )
         return 3
 
     mock = args.mock is not None
-    source = (MockSource(args.mock, audio_enabled=args.mock_audio == "on",
-                         device_voice=args.mock_device_voice) if mock else HttpSource(args.url))
-    bridge = Bridge(load_vocab(), _identity(mock), service=source, state_path=args.state_file)
+    source = (
+        MockSource(
+            args.mock,
+            audio_enabled=args.mock_audio == "on",
+            device_voice=args.mock_device_voice,
+        )
+        if mock
+        else HttpSource(args.url)
+    )
+    bridge = Bridge(
+        load_vocab(), _identity(mock), service=source, state_path=args.state_file
+    )
     name = args.name or ("Shappe-M" if mock else "Shappe")
     if len(name.encode()) > MAX_NAME_BYTES:
-        print(f"[ble] WARNING: name '{name}' is over {MAX_NAME_BYTES} bytes; BlueZ will shorten it")
+        print(
+            f"[ble] WARNING: name '{name}' is over {MAX_NAME_BYTES} bytes; BlueZ will shorten it"
+        )
     server = Server(bus, adapter, bridge, source, args.security, args.pair_window, name)
 
     adapter_props.Set(ADAPTER_IFACE, "Pairable", dbus.Boolean(True))
-    adapter_props.Set(ADAPTER_IFACE, "PairableTimeout", dbus.UInt32(int(args.pair_window)))
+    adapter_props.Set(
+        ADAPTER_IFACE, "PairableTimeout", dbus.UInt32(int(args.pair_window))
+    )
 
     agents = dbus.Interface(bus.get_object(BLUEZ, "/org/bluez"), AGENT_MANAGER_IFACE)
     agents.RegisterAgent(AGENT_PATH, "NoInputNoOutput")
@@ -557,29 +690,53 @@ def main() -> int:
             print(f"[ble] {what} registration failed: {error}")
             failed.append(what)
             loop.quit()
+
         return cb
 
     gatt = dbus.Interface(bus.get_object(BLUEZ, adapter), GATT_MANAGER_IFACE)
     advm = dbus.Interface(bus.get_object(BLUEZ, adapter), LE_ADV_MANAGER_IFACE)
-    gatt.RegisterApplication(APP_PATH, {}, reply_handler=_registered("GATT application"),
-                             error_handler=_failed("GATT application"))
-    advm.RegisterAdvertisement(ADV_PATH, {}, reply_handler=_registered(f"advertisement '{name}'"),
-                               error_handler=_failed("advertisement"))
-    bus.add_signal_receiver(server.on_device_props, dbus_interface=DBUS_PROP_IFACE,
-                            signal_name="PropertiesChanged", arg0=DEVICE_IFACE,
-                            path_keyword="path")
-    bus.add_signal_receiver(server.on_interfaces_added, dbus_interface=DBUS_OM_IFACE,
-                            signal_name="InterfacesAdded", bus_name=BLUEZ)
-    bus.add_signal_receiver(server.on_interfaces_removed, dbus_interface=DBUS_OM_IFACE,
-                            signal_name="InterfacesRemoved", bus_name=BLUEZ)
+    gatt.RegisterApplication(
+        APP_PATH,
+        {},
+        reply_handler=_registered("GATT application"),
+        error_handler=_failed("GATT application"),
+    )
+    advm.RegisterAdvertisement(
+        ADV_PATH,
+        {},
+        reply_handler=_registered(f"advertisement '{name}'"),
+        error_handler=_failed("advertisement"),
+    )
+    bus.add_signal_receiver(
+        server.on_device_props,
+        dbus_interface=DBUS_PROP_IFACE,
+        signal_name="PropertiesChanged",
+        arg0=DEVICE_IFACE,
+        path_keyword="path",
+    )
+    bus.add_signal_receiver(
+        server.on_interfaces_added,
+        dbus_interface=DBUS_OM_IFACE,
+        signal_name="InterfacesAdded",
+        bus_name=BLUEZ,
+    )
+    bus.add_signal_receiver(
+        server.on_interfaces_removed,
+        dbus_interface=DBUS_OM_IFACE,
+        signal_name="InterfacesRemoved",
+        bus_name=BLUEZ,
+    )
 
     def _bluez_owner(owner):
         # bluetoothd restarted or stopped: our registrations died with it. Exit non-zero
         # so systemd (Restart=always) starts a fresh bridge that registers again.
         if not owner:
-            print("[ble] bluetoothd left the system bus; exiting so the bridge is restarted")
+            print(
+                "[ble] bluetoothd left the system bus; exiting so the bridge is restarted"
+            )
             failed.append("bluetoothd")
             loop.quit()
+
     bus.watch_name_owner(BLUEZ, _bluez_owner)
 
     poller = threading.Thread(target=server.poll_loop, name="ble-poll", daemon=True)
@@ -593,13 +750,17 @@ def main() -> int:
 
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, _quit)
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, _quit)
-    print(f"[ble] {'MOCK ' + args.mock if mock else 'live ' + args.url}; security={args.security}; "
-          f"pairing open for {args.pair_window:.0f} s; device_id={bridge.device_id} epoch={bridge.epoch}")
+    print(
+        f"[ble] {'MOCK ' + args.mock if mock else 'live ' + args.url}; security={args.security}; "
+        f"pairing open for {args.pair_window:.0f} s; device_id={bridge.device_id} epoch={bridge.epoch}"
+    )
     loop.run()
 
-    for call in (lambda: advm.UnregisterAdvertisement(ADV_PATH),
-                 lambda: gatt.UnregisterApplication(APP_PATH),
-                 lambda: agents.UnregisterAgent(AGENT_PATH)):
+    for call in (
+        lambda: advm.UnregisterAdvertisement(ADV_PATH),
+        lambda: gatt.UnregisterApplication(APP_PATH),
+        lambda: agents.UnregisterAgent(AGENT_PATH),
+    ):
         try:
             call()
         except dbus.exceptions.DBusException:

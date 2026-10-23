@@ -10,7 +10,7 @@ DEBUG = os.environ.get("HAILO_DEBUG") == "1"
 _WINDOW_SEC = 5.0
 
 _lock = threading.Lock()
-_models = {}   # model name -> deque[(completed_at, infer_ms, n_results)]
+_models = {}  # model name -> deque[(completed_at, infer_ms, n_results)]
 
 
 def _bucket(model: str):
@@ -36,9 +36,11 @@ def record(model: str, infer_ms: float, n_results: int = 0):
     if DEBUG:
         fps = (n - 1) / span if span > 0 else 0.0
         util = (busy_ms / (span * 1000.0) * 100.0) if span > 0 else 0.0
-        print(f"[Hailo/{model}] infer done {infer_ms:6.1f} ms | "
-              f"{fps:5.1f} FPS | util {util:5.1f}% | results {n_results}",
-              flush=True)
+        print(
+            f"[Hailo/{model}] infer done {infer_ms:6.1f} ms | "
+            f"{fps:5.1f} FPS | util {util:5.1f}% | results {n_results}",
+            flush=True,
+        )
 
 
 def snapshot():
@@ -52,8 +54,13 @@ def snapshot():
         for model, d in _models.items():
             entries = [e for e in d if e[0] >= cutoff]
             if len(entries) < 2:
-                out[model] = {"fps": 0.0, "utilization": 0.0, "avg_infer_ms": 0.0,
-                              "inferences": len(entries), "last_results": 0}
+                out[model] = {
+                    "fps": 0.0,
+                    "utilization": 0.0,
+                    "avg_infer_ms": 0.0,
+                    "inferences": len(entries),
+                    "last_results": 0,
+                }
                 continue
             span = entries[-1][0] - entries[0][0]
             busy_ms = sum(e[1] for e in entries)

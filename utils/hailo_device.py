@@ -15,7 +15,8 @@ def get_shared_vdevice():
     with _lock:
         if _vdevice is None:
             from hailo_platform import VDevice
-            vdevice = VDevice()          # raises -> _vdevice stays None
+
+            vdevice = VDevice()  # raises -> _vdevice stays None
             _vdevice = vdevice
         return _vdevice
 

@@ -8,21 +8,37 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from config import (
-    LIDAR_MOVERS_BREAK_MM, LIDAR_MOVERS_BREAK_PER_M, LIDAR_MOVERS_CONFIRM_SCANS,
-    LIDAR_MOVERS_EGO_MAX_RMS_MPS, LIDAR_MOVERS_EGO_MIN_TRACKS, LIDAR_MOVERS_GATE_M,
-    LIDAR_MOVERS_HEAD_ON_DEG, LIDAR_MOVERS_HORIZON_S, LIDAR_MOVERS_LOST_S,
-    LIDAR_MOVERS_MAX_GAP_DEG, LIDAR_MOVERS_MAX_RANGE_MM, LIDAR_MOVERS_MAX_WIDTH_M,
-    LIDAR_MOVERS_MIN_POINTS, LIDAR_MOVERS_MIN_RANGE_MM, LIDAR_MOVERS_MIN_SAMPLES,
-    LIDAR_MOVERS_MIN_SPAN_S, LIDAR_MOVERS_MIN_SPEED_MPS, LIDAR_MOVERS_MISS_M,
-    LIDAR_MOVERS_NOISE_PER_M, LIDAR_MOVERS_PERSON_MAX_WIDTH_M,
-    LIDAR_MOVERS_VEHICLE_SPEED_MPS, LIDAR_MOVERS_WALK_MAX_MPS, LIDAR_MOVERS_WINDOW_S,
-    LIDAR_STALE_S, SIMPLE_VEHICLE_MISS_M,
+    LIDAR_MOVERS_BREAK_MM,
+    LIDAR_MOVERS_BREAK_PER_M,
+    LIDAR_MOVERS_CONFIRM_SCANS,
+    LIDAR_MOVERS_EGO_MAX_RMS_MPS,
+    LIDAR_MOVERS_EGO_MIN_TRACKS,
+    LIDAR_MOVERS_GATE_M,
+    LIDAR_MOVERS_HEAD_ON_DEG,
+    LIDAR_MOVERS_HORIZON_S,
+    LIDAR_MOVERS_LOST_S,
+    LIDAR_MOVERS_MAX_GAP_DEG,
+    LIDAR_MOVERS_MAX_RANGE_MM,
+    LIDAR_MOVERS_MAX_WIDTH_M,
+    LIDAR_MOVERS_MIN_POINTS,
+    LIDAR_MOVERS_MIN_RANGE_MM,
+    LIDAR_MOVERS_MIN_SAMPLES,
+    LIDAR_MOVERS_MIN_SPAN_S,
+    LIDAR_MOVERS_MIN_SPEED_MPS,
+    LIDAR_MOVERS_MISS_M,
+    LIDAR_MOVERS_NOISE_PER_M,
+    LIDAR_MOVERS_PERSON_MAX_WIDTH_M,
+    LIDAR_MOVERS_VEHICLE_SPEED_MPS,
+    LIDAR_MOVERS_WALK_MAX_MPS,
+    LIDAR_MOVERS_WINDOW_S,
+    LIDAR_STALE_S,
+    SIMPLE_VEHICLE_MISS_M,
 )
 
-_OCCLUDER_M = 0.2          # a neighbour this much nearer hides that end of a blob
-_EGO_MAX_FWD_MPS = 2.5     # a fitted user motion faster than a walk is a bad fit
+_OCCLUDER_M = 0.2  # a neighbour this much nearer hides that end of a blob
+_EGO_MAX_FWD_MPS = 2.5  # a fitted user motion faster than a walk is a bad fit
 _EGO_MAX_SIDE_MPS = 1.5
-_EGO_MIN_SPREAD_M = 1.0    # still things this far apart pin down a turn
+_EGO_MIN_SPREAD_M = 1.0  # still things this far apart pin down a turn
 
 
 def segment(points) -> List[Dict[str, Any]]:
@@ -30,8 +46,11 @@ def segment(points) -> List[Dict[str, Any]]:
 
     `clean` is False when something nearer hides either end: the blob's visible part
     then changes with the view, not with its own motion, so it is not followed."""
-    pts = sorted((float(a) % 360.0, float(d) / 1000.0) for a, d in points
-                 if isinstance(d, (int, float)) and d > 0)
+    pts = sorted(
+        (float(a) % 360.0, float(d) / 1000.0)
+        for a, d in points
+        if isinstance(d, (int, float)) and d > 0
+    )
     n = len(pts)
     if n < LIDAR_MOVERS_MIN_POINTS:
         return []
@@ -46,7 +65,9 @@ def segment(points) -> List[Dict[str, Any]]:
     def joined(i: int, j: int) -> bool:
         if gap_deg(i, j) > LIDAR_MOVERS_MAX_GAP_DEG:
             return False
-        reach = LIDAR_MOVERS_BREAK_MM / 1000.0 + LIDAR_MOVERS_BREAK_PER_M * min(rng[i], rng[j])
+        reach = LIDAR_MOVERS_BREAK_MM / 1000.0 + LIDAR_MOVERS_BREAK_PER_M * min(
+            rng[i], rng[j]
+        )
         return math.hypot(xs[j] - xs[i], ys[j] - ys[i]) <= reach
 
     runs: List[List[int]] = [[0]]
@@ -55,12 +76,14 @@ def segment(points) -> List[Dict[str, Any]]:
             runs[-1].append(i)
         else:
             runs.append([i])
-    if len(runs) > 1 and joined(n - 1, 0):        # one blob across straight ahead
+    if len(runs) > 1 and joined(n - 1, 0):  # one blob across straight ahead
         runs[0] = runs.pop() + runs[0]
 
     def hides(neighbour: int, gap: float, end: int) -> bool:
         """Does the return just past a blob's end lie nearer, close enough in angle to hide it?"""
-        return gap <= LIDAR_MOVERS_MAX_GAP_DEG and rng[neighbour] < rng[end] - _OCCLUDER_M
+        return (
+            gap <= LIDAR_MOVERS_MAX_GAP_DEG and rng[neighbour] < rng[end] - _OCCLUDER_M
+        )
 
     out = []
     for run in runs:
@@ -74,13 +97,25 @@ def segment(points) -> List[Dict[str, Any]]:
         near = min(rng[i] for i in run)
         if width > LIDAR_MOVERS_MAX_WIDTH_M:
             continue
-        if not (LIDAR_MOVERS_MIN_RANGE_MM / 1000.0 <= near
-                and math.hypot(cx, cy) <= LIDAR_MOVERS_MAX_RANGE_MM / 1000.0):
+        if not (
+            LIDAR_MOVERS_MIN_RANGE_MM / 1000.0 <= near
+            and math.hypot(cx, cy) <= LIDAR_MOVERS_MAX_RANGE_MM / 1000.0
+        ):
             continue
-        clean = not (hides(before, gap_deg(before, first), first)
-                     or hides(after, gap_deg(last, after), last))
-        out.append({"x": cx, "y": cy, "width": width, "points": len(run),
-                    "near_m": near, "clean": clean})
+        clean = not (
+            hides(before, gap_deg(before, first), first)
+            or hides(after, gap_deg(last, after), last)
+        )
+        out.append(
+            {
+                "x": cx,
+                "y": cy,
+                "width": width,
+                "points": len(run),
+                "near_m": near,
+                "clean": clean,
+            }
+        )
     return out
 
 
@@ -114,8 +149,15 @@ class MoverTracker:
 
     @staticmethod
     def _empty() -> Dict[str, Any]:
-        return {"t": None, "updated_mono": None, "tracks": [], "threat": None,
-                "ego": {"valid": False}, "blobs": [], "followed": 0}
+        return {
+            "t": None,
+            "updated_mono": None,
+            "tracks": [],
+            "threat": None,
+            "ego": {"valid": False},
+            "blobs": [],
+            "followed": 0,
+        }
 
     def reset(self) -> None:
         with self._lock:
@@ -123,15 +165,21 @@ class MoverTracker:
 
     # ---- one scan ---------------------------------------------------------
 
-    def update(self, points, t: float, heading: Optional[Dict[str, Any]] = None) -> None:
+    def update(
+        self, points, t: float, heading: Optional[Dict[str, Any]] = None
+    ) -> None:
         """Fold one scan in. `heading` is heading_tracker's state for this scan."""
         blobs = segment(points)
         with self._lock:
-            if self._last_t is not None and not (0.0 < t - self._last_t <= LIDAR_MOVERS_LOST_S):
-                self._tracks = []                 # a gap, or the clock went backwards
+            if self._last_t is not None and not (
+                0.0 < t - self._last_t <= LIDAR_MOVERS_LOST_S
+            ):
+                self._tracks = []  # a gap, or the clock went backwards
             self._last_t = t
             yaw = (heading or {}).get("scan_yaw_deg")
-            self._turn(math.radians(float(yaw)) if isinstance(yaw, (int, float)) else 0.0)
+            self._turn(
+                math.radians(float(yaw)) if isinstance(yaw, (int, float)) else 0.0
+            )
             self._follow([b for b in blobs if b["clean"]], t)
             fitted = self._fit(t)
             ego = self._ego(fitted)
@@ -147,7 +195,9 @@ class MoverTracker:
             return
         c, s = math.cos(yaw), math.sin(yaw)
         for tr in self._tracks:
-            tr["hist"] = [(ts, x * c + y * s, y * c - x * s, w) for ts, x, y, w in tr["hist"]]
+            tr["hist"] = [
+                (ts, x * c + y * s, y * c - x * s, w) for ts, x, y, w in tr["hist"]
+            ]
             if tr["v"] is not None:
                 vx, vy = tr["v"]
                 tr["v"] = (vx * c + vy * s, vy * c - vx * s)
@@ -175,9 +225,16 @@ class MoverTracker:
             self._tracks[ti]["hist"].append((t, b["x"], b["y"], b["width"]))
         for bi, b in enumerate(blobs):
             if bi not in used_b:
-                self._tracks.append({"id": self._next_id, "hist": [(t, b["x"], b["y"], b["width"])],
-                                     "v": None, "moving_scans": 0, "moving": False,
-                                     "alert": None})
+                self._tracks.append(
+                    {
+                        "id": self._next_id,
+                        "hist": [(t, b["x"], b["y"], b["width"])],
+                        "v": None,
+                        "moving_scans": 0,
+                        "moving": False,
+                        "alert": None,
+                    }
+                )
                 self._next_id += 1
         kept = []
         for tr in self._tracks:
@@ -192,8 +249,11 @@ class MoverTracker:
         fitted = []
         for tr in self._tracks:
             h = tr["hist"]
-            if (h[-1][0] != t or len(h) < LIDAR_MOVERS_MIN_SAMPLES
-                    or t - h[0][0] < LIDAR_MOVERS_MIN_SPAN_S - 1e-6):
+            if (
+                h[-1][0] != t
+                or len(h) < LIDAR_MOVERS_MIN_SAMPLES
+                or t - h[0][0] < LIDAR_MOVERS_MIN_SPAN_S - 1e-6
+            ):
                 continue
             arr = np.asarray(h, dtype=np.float64)
             ts, xs, ys = arr[:, 0], arr[:, 1], arr[:, 2]
@@ -218,7 +278,9 @@ class MoverTracker:
             return {"valid": False, "why": f"{len(fitted)} things followed"}
         pos = np.array([(tr["x"], tr["y"]) for tr in fitted])
         vel = np.array([tr["v"] for tr in fitted])
-        spread = float(np.max(np.linalg.norm(pos[:, None, :] - pos[None, :, :], axis=2)))
+        spread = float(
+            np.max(np.linalg.norm(pos[:, None, :] - pos[None, :, :], axis=2))
+        )
         with_turn = spread >= _EGO_MIN_SPREAD_M
 
         def solve(mask):
@@ -246,22 +308,37 @@ class MoverTracker:
             inliers = keep
         n_in = int(inliers.sum())
         rms = float(np.sqrt(np.mean(res[inliers] ** 2))) if n_in else float("inf")
-        valid = (n_in >= LIDAR_MOVERS_EGO_MIN_TRACKS and 2 * n_in >= len(fitted)
-                 and rms <= LIDAR_MOVERS_EGO_MAX_RMS_MPS
-                 and abs(ux) <= _EGO_MAX_FWD_MPS and abs(uy) <= _EGO_MAX_SIDE_MPS)
-        return {"valid": bool(valid), "fwd_mps": round(ux, 2), "right_mps": round(uy, 2),
-                "turn_dps": round(math.degrees(w), 1), "still_things": n_in,
-                "followed": len(fitted), "rms_mps": round(rms, 3),
-                "why": "" if valid else (f"only {n_in} of {len(fitted)} agree"
-                                         if n_in < LIDAR_MOVERS_EGO_MIN_TRACKS or 2 * n_in < len(fitted)
-                                         else f"spread {rms:.2f} m/s" if rms > LIDAR_MOVERS_EGO_MAX_RMS_MPS
-                                         else "not a walking speed")}
+        valid = (
+            n_in >= LIDAR_MOVERS_EGO_MIN_TRACKS
+            and 2 * n_in >= len(fitted)
+            and rms <= LIDAR_MOVERS_EGO_MAX_RMS_MPS
+            and abs(ux) <= _EGO_MAX_FWD_MPS
+            and abs(uy) <= _EGO_MAX_SIDE_MPS
+        )
+        return {
+            "valid": bool(valid),
+            "fwd_mps": round(ux, 2),
+            "right_mps": round(uy, 2),
+            "turn_dps": round(math.degrees(w), 1),
+            "still_things": n_in,
+            "followed": len(fitted),
+            "rms_mps": round(rms, 3),
+            "why": ""
+            if valid
+            else (
+                f"only {n_in} of {len(fitted)} agree"
+                if n_in < LIDAR_MOVERS_EGO_MIN_TRACKS or 2 * n_in < len(fitted)
+                else f"spread {rms:.2f} m/s"
+                if rms > LIDAR_MOVERS_EGO_MAX_RMS_MPS
+                else "not a walking speed"
+            ),
+        }
 
     @staticmethod
     def _judge(tr: Dict[str, Any], ego: Dict[str, Any]) -> None:
         """Is it moving by itself, and is it coming at the user?"""
         x, y = tr["x"], tr["y"]
-        vx, vy = tr["v"]                       # relative to the user
+        vx, vy = tr["v"]  # relative to the user
         r = math.hypot(x, y)
         need = max(LIDAR_MOVERS_MIN_SPEED_MPS, LIDAR_MOVERS_NOISE_PER_M * r)
         if ego["valid"]:
@@ -271,32 +348,35 @@ class MoverTracker:
             need += ego["rms_mps"]
             walk = math.hypot(ego["fwd_mps"], ego["right_mps"])
         else:
-            own = (None, vy)                   # sideways is the part no walk explains
+            own = (None, vy)  # sideways is the part no walk explains
             own_speed = _to_segment_dist(vx, vy, LIDAR_MOVERS_WALK_MAX_MPS)
             walk = LIDAR_MOVERS_WALK_MAX_MPS
         # Walking past something near shows a different face of it each scan, and its
         # centre slides by about its size times the turn of the line of sight.
         need += 0.5 * tr["width"] * walk / max(r, 0.3)
         if tr["moving"]:
-            need *= 0.7                        # hysteresis: let go more slowly
+            need *= 0.7  # hysteresis: let go more slowly
         tr["moving_scans"] = tr["moving_scans"] + 1 if own_speed >= need else 0
         tr["moving"] = tr["moving_scans"] >= LIDAR_MOVERS_CONFIRM_SCANS
         tr["own_speed"] = own_speed
         tr["own"] = own
-        vehicle = (tr["width"] > LIDAR_MOVERS_PERSON_MAX_WIDTH_M
-                   or own_speed >= LIDAR_MOVERS_VEHICLE_SPEED_MPS)
+        vehicle = (
+            tr["width"] > LIDAR_MOVERS_PERSON_MAX_WIDTH_M
+            or own_speed >= LIDAR_MOVERS_VEHICLE_SPEED_MPS
+        )
         tr["word"] = "Vehicle" if vehicle else "Person"
         tr["alert"] = None
         if not tr["moving"]:
             return
         pv, vv = x * vx + y * vy, vx * vx + vy * vy
         if pv >= 0.0 or vv < 1e-6:
-            return                             # not closing
+            return  # not closing
         t_cpa = -pv / vv
         cx, cy = x + vx * t_cpa, y + vy * t_cpa
         miss = math.hypot(cx, cy)
-        if t_cpa > LIDAR_MOVERS_HORIZON_S or miss > (SIMPLE_VEHICLE_MISS_M if vehicle
-                                                     else LIDAR_MOVERS_MISS_M):
+        if t_cpa > LIDAR_MOVERS_HORIZON_S or miss > (
+            SIMPLE_VEHICLE_MISS_M if vehicle else LIDAR_MOVERS_MISS_M
+        ):
             return
         bearing = math.degrees(math.atan2(y, x))
         if abs(bearing) > 135.0:
@@ -305,44 +385,68 @@ class MoverTracker:
             head_on = -pv / (math.sqrt(vv) * max(r, 1e-6))
             if head_on >= math.cos(math.radians(LIDAR_MOVERS_HEAD_ON_DEG)):
                 mode, side = "toward", "left" if bearing < 0 else "right"
-            else:                              # crossing: from the side it moves away from
+            else:  # crossing: from the side it moves away from
                 mode, side = "crossing", "left" if own[1] > 0 else "right"
         else:
             mode, side = "crossing", "left" if bearing < 0 else "right"
         tr["alert"] = {
-            "mode": mode, "side": side,
+            "mode": mode,
+            "side": side,
             "pass_side": "right" if cy > 0.15 else "left" if cy < -0.15 else None,
-            "ttc_s": round(t_cpa, 1), "miss_m": round(miss, 2),
+            "ttc_s": round(t_cpa, 1),
+            "miss_m": round(miss, 2),
         }
 
-    def _snapshot(self, t: float, ego: Dict[str, Any], blobs: List[Dict[str, Any]],
-                  fitted: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _snapshot(
+        self,
+        t: float,
+        ego: Dict[str, Any],
+        blobs: List[Dict[str, Any]],
+        fitted: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
         tracks = []
         for tr in fitted:
             if not tr["moving"]:
                 continue
             x, y = tr["x"], tr["y"]
-            tracks.append({
-                "source": "lidar", "id": tr["id"], "word": tr["word"],
-                "x_m": round(x, 2), "y_m": round(y, 2),
-                "distance_m": round(math.hypot(x, y), 2),
-                "bearing_deg": round(math.degrees(math.atan2(y, x)), 1),
-                "vx_mps": round(tr["v"][0], 2), "vy_mps": round(tr["v"][1], 2),
-                "own_speed_mps": round(tr["own_speed"], 2),
-                "width_m": round(tr["width"], 2),
-                "alert": dict(tr["alert"]) if tr["alert"] else None,
-            })
+            tracks.append(
+                {
+                    "source": "lidar",
+                    "id": tr["id"],
+                    "word": tr["word"],
+                    "x_m": round(x, 2),
+                    "y_m": round(y, 2),
+                    "distance_m": round(math.hypot(x, y), 2),
+                    "bearing_deg": round(math.degrees(math.atan2(y, x)), 1),
+                    "vx_mps": round(tr["v"][0], 2),
+                    "vy_mps": round(tr["v"][1], 2),
+                    "own_speed_mps": round(tr["own_speed"], 2),
+                    "width_m": round(tr["width"], 2),
+                    "alert": dict(tr["alert"]) if tr["alert"] else None,
+                }
+            )
         alerts = [m for m in tracks if m["alert"]]
         threat = None
         if alerts:
             m = min(alerts, key=lambda a: a["alert"]["ttc_s"])
             threat = {**{k: v for k, v in m.items() if k != "alert"}, **m["alert"]}
-        return {"t": t, "updated_mono": time.monotonic(), "tracks": tracks,
-                "threat": threat, "ego": ego, "followed": len(self._tracks),
-                # Every blob in this scan, as (bearing deg, nearest m): what the LiDAR
-                # can follow, so the radar leaves it alone (utils/radar_movers).
-                "blobs": [(round(math.degrees(math.atan2(b["y"], b["x"])), 1),
-                           round(b["near_m"], 2)) for b in blobs]}
+        return {
+            "t": t,
+            "updated_mono": time.monotonic(),
+            "tracks": tracks,
+            "threat": threat,
+            "ego": ego,
+            "followed": len(self._tracks),
+            # Every blob in this scan, as (bearing deg, nearest m): what the LiDAR
+            # can follow, so the radar leaves it alone (utils/radar_movers).
+            "blobs": [
+                (
+                    round(math.degrees(math.atan2(b["y"], b["x"])), 1),
+                    round(b["near_m"], 2),
+                )
+                for b in blobs
+            ],
+        }
 
     # ---- read -------------------------------------------------------------
 

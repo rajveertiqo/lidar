@@ -16,11 +16,16 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 
 from config import (
-    TOF_BUFFER_FRAMES, TOF_CSI_PORT, TOF_DEPTH_IS_RADIAL, TOF_ENABLED,
-    TOF_FRAME_TIMEOUT_MS, TOF_RANGE_MM, TOF_RETRY_BACKOFF_S,
+    TOF_BUFFER_FRAMES,
+    TOF_CSI_PORT,
+    TOF_DEPTH_IS_RADIAL,
+    TOF_ENABLED,
+    TOF_FRAME_TIMEOUT_MS,
+    TOF_RANGE_MM,
+    TOF_RETRY_BACKOFF_S,
 )
 
-_NO_FRAMES_S = 3.0          # this long without a frame: the sensor is reopened
+_NO_FRAMES_S = 3.0  # this long without a frame: the sensor is reopened
 
 
 class _Frame:
@@ -34,8 +39,14 @@ _lock = threading.Lock()
 _frames: "collections.deque[_Frame]" = collections.deque(maxlen=TOF_BUFFER_FRAMES)
 _stop = threading.Event()
 _thread: Optional[threading.Thread] = None
-_status: Dict[str, Any] = {"running": False, "ok": False, "error": None, "frames": 0,
-                           "opened_at": None, "sdk": None}
+_status: Dict[str, Any] = {
+    "running": False,
+    "ok": False,
+    "error": None,
+    "frames": 0,
+    "opened_at": None,
+    "sdk": None,
+}
 _arrivals: "collections.deque[float]" = collections.deque(maxlen=30)
 
 
@@ -44,24 +55,31 @@ class _Sdk:
 
     def __init__(self):
         import ArducamDepthCamera as ac
+
         self.cam = ac.ArducamCamera()
         self.new_api = hasattr(ac, "Connection")
         conn = ac.Connection.CSI if self.new_api else ac.TOFConnect.CSI
         ret = self.cam.open(conn, TOF_CSI_PORT)
         if ret not in (0, None):
-            raise RuntimeError(f"cannot open the ToF on CSI port {TOF_CSI_PORT} (error {ret})")
+            raise RuntimeError(
+                f"cannot open the ToF on CSI port {TOF_CSI_PORT} (error {ret})"
+            )
         ret = self.cam.start(ac.FrameType.DEPTH if self.new_api else ac.TOFOutput.DEPTH)
         if ret not in (0, None):
             self.cam.close()
             raise RuntimeError(f"the ToF would not start (error {ret})")
-        try:                             # the new API takes millimetres, the old one metres
+        try:  # the new API takes millimetres, the old one metres
             if self.new_api:
                 self.cam.setControl(ac.Control.RANGE, int(TOF_RANGE_MM))
             else:
-                self.cam.setControl(ac.TOFControl.RANGE, int(round(TOF_RANGE_MM / 1000.0)))
+                self.cam.setControl(
+                    ac.TOFControl.RANGE, int(round(TOF_RANGE_MM / 1000.0))
+                )
         except Exception:
-            pass                         # it keeps its own default range
-        self.name = "ArducamDepthCamera " + ("(Connection API)" if self.new_api else "(TOFConnect API)")
+            pass  # it keeps its own default range
+        self.name = "ArducamDepthCamera " + (
+            "(Connection API)" if self.new_api else "(TOFConnect API)"
+        )
 
     @staticmethod
     def _field(frame, attr: str, getter: str):
@@ -85,7 +103,7 @@ class _Sdk:
         if depth is None:
             return None
         if not self.new_api:
-            depth *= 1000.0              # the old API reads metres
+            depth *= 1000.0  # the old API reads metres
         return depth, ir
 
     def close(self):
@@ -127,7 +145,9 @@ def _run():
             failures += 1
         finally:
             sdk.close()
-        _stop.wait(TOF_RETRY_BACKOFF_S[min(max(failures, 1), len(TOF_RETRY_BACKOFF_S)) - 1])
+        _stop.wait(
+            TOF_RETRY_BACKOFF_S[min(max(failures, 1), len(TOF_RETRY_BACKOFF_S)) - 1]
+        )
     _note(running=False, ok=False)
 
 
@@ -161,8 +181,9 @@ def nearest(frame_time: float, max_gap_s: float):
         best = min(_frames, key=lambda f: abs(f.t - frame_time), default=None)
     if best is None or abs(best.t - float(frame_time)) > max_gap_s:
         return None
-    if best.placed is None:              # placed once, on first use
+    if best.placed is None:  # placed once, on first use
         from utils.depth_fusion import get_projector
+
         best.placed = get_projector().project(best.depth, best.ir, best.t)
     return best.placed
 
@@ -177,16 +198,24 @@ def latest_raw() -> Optional[Tuple[float, np.ndarray, Optional[np.ndarray]]]:
 def tof_status() -> Dict[str, Any]:
     """For /tof/status and /health."""
     from utils.depth_fusion import get_projector
+
     with _lock:
         st = dict(_status)
         last = _frames[-1].t if _frames else None
         times = list(_arrivals)
     now = time.time()
-    st.update({"enabled": TOF_ENABLED,
-               "fps": (round((len(times) - 1) / (times[-1] - times[0]), 1)
-                       if len(times) >= 2 and times[-1] > times[0] else None),
-               "age_s": None if last is None else round(now - last, 2),
-               "depth_is_radial": TOF_DEPTH_IS_RADIAL})
+    st.update(
+        {
+            "enabled": TOF_ENABLED,
+            "fps": (
+                round((len(times) - 1) / (times[-1] - times[0]), 1)
+                if len(times) >= 2 and times[-1] > times[0]
+                else None
+            ),
+            "age_s": None if last is None else round(now - last, 2),
+            "depth_is_radial": TOF_DEPTH_IS_RADIAL,
+        }
+    )
     try:
         st["calibration"] = get_projector().calib.summary()
     except Exception as e:

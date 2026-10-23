@@ -21,19 +21,38 @@ SPI_READ = 0x80
 SPI_DEAD_BYTES = (0x00, 0xFF)
 
 # FS_SEL / AFS_SEL -> (register bits, LSB per unit)
-GYRO_RANGES = {250: (0x00, 131.0), 500: (0x08, 65.5),
-               1000: (0x10, 32.8), 2000: (0x18, 16.4)}
-ACCEL_RANGES = {2: (0x00, 16384.0), 4: (0x08, 8192.0),
-                8: (0x10, 4096.0), 16: (0x18, 2048.0)}
+GYRO_RANGES = {
+    250: (0x00, 131.0),
+    500: (0x08, 65.5),
+    1000: (0x10, 32.8),
+    2000: (0x18, 16.4),
+}
+ACCEL_RANGES = {
+    2: (0x00, 16384.0),
+    4: (0x08, 8192.0),
+    8: (0x10, 4096.0),
+    16: (0x18, 2048.0),
+}
 
 # WHO_AM_I values seen on genuine parts and the common clones
-KNOWN_IDS = {0x68: "MPU-6050", 0x70: "MPU-6500", 0x71: "MPU-9250",
-             0x72: "MPU-6555", 0x73: "MPU-9255", 0x98: "clone"}
+KNOWN_IDS = {
+    0x68: "MPU-6050",
+    0x70: "MPU-6500",
+    0x71: "MPU-9250",
+    0x72: "MPU-6555",
+    0x73: "MPU-9255",
+    0x98: "clone",
+}
 
 MPU6500_FAMILY = {0x70, 0x71, 0x72, 0x73}
 
-TEMP_CAL = {0x68: (340.0, 36.53), 0x70: (333.87, 21.0), 0x71: (333.87, 21.0),
-            0x72: (333.87, 21.0), 0x73: (333.87, 21.0)}
+TEMP_CAL = {
+    0x68: (340.0, 36.53),
+    0x70: (333.87, 21.0),
+    0x71: (333.87, 21.0),
+    0x72: (333.87, 21.0),
+    0x73: (333.87, 21.0),
+}
 TEMP_CAL_DEFAULT = (333.87, 21.0)
 
 
@@ -44,6 +63,7 @@ class _I2CLink:
 
     def __init__(self, bus=1, address=0x68):
         from smbus2 import SMBus
+
         self.bus_num = bus
         self.address = address
         self.bus = SMBus(bus)
@@ -71,6 +91,7 @@ class _SPILink:
 
     def __init__(self, bus=0, device=0, hz=1_000_000, mode=0):
         import spidev
+
         self.bus_num = bus
         self.device = device
         self.spi = spidev.SpiDev()
@@ -88,15 +109,24 @@ class _SPILink:
         return self.spi.xfer2([(reg & 0x7F) | SPI_READ] + [0x00] * count)[1:]
 
     def describe(self):
-        return (f"SPI /dev/spidev{self.bus_num}.{self.device} "
-                f"@ {self.spi.max_speed_hz / 1e6:g} MHz mode {self.spi.mode}")
+        return (
+            f"SPI /dev/spidev{self.bus_num}.{self.device} "
+            f"@ {self.spi.max_speed_hz / 1e6:g} MHz mode {self.spi.mode}"
+        )
 
     def close(self):
         self.spi.close()
 
 
-def open_link(transport="spi", bus=None, address=0x68,
-              spi_bus=0, spi_device=0, spi_hz=1_000_000, spi_mode=0):
+def open_link(
+    transport="spi",
+    bus=None,
+    address=0x68,
+    spi_bus=0,
+    spi_device=0,
+    spi_hz=1_000_000,
+    spi_mode=0,
+):
     """Build the transport named by `transport` ("spi" or "i2c")."""
     if transport == "spi":
         return _SPILink(spi_bus, spi_device, spi_hz, spi_mode)
@@ -106,13 +136,28 @@ def open_link(transport="spi", bus=None, address=0x68,
 
 
 class MPU6500:
-    def __init__(self, bus=None, address=0x68, gyro_range=1000, accel_range=4,
-                 transport="spi", spi_bus=0, spi_device=0,
-                 spi_hz=1_000_000, spi_mode=0, link=None):
+    def __init__(
+        self,
+        bus=None,
+        address=0x68,
+        gyro_range=1000,
+        accel_range=4,
+        transport="spi",
+        spi_bus=0,
+        spi_device=0,
+        spi_hz=1_000_000,
+        spi_mode=0,
+        link=None,
+    ):
         self.address = address
         self.bus_num = bus
-        self.link = link if link is not None else open_link(
-            transport, bus, address, spi_bus, spi_device, spi_hz, spi_mode)
+        self.link = (
+            link
+            if link is not None
+            else open_link(
+                transport, bus, address, spi_bus, spi_device, spi_hz, spi_mode
+            )
+        )
         self.transport = self.link.kind
         self.gyro_bias = (0.0, 0.0, 0.0)
         self.chip_id = None
@@ -152,8 +197,8 @@ class MPU6500:
             self.link.write_byte(USER_CTRL, I2C_IF_DIS)
         self.link.write_byte(PWR_MGMT_1, 0x00)
         time.sleep(0.1)
-        self.link.write_byte(PWR_MGMT_1, 0x01)   # gyro-X PLL
-        self.link.write_byte(CONFIG, 0x03)       # DLPF ~44 Hz
+        self.link.write_byte(PWR_MGMT_1, 0x01)  # gyro-X PLL
+        self.link.write_byte(CONFIG, 0x03)  # DLPF ~44 Hz
         # Internal output rate 1 kHz, so a poll never returns a stale sample.
         self.link.write_byte(SMPLRT_DIV, 0x00)
         self.link.write_byte(GYRO_CONFIG, self._gyro_bits)
@@ -179,8 +224,12 @@ class MPU6500:
         bx, by, bz = self.gyro_bias
         a, g = self._accel_scale, self._gyro_scale
         return {
-            "ax": ax / a, "ay": ay / a, "az": az / a,
-            "gx": gx / g - bx, "gy": gy / g - by, "gz": gz / g - bz,
+            "ax": ax / a,
+            "ay": ay / a,
+            "az": az / a,
+            "gx": gx / g - bx,
+            "gy": gy / g - by,
+            "gz": gz / g - bz,
             "temp": temp / self._temp_div + self._temp_off,
         }
 

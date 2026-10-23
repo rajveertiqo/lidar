@@ -20,7 +20,7 @@ _SAVE_MIN_INTERVAL_S = 30.0
 _SAVE_MIN_DELTA_M = 0.005
 
 _lock = threading.Lock()
-_state: Optional[Dict[str, Any]] = None     # what is on disk, or {} if nothing
+_state: Optional[Dict[str, Any]] = None  # what is on disk, or {} if nothing
 _last_save = 0.0
 
 _NEW_FILE_MODE = 0o644
@@ -50,14 +50,18 @@ def _load() -> Dict[str, Any]:
                 data["distance_m"] = raw.get("distance_m")
                 data["steps"] = raw.get("steps")
             else:
-                print(f"[GAIT] stride.json holds {stride} m, outside the "
-                      f"{GYRO_STRIDE_MIN_M}-{GYRO_STRIDE_MAX_M} m clamp — "
-                      f"ignoring it and using the config seed")
+                print(
+                    f"[GAIT] stride.json holds {stride} m, outside the "
+                    f"{GYRO_STRIDE_MIN_M}-{GYRO_STRIDE_MAX_M} m clamp — "
+                    f"ignoring it and using the config seed"
+                )
     except FileNotFoundError:
-        data = {}                            # nothing on disk: nobody to protect
-    except Exception as exc:                 # corrupt file must not brick boot
-        print(f"[GAIT] stride file unreadable ({type(exc).__name__}: {exc}) — "
-              f"using the config seed")
+        data = {}  # nothing on disk: nobody to protect
+    except Exception as exc:  # corrupt file must not brick boot
+        print(
+            f"[GAIT] stride file unreadable ({type(exc).__name__}: {exc}) — "
+            f"using the config seed"
+        )
     _state = data
     return _state
 
@@ -76,13 +80,14 @@ def is_measured() -> bool:
 
 def _atomic_write_text(path: Path, text: str) -> None:
     """Write `text` to `path` so a crash or power cut leaves either the old file or the new one, never half of each: a temp file in the same directory, fsynced, then renamed over the original."""
-    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp",
-                               dir=str(path.parent))
+    fd, tmp = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent)
+    )
     try:
         try:
             f = os.fdopen(fd, "w", encoding="utf-8")
         except BaseException:
-            os.close(fd)                     # fdopen failed: the fd is still ours
+            os.close(fd)  # fdopen failed: the fd is still ours
             raise
         with f:
             f.write(text)
@@ -100,7 +105,7 @@ def _atomic_write_text(path: Path, text: str) -> None:
     except BaseException:
         try:
             os.unlink(tmp)
-        except OSError:                      # never mask the original failure
+        except OSError:  # never mask the original failure
             pass
         raise
     _fsync_dir(path.parent)
@@ -130,22 +135,27 @@ def _write(stride: float, source: str, **extra) -> Dict[str, Any]:
     }
     data.update({k: v for k, v in extra.items() if v is not None})
     _atomic_write_text(STRIDE_FILE, json.dumps(data, indent=2, sort_keys=True) + "\n")
-    globals()["_state"] = dict(data, **{_OWNER: "learned" if source == "learned"
-                                        else "operator"})
+    globals()["_state"] = dict(
+        data, **{_OWNER: "learned" if source == "learned" else "operator"}
+    )
     _last_save = time.time()
     return dict(data)
 
 
-def set_stride(stride_m: float, source: str = "measured",
-               distance_m: Optional[float] = None,
-               steps: Optional[int] = None) -> Dict[str, Any]:
+def set_stride(
+    stride_m: float,
+    source: str = "measured",
+    distance_m: Optional[float] = None,
+    steps: Optional[int] = None,
+) -> Dict[str, Any]:
     """Record a stride and persist it."""
     stride = float(stride_m)
     if not (GYRO_STRIDE_MIN_M <= stride <= GYRO_STRIDE_MAX_M):
         raise ValueError(
             f"stride {stride:.3f} m is outside {GYRO_STRIDE_MIN_M}-"
             f"{GYRO_STRIDE_MAX_M} m — suspect a miscounted footfall, not a "
-            f"long pace")
+            f"long pace"
+        )
     global _operator_override
     with _lock:
         saved = _write(stride, source, distance_m=distance_m, steps=steps)
@@ -175,8 +185,9 @@ def note_learned(stride_m: float) -> None:
         try:
             _write(stride, "learned")
         except Exception as exc:
-            print(f"[GAIT] could not persist learned stride "
-                  f"({type(exc).__name__}: {exc})")
+            print(
+                f"[GAIT] could not persist learned stride ({type(exc).__name__}: {exc})"
+            )
 
 
 def clear_stride() -> Dict[str, Any]:
@@ -188,7 +199,7 @@ def clear_stride() -> Dict[str, Any]:
         except FileNotFoundError:
             pass
         else:
-            _fsync_dir(STRIDE_FILE.parent)   # or a power cut can undo the clear
+            _fsync_dir(STRIDE_FILE.parent)  # or a power cut can undo the clear
         _state = {}
         _last_save = 0.0
         _operator_override = True

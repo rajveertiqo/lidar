@@ -44,6 +44,7 @@ _BOARD_KEY = re.compile(r"^deg(\d{3})$")
 
 try:
     import cv2
+
     _CV2_ERROR = None
 except Exception as exc:  # pragma: no cover - exercised only on a broken install
     cv2 = None
@@ -97,8 +98,9 @@ class BEVGrid:
 
     # ---- geometry ---------------------------------------------------------
 
-    def _to_cells(self, bearing_deg: np.ndarray,
-                  dist_mm: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def _to_cells(
+        self, bearing_deg: np.ndarray, dist_mm: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Bearings/ranges -> (row, col), forward drawn UP and right RIGHT."""
         th = np.radians(bearing_deg)
         r = dist_mm / self.cell_mm
@@ -108,10 +110,13 @@ class BEVGrid:
 
     # ---- per-scan update --------------------------------------------------
 
-    def update(self, points: Sequence[Tuple[float, float]],
-               heading: Optional[Dict[str, Any]] = None,
-               radar: Optional[Dict[str, Any]] = None,
-               now: Optional[float] = None) -> None:
+    def update(
+        self,
+        points: Sequence[Tuple[float, float]],
+        heading: Optional[Dict[str, Any]] = None,
+        radar: Optional[Dict[str, Any]] = None,
+        now: Optional[float] = None,
+    ) -> None:
         """Fold one scan into the grid."""
         if cv2 is None or not points:
             return
@@ -139,8 +144,9 @@ class BEVGrid:
         np.clip(self.logodds, BEV_L_MIN, BEV_L_MAX, out=self.logodds)
         self.frames += 1
 
-    def _fade_and_register(self, heading: Optional[Dict[str, Any]],
-                           dt: Optional[float]) -> None:
+    def _fade_and_register(
+        self, heading: Optional[Dict[str, Any]], dt: Optional[float]
+    ) -> None:
         """Age the accumulated evidence and move it under the user."""
         if self.frames == 0:
             self.last_reset_reason = None
@@ -156,17 +162,24 @@ class BEVGrid:
         dyaw_deg, dfwd_mm, dright_mm = step
         self.last_reset_reason = None
 
-        m = cv2.getRotationMatrix2D((float(self.centre), float(self.centre)),
-                                    float(dyaw_deg), 1.0)
+        m = cv2.getRotationMatrix2D(
+            (float(self.centre), float(self.centre)), float(dyaw_deg), 1.0
+        )
         m[1, 2] += dfwd_mm / self.cell_mm
         m[0, 2] -= dright_mm / self.cell_mm
 
         self.logodds = cv2.warpAffine(
-            self.logodds, m, (self.n, self.n),
-            flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0.0)
+            self.logodds,
+            m,
+            (self.n, self.n),
+            flags=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0.0,
+        )
 
-    def _motion_step(self, heading: Optional[Dict[str, Any]],
-                     dt: Optional[float]) -> Optional[Tuple[float, float, float]]:
+    def _motion_step(
+        self, heading: Optional[Dict[str, Any]], dt: Optional[float]
+    ) -> Optional[Tuple[float, float, float]]:
         """How far the user moved since the last scan, or None if not trusted."""
         if not heading or dt is None or not (0.005 < dt < 1.0):
             self.last_reset_reason = "no usable inter-scan interval"
@@ -202,8 +215,7 @@ class BEVGrid:
 
     # ---- evidence ---------------------------------------------------------
 
-    def _build_profile(self, bearings: np.ndarray,
-                       dists: np.ndarray) -> np.ndarray:
+    def _build_profile(self, bearings: np.ndarray, dists: np.ndarray) -> np.ndarray:
         """Nearest return per bearing bin; NaN where the bin saw nothing."""
         nbins = int(round(360.0 / BEV_PROFILE_BIN_DEG))
         prof = np.full(nbins, np.inf, dtype=np.float32)
@@ -244,8 +256,9 @@ class BEVGrid:
         cc = np.clip(np.rint(cols), 0, self.n - 1).astype(np.int32)
         np.add.at(self.logodds, (rr, cc), BEV_L_HIT)
 
-    def _stamp_radar(self, radar: Optional[Dict[str, Any]],
-                     profile: np.ndarray) -> None:
+    def _stamp_radar(
+        self, radar: Optional[Dict[str, Any]], profile: np.ndarray
+    ) -> None:
         """Draw the radar's echo as occupied, where the LiDAR saw through it."""
         sectors = (radar or {}).get("sectors") or {}
         gap_mm = WALK_GLASS_GAP_FT * MM_PER_FT
@@ -264,16 +277,19 @@ class BEVGrid:
                 continue
 
             self._draw_arc(bearing, float(rmm), RADAR_BEAM_H_DEG)
-            self._radar_arcs.append({
-                "board": key,
-                "bearing_deg": round(bearing, 1),
-                "range_mm": round(float(rmm), 1),
-                "lidar_mm": None if lidar_mm is None else round(lidar_mm, 1),
-                "beam_deg": RADAR_BEAM_H_DEG,
-            })
+            self._radar_arcs.append(
+                {
+                    "board": key,
+                    "bearing_deg": round(bearing, 1),
+                    "range_mm": round(float(rmm), 1),
+                    "lidar_mm": None if lidar_mm is None else round(lidar_mm, 1),
+                    "beam_deg": RADAR_BEAM_H_DEG,
+                }
+            )
 
-    def _profile_min(self, profile: np.ndarray, centre_deg: float,
-                     width_deg: float) -> Optional[float]:
+    def _profile_min(
+        self, profile: np.ndarray, centre_deg: float, width_deg: float
+    ) -> Optional[float]:
         """Nearest LiDAR return across an arc, or None if the arc was silent."""
         nbins = len(profile)
         half = width_deg / 2.0
@@ -284,8 +300,7 @@ class BEVGrid:
         vals = vals[~np.isnan(vals)]
         return float(vals.min()) if vals.size else None
 
-    def _draw_arc(self, centre_deg: float, radius_mm: float,
-                  width_deg: float) -> None:
+    def _draw_arc(self, centre_deg: float, radius_mm: float, width_deg: float) -> None:
         """Stamp an occupied arc."""
         radius_cells = int(round(radius_mm / self.cell_mm))
         if radius_cells <= 0:
@@ -296,8 +311,16 @@ class BEVGrid:
         end = -(centre_deg - width_deg / 2.0) + 90.0
 
         arc = np.zeros((self.n, self.n), dtype=np.uint8)
-        cv2.ellipse(arc, (self.centre, self.centre), (radius_cells, radius_cells),
-                    0.0, -end, -start, 1, thickness=thick)
+        cv2.ellipse(
+            arc,
+            (self.centre, self.centre),
+            (radius_cells, radius_cells),
+            0.0,
+            -end,
+            -start,
+            1,
+            thickness=thick,
+        )
         hit = arc > 0
         self.logodds[hit] = BEV_L_MAX
         self._radar_cells |= hit
@@ -316,7 +339,7 @@ class BEVGrid:
         gaps = self._gaps(objects, occ)
         wedges = self._unknown_wedges()
 
-        return {    
+        return {
             "available": True,
             "error": None,
             "objects": objects,
@@ -336,8 +359,9 @@ class BEVGrid:
             "last_update": time.time(),
         }
 
-    def _clusters(self, occ: np.ndarray,
-                  camera: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _clusters(
+        self, occ: np.ndarray, camera: Optional[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """Label the occupied cells and describe each blob's shape."""
         count, labels = cv2.connectedComponents(occ, connectivity=8)
         if count <= 1:
@@ -363,8 +387,9 @@ class BEVGrid:
         out.sort(key=lambda o: o["range_mm"])
         return out
 
-    def _describe(self, rows: np.ndarray, cols: np.ndarray,
-                  camera: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    def _describe(
+        self, rows: np.ndarray, cols: np.ndarray, camera: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
         """Shape, position and identity candidates for one cluster."""
         fwd = (self.centre - rows.astype(np.float32)) * self.cell_mm
         right = (cols.astype(np.float32) - self.centre) * self.cell_mm
@@ -404,8 +429,7 @@ class BEVGrid:
             "length_mm": round(length, 1),
             "width_mm": round(width, 1),
             "cells": int(len(rows)),
-            "centroid_mm": [round(float(centroid[0]), 1),
-                            round(float(centroid[1]), 1)],
+            "centroid_mm": [round(float(centroid[0]), 1), round(float(centroid[1]), 1)],
             "ends_mm": [[round(v, 1) for v in end_a], [round(v, 1) for v in end_b]],
             "radar_confirmed": self._radar_backed(rows, cols),
             "camera_sector": cam_sector,
@@ -434,8 +458,7 @@ class BEVGrid:
         return bool(self._radar_cells[rows, cols].any())
 
     @staticmethod
-    def _camera_labels(camera: Optional[Dict[str, Any]],
-                       sector: str) -> List[str]:
+    def _camera_labels(camera: Optional[Dict[str, Any]], sector: str) -> List[str]:
         """Distinct class names the camera currently reports in that quadrant."""
         dets = ((camera or {}).get(sector) or {}).get("detections") or []
         seen: List[str] = []
@@ -445,8 +468,9 @@ class BEVGrid:
                 seen.append(name)
         return seen
 
-    def _gaps(self, objects: List[Dict[str, Any]],
-              occ: np.ndarray) -> List[Dict[str, Any]]:
+    def _gaps(
+        self, objects: List[Dict[str, Any]], occ: np.ndarray
+    ) -> List[Dict[str, Any]]:
         """Passable openings between the facing ends of two wall segments."""
         walls = [o for o in objects if o["kind"] == "wall"]
         out: List[Dict[str, Any]] = []
@@ -475,21 +499,24 @@ class BEVGrid:
                     continue
 
                 rng = math.hypot(mid[0], mid[1])
-                out.append({
-                    "width_mm": round(span, 1),
-                    "width_ft": round(span / MM_PER_FT, 2),
-                    "bearing_deg": round(bearing, 1),
-                    "clock": self._clock(bearing),
-                    "range_mm": round(rng, 1),
-                    "range_ft": round(rng / MM_PER_FT, 2),
-                    "between": [a["range_mm"], b["range_mm"]],
-                })
+                out.append(
+                    {
+                        "width_mm": round(span, 1),
+                        "width_ft": round(span / MM_PER_FT, 2),
+                        "bearing_deg": round(bearing, 1),
+                        "clock": self._clock(bearing),
+                        "range_mm": round(rng, 1),
+                        "range_ft": round(rng / MM_PER_FT, 2),
+                        "between": [a["range_mm"], b["range_mm"]],
+                    }
+                )
 
         out.sort(key=lambda g: g["range_mm"])
         return out
 
-    def _clear_through(self, occ: np.ndarray, mid_mm: Tuple[float, float],
-                       bearing_deg: float) -> bool:
+    def _clear_through(
+        self, occ: np.ndarray, mid_mm: Tuple[float, float], bearing_deg: float
+    ) -> bool:
         """Is there open ground BEYOND the opening, or is it an alcove?"""
         th = math.radians(bearing_deg)
         steps = max(1, int(round(BEV_GAP_CLEAR_MM / self.cell_mm)))
@@ -529,11 +556,13 @@ class BEVGrid:
                 width = (i - run_start) * BEV_PROFILE_BIN_DEG
                 if width >= BEV_MIN_WEDGE_DEG:
                     start_deg = ((run_start + first_seen) * BEV_PROFILE_BIN_DEG) % 360.0
-                    out.append({
-                        "start_deg": round(start_deg, 1),
-                        "width_deg": round(width, 1),
-                        "centre_deg": round((start_deg + width / 2.0) % 360.0, 1),
-                    })
+                    out.append(
+                        {
+                            "start_deg": round(start_deg, 1),
+                            "width_deg": round(width, 1),
+                            "centre_deg": round((start_deg + width / 2.0) % 360.0, 1),
+                        }
+                    )
                 run_start = None
         return out
 
@@ -561,17 +590,23 @@ class BEVGrid:
         if cv2 is None:
             return None
         img = np.full((self.n, self.n, 3), 70, dtype=np.uint8)  # unknown
-        img[self.logodds < -BEV_OCC_THRESH] = (35, 35, 35)      # free
-        img[self.logodds > BEV_OCC_THRESH] = (60, 60, 230)      # occupied (BGR)
+        img[self.logodds < -BEV_OCC_THRESH] = (35, 35, 35)  # free
+        img[self.logodds > BEV_OCC_THRESH] = (60, 60, 230)  # occupied (BGR)
 
         # Ego marker and a forward tick, so up is unambiguously "ahead".
         cv2.circle(img, (self.centre, self.centre), 3, (0, 255, 255), -1)
-        cv2.line(img, (self.centre, self.centre),
-                 (self.centre, self.centre - 12), (0, 255, 255), 1)
+        cv2.line(
+            img,
+            (self.centre, self.centre),
+            (self.centre, self.centre - 12),
+            (0, 255, 255),
+            1,
+        )
 
         if scale > 1:
-            img = cv2.resize(img, (self.n * scale, self.n * scale),
-                             interpolation=cv2.INTER_NEAREST)
+            img = cv2.resize(
+                img, (self.n * scale, self.n * scale), interpolation=cv2.INTER_NEAREST
+            )
         ok, buf = cv2.imencode(".png", img)
         return buf.tobytes() if ok else None
 

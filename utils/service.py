@@ -14,7 +14,7 @@ _lock = threading.RLock()
 _beats: Dict[str, float] = {}
 _watchdog_stop = threading.Event()
 _watchdog_thread: Optional[threading.Thread] = None
-_withheld: Optional[str] = None          # why pings are being withheld, if they are
+_withheld: Optional[str] = None  # why pings are being withheld, if they are
 _shutdown_armed = False
 
 
@@ -23,7 +23,7 @@ def notify(state: str) -> bool:
     addr = os.environ.get("NOTIFY_SOCKET")
     if not addr:
         return False
-    if addr[0] == "@":                   # abstract namespace
+    if addr[0] == "@":  # abstract namespace
         addr = "\0" + addr[1:]
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
@@ -93,15 +93,21 @@ def start_watchdog(required: Iterable[str]) -> None:
             if why is None:
                 notify("WATCHDOG=1")
                 if _withheld:
-                    print(f"[SERVICE] watchdog pings resumed ({_withheld} has recovered)")
+                    print(
+                        f"[SERVICE] watchdog pings resumed ({_withheld} has recovered)"
+                    )
                 _withheld = None
             elif why != _withheld:
                 # Said once per cause, not once per interval.
-                print(f"[SERVICE] withholding the watchdog ping — {why}; systemd "
-                      f"restarts the app if this lasts")
+                print(
+                    f"[SERVICE] withholding the watchdog ping — {why}; systemd "
+                    f"restarts the app if this lasts"
+                )
                 _withheld = why
 
-    _watchdog_thread = threading.Thread(target=run, name="systemd-watchdog", daemon=True)
+    _watchdog_thread = threading.Thread(
+        target=run, name="systemd-watchdog", daemon=True
+    )
     _watchdog_thread.start()
 
 
@@ -122,8 +128,12 @@ def arm_shutdown_backstop(timeout_s: float = SHUTDOWN_TIMEOUT_S) -> None:
 
     def bail():
         time.sleep(timeout_s)
-        print(f"[SERVICE] shutdown still wedged after {timeout_s:.0f}s — forcing exit "
-              f"so the camera and serial ports are released", file=sys.stderr, flush=True)
+        print(
+            f"[SERVICE] shutdown still wedged after {timeout_s:.0f}s — forcing exit "
+            f"so the camera and serial ports are released",
+            file=sys.stderr,
+            flush=True,
+        )
         os._exit(1)
 
     threading.Thread(target=bail, name="shutdown-backstop", daemon=True).start()

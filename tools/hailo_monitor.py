@@ -21,13 +21,17 @@ def render(snap: dict) -> str:
     ]
     models = snap.get("models", {})
     for name, s in sorted(models.items()):
-        lines.append(f"{name:<28}{s['utilization']:>17}{s['fps']:>9}"
-                     f"{s['avg_infer_ms']:>9}{s['last_results']:>9}")
+        lines.append(
+            f"{name:<28}{s['utilization']:>17}{s['fps']:>9}"
+            f"{s['avg_infer_ms']:>9}{s['last_results']:>9}"
+        )
     if not models:
         lines.append("(no inference recorded yet — is the camera thread running?)")
     lines.append("-" * 72)
-    lines.append(f"{'NPU TOTAL':<28}{snap.get('total_utilization', 0.0):>17}"
-                 f"   (rolling {snap.get('window_sec', 0):.0f}s window)")
+    lines.append(
+        f"{'NPU TOTAL':<28}{snap.get('total_utilization', 0.0):>17}"
+        f"   (rolling {snap.get('window_sec', 0):.0f}s window)"
+    )
     return "\n".join(lines)
 
 
@@ -47,7 +51,7 @@ def main():
                 body = render(fetch(url))
             except urllib.error.URLError as e:
                 body = f"server unreachable at {url}\n  {e.reason}"
-            except Exception as e:                      # noqa: BLE001 - display, don't die
+            except Exception as e:  # noqa: BLE001 - display, don't die
                 body = f"error reading {url}\n  {type(e).__name__}: {e}"
 
             if args.once:

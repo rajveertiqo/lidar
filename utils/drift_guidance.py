@@ -53,9 +53,9 @@ from config import (
 
 # Urgency ladder. "clear" is not spoken at all; the rest escalate.
 LEVEL_CLEAR = "clear"
-LEVEL_NOTICE = "notice"        # visible on the dashboard, not yet worth speaking
-LEVEL_ADVISORY = "advisory"    # a gentle nudge — the whole point of this module
-LEVEL_URGENT = "urgent"        # correct now, or walk_policy is about to stop you
+LEVEL_NOTICE = "notice"  # visible on the dashboard, not yet worth speaking
+LEVEL_ADVISORY = "advisory"  # a gentle nudge — the whole point of this module
+LEVEL_URGENT = "urgent"  # correct now, or walk_policy is about to stop you
 _LEVEL_RANK = {LEVEL_CLEAR: 0, LEVEL_NOTICE: 1, LEVEL_ADVISORY: 2, LEVEL_URGENT: 3}
 
 MM_PER_FT = 304.8
@@ -81,15 +81,18 @@ def _opposite(side: str) -> str:
     return "left" if side == "right" else "right"
 
 
-def project_path(speed_mps: float, yaw_rate_dps: float = 0.0,
-                 heading_deg: float = 0.0,
-                 lookahead_s: float = DRIFT_LOOKAHEAD_S,
-                 step_s: float = DRIFT_STEP_S) -> np.ndarray:
+def project_path(
+    speed_mps: float,
+    yaw_rate_dps: float = 0.0,
+    heading_deg: float = 0.0,
+    lookahead_s: float = DRIFT_LOOKAHEAD_S,
+    step_s: float = DRIFT_STEP_S,
+) -> np.ndarray:
     """Where the user will be, in mm, at each future time step."""
     n = max(1, int(round(lookahead_s / step_s)))
     heading = math.radians(heading_deg)
     yaw_step = math.radians(yaw_rate_dps) * step_s
-    dist_step = max(0.0, speed_mps) * step_s * 1000.0    # mm per step
+    dist_step = max(0.0, speed_mps) * step_s * 1000.0  # mm per step
 
     positions = np.empty((n, 2), dtype=np.float64)
     x = y = 0.0
@@ -101,16 +104,19 @@ def project_path(speed_mps: float, yaw_rate_dps: float = 0.0,
     return positions
 
 
-def sweep_collision(positions: np.ndarray, points_xy: np.ndarray,
-                    radius_mm: float, step_s: float = DRIFT_STEP_S
-                    ) -> Tuple[Optional[float], Optional[int]]:
+def sweep_collision(
+    positions: np.ndarray,
+    points_xy: np.ndarray,
+    radius_mm: float,
+    step_s: float = DRIFT_STEP_S,
+) -> Tuple[Optional[float], Optional[int]]:
     """First time the swept body disc touches a point."""
     if points_xy.size == 0 or positions.size == 0:
         return None, None
 
     r2 = float(radius_mm) ** 2
 
-    outside = ((points_xy ** 2).sum(axis=1) > r2)
+    outside = (points_xy**2).sum(axis=1) > r2
     if not outside.any():
         return None, None
     candidates = points_xy[outside]
@@ -124,13 +130,14 @@ def sweep_collision(positions: np.ndarray, points_xy: np.ndarray,
     return None, None
 
 
-def _reachable(points_xy: np.ndarray, speed_mps: float,
-               lookahead_s: float = DRIFT_LOOKAHEAD_S) -> np.ndarray:
+def _reachable(
+    points_xy: np.ndarray, speed_mps: float, lookahead_s: float = DRIFT_LOOKAHEAD_S
+) -> np.ndarray:
     """Drop everything the user could not reach inside the horizon."""
     if points_xy.size == 0:
         return points_xy
     reach = max(speed_mps, 0.1) * lookahead_s * 1000.0 + DRIFT_BODY_RADIUS_MM * 2.0
-    within = (points_xy ** 2).sum(axis=1) <= reach ** 2
+    within = (points_xy**2).sum(axis=1) <= reach**2
     return points_xy[within]
 
 
@@ -161,8 +168,9 @@ def fit_surfaces(points: Sequence[Tuple[float, float]]) -> List[Dict[str, Any]]:
     return surfaces
 
 
-def _split_and_fit(run: Sequence[Tuple[float, float]],
-                   depth: int = 0) -> List[Dict[str, Any]]:
+def _split_and_fit(
+    run: Sequence[Tuple[float, float]], depth: int = 0
+) -> List[Dict[str, Any]]:
     """Fit a run, splitting it wherever one line cannot describe it."""
     if len(run) < DRIFT_SURFACE_MIN_POINTS:
         return []
@@ -171,9 +179,11 @@ def _split_and_fit(run: Sequence[Tuple[float, float]],
     if surface is None:
         return []
 
-    if (surface["rms_mm"] <= DRIFT_SURFACE_MAX_RESIDUAL_MM
-            or depth >= 8              # backstop: noise can never be fitted
-            or len(run) < 2 * DRIFT_SURFACE_MIN_POINTS):
+    if (
+        surface["rms_mm"] <= DRIFT_SURFACE_MAX_RESIDUAL_MM
+        or depth >= 8  # backstop: noise can never be fitted
+        or len(run) < 2 * DRIFT_SURFACE_MIN_POINTS
+    ):
         return [surface]
 
     ang = np.radians(np.array([a for a, _ in run], dtype=np.float64))
@@ -188,17 +198,19 @@ def _split_and_fit(run: Sequence[Tuple[float, float]],
     deviation = np.abs((xy - xy[0]) @ normal)
 
     edge = DRIFT_SURFACE_MIN_POINTS
-    interior = deviation[edge:len(run) - edge]
+    interior = deviation[edge : len(run) - edge]
     if interior.size == 0:
         return [surface]
 
     worst = edge + int(np.argmax(interior))
-    return (_split_and_fit(run[:worst + 1], depth + 1)
-            + _split_and_fit(run[worst:], depth + 1))
+    return _split_and_fit(run[: worst + 1], depth + 1) + _split_and_fit(
+        run[worst:], depth + 1
+    )
 
 
-def _fit_line(run: Sequence[Tuple[float, float]]
-              ) -> Tuple[Optional[Dict[str, Any]], Optional[np.ndarray]]:
+def _fit_line(
+    run: Sequence[Tuple[float, float]],
+) -> Tuple[Optional[Dict[str, Any]], Optional[np.ndarray]]:
     """Total-least-squares (PCA) line through one run of returns."""
     ang = np.radians(np.array([a for a, _ in run], dtype=np.float64))
     dist = np.array([d for _, d in run], dtype=np.float64)
@@ -214,7 +226,7 @@ def _fit_line(run: Sequence[Tuple[float, float]]
     direction = vt[0]
     normal = np.array([-direction[1], direction[0]])
     residual = centred @ normal
-    rms = float(np.sqrt(np.mean(residual ** 2)))
+    rms = float(np.sqrt(np.mean(residual**2)))
     extent = centred @ direction
     span = float(extent.max() - extent.min())
 
@@ -230,12 +242,14 @@ def _fit_line(run: Sequence[Tuple[float, float]]
         "points": len(run),
         "nearest_mm": round(float(np.min(np.hypot(xy[:, 0], xy[:, 1]))), 1),
         "centre_bearing_deg": round(
-            math.degrees(math.atan2(centroid[1], centroid[0])), 1),
+            math.degrees(math.atan2(centroid[1], centroid[0])), 1
+        ),
     }, residual
 
 
-def _describe_hazard(contact_xy: np.ndarray, surfaces: List[Dict[str, Any]],
-                     camera_state: Dict[str, Any]) -> Dict[str, Any]:
+def _describe_hazard(
+    contact_xy: np.ndarray, surfaces: List[Dict[str, Any]], camera_state: Dict[str, Any]
+) -> Dict[str, Any]:
     """Name what the user is converging on."""
     cx, cy = float(contact_xy[0]), float(contact_xy[1])
     bearing = math.degrees(math.atan2(cy, cx))
@@ -260,11 +274,15 @@ def _describe_hazard(contact_xy: np.ndarray, surfaces: List[Dict[str, Any]],
         name = "wall" if nearest_surface["kind"] == "wall" else "obstacle"
 
     from utils.lidar_utils import get_sector
+
     sector = get_sector(bearing % 360.0)
     quadrant = LIDAR_TO_CAMERA.get(sector, "front")
     detections = (camera_state.get(quadrant) or {}).get("detections", []) or []
-    critical = [d for d in detections
-                if str(d.get("class_name", "")).lower() in CRITICAL_OBJECTS]
+    critical = [
+        d
+        for d in detections
+        if str(d.get("class_name", "")).lower() in CRITICAL_OBJECTS
+    ]
     if critical:
         top = max(critical, key=lambda d: float(d.get("confidence", 0.0)))
         name = str(top.get("class_name"))
@@ -280,8 +298,9 @@ def _describe_hazard(contact_xy: np.ndarray, surfaces: List[Dict[str, Any]],
     }
 
 
-def _closest_on_surface(surface: Dict[str, Any],
-                        origin: np.ndarray) -> Tuple[np.ndarray, float]:
+def _closest_on_surface(
+    surface: Dict[str, Any], origin: np.ndarray
+) -> Tuple[np.ndarray, float]:
     """Closest point of a fitted wall SEGMENT to `origin`, and its distance."""
     centroid = np.asarray(surface["centroid_mm"], dtype=np.float64)
     direction = np.asarray(surface["direction"], dtype=np.float64)
@@ -291,17 +310,21 @@ def _closest_on_surface(surface: Dict[str, Any],
     return closest, float(np.hypot(*(closest - origin)))
 
 
-def wall_proximity(surfaces: List[Dict[str, Any]], speed_mps: float,
-                   yaw_rate_dps: float = 0.0) -> Dict[str, Optional[Dict[str, Any]]]:
+def wall_proximity(
+    surfaces: List[Dict[str, Any]], speed_mps: float, yaw_rate_dps: float = 0.0
+) -> Dict[str, Optional[Dict[str, Any]]]:
     """Nearest wall on the LEFT and on the RIGHT, and whether it is closing."""
     result: Dict[str, Optional[Dict[str, Any]]] = {"left": None, "right": None}
     if not surfaces:
         return result
 
     origin = np.zeros(2)
-    future = project_path(speed_mps, yaw_rate_dps=yaw_rate_dps,
-                          lookahead_s=DRIFT_WALL_HORIZON_S,
-                          step_s=DRIFT_WALL_HORIZON_S)[-1]
+    future = project_path(
+        speed_mps,
+        yaw_rate_dps=yaw_rate_dps,
+        lookahead_s=DRIFT_WALL_HORIZON_S,
+        step_s=DRIFT_WALL_HORIZON_S,
+    )[-1]
 
     for surface in surfaces:
         if surface.get("kind") != "wall":
@@ -310,7 +333,7 @@ def wall_proximity(surfaces: List[Dict[str, Any]], speed_mps: float,
         closest, distance_mm = _closest_on_surface(surface, origin)
         bearing = math.degrees(math.atan2(closest[1], closest[0]))
         if not (DRIFT_WALL_SIDE_MIN_DEG <= abs(bearing) <= DRIFT_WALL_SIDE_MAX_DEG):
-            continue                     # ahead or behind — not this rule's job
+            continue  # ahead or behind — not this rule's job
 
         side = _side(bearing)
         _later, later_mm = _closest_on_surface(surface, future)
@@ -333,8 +356,7 @@ _wall_latch: Dict[str, bool] = {"left": False, "right": False}
 _wall_lock = threading.Lock()
 
 
-def wall_alert(walls: Dict[str, Optional[Dict[str, Any]]]
-               ) -> Optional[Dict[str, Any]]:
+def wall_alert(walls: Dict[str, Optional[Dict[str, Any]]]) -> Optional[Dict[str, Any]]:
     """Which side, if any, the user should move away from."""
     with _wall_lock:
         near = {}
@@ -368,7 +390,7 @@ def wall_alert(walls: Dict[str, Optional[Dict[str, Any]]]
         other = walls.get(_opposite(side))
         room = other["distance_ft"] if other else None
         if room is not None and room < DRIFT_WALL_ROOM_FT:
-            return None                  # not enough space to send them across
+            return None  # not enough space to send them across
 
         return {
             "side": side,
@@ -384,11 +406,15 @@ def reset_wall_latch() -> None:
         _wall_latch["left"] = _wall_latch["right"] = False
 
 
-_BOARD_KEY = re.compile(r"^deg(\d{3})$")      # radar_board_key's format
+_BOARD_KEY = re.compile(r"^deg(\d{3})$")  # radar_board_key's format
 
 
-def glass_warning(radar_state: Dict[str, Any], lidar_state: Dict[str, Any],
-                  path_bearing_deg: float, speed_mps: float) -> Optional[Dict[str, Any]]:
+def glass_warning(
+    radar_state: Dict[str, Any],
+    lidar_state: Dict[str, Any],
+    path_bearing_deg: float,
+    speed_mps: float,
+) -> Optional[Dict[str, Any]]:
     """A transparent surface on the projected heading, seen only by the radar."""
     sectors = (radar_state or {}).get("sectors", {}) or {}
     lidar_sectors = (lidar_state or {}).get("sectors", {}) or {}
@@ -399,21 +425,23 @@ def glass_warning(radar_state: Dict[str, Any], lidar_state: Dict[str, Any],
         sec = sectors.get(direction) or {}
         live = sec.get("sources_live")
         keys = live if live is not None else (sec.get("sources") or ())
-        bearings = [float(m.group(1)) for k in keys
-                    if (m := _BOARD_KEY.match(str(k)))]
+        bearings = [float(m.group(1)) for k in keys if (m := _BOARD_KEY.match(str(k)))]
         if not bearings:
             n = len(keys)
-            return (centres[direction],
-                    (RADAR_BEARING_OFFSET_DEG if n > 1 else 0.0) + RADAR_BEAM_H_DEG / 2.0)
+            return (
+                centres[direction],
+                (RADAR_BEARING_OFFSET_DEG if n > 1 else 0.0) + RADAR_BEAM_H_DEG / 2.0,
+            )
         rad = [math.radians(b) for b in bearings]
-        centre = math.degrees(math.atan2(sum(map(math.sin, rad)),
-                                         sum(map(math.cos, rad))))
+        centre = math.degrees(
+            math.atan2(sum(map(math.sin, rad)), sum(map(math.cos, rad)))
+        )
         spread = max(abs(signed_bearing(b - centre)) for b in bearings)
         return centre, spread + RADAR_BEAM_H_DEG / 2.0
 
     from utils.sensor_fusion import lidar_is_fresh
-    lidar_fresh = ("last_update" in (lidar_state or {})
-                   and lidar_is_fresh(lidar_state))
+
+    lidar_fresh = "last_update" in (lidar_state or {}) and lidar_is_fresh(lidar_state)
 
     def _arc_corroborates(direction: str, radar_mm: float) -> bool:
         """Did the laser see the SAME OBJECT the radar echoed off?"""
@@ -457,29 +485,39 @@ def glass_warning(radar_state: Dict[str, Any], lidar_state: Dict[str, Any],
     return best
 
 
-def find_correction(points_xy: np.ndarray, speed_mps: float,
-                    radius_mm: float = DRIFT_BODY_RADIUS_MM,
-                    avoid_side: Optional[str] = None,
-                    current_ttc_s: Optional[float] = None
-                    ) -> Optional[Dict[str, Any]]:
+def find_correction(
+    points_xy: np.ndarray,
+    speed_mps: float,
+    radius_mm: float = DRIFT_BODY_RADIUS_MM,
+    avoid_side: Optional[str] = None,
+    current_ttc_s: Optional[float] = None,
+) -> Optional[Dict[str, Any]]:
     """The least disruptive heading change that improves the way ahead."""
+
     def evaluate(heading: float) -> Dict[str, Any]:
         path = project_path(speed_mps, yaw_rate_dps=0.0, heading_deg=heading)
         ttc, _ = sweep_collision(path, points_xy, radius_mm)
-        return {"heading_deg": heading, "side": _side(heading),
-                "magnitude_deg": abs(heading), "ttc_s": ttc}
+        return {
+            "heading_deg": heading,
+            "side": _side(heading),
+            "magnitude_deg": abs(heading),
+            "ttc_s": ttc,
+        }
 
     def is_clear(option: Dict[str, Any]) -> bool:
         return option["ttc_s"] is None or option["ttc_s"] >= DRIFT_CLEAR_TTC_S
 
     straight = evaluate(0.0)
     if is_clear(straight):
-        straight["side"] = None            # no side to it — just stop turning
+        straight["side"] = None  # no side to it — just stop turning
         return straight
 
     steps = int(DRIFT_FAN_DEG / DRIFT_FAN_STEP_DEG)
-    candidates = [evaluate(sign * i * DRIFT_FAN_STEP_DEG)
-                  for i in range(1, steps + 1) for sign in (-1.0, 1.0)]
+    candidates = [
+        evaluate(sign * i * DRIFT_FAN_STEP_DEG)
+        for i in range(1, steps + 1)
+        for sign in (-1.0, 1.0)
+    ]
 
     def pick(options: List[Dict[str, Any]]) -> Dict[str, Any]:
         if avoid_side is not None:
@@ -491,22 +529,33 @@ def find_correction(points_xy: np.ndarray, speed_mps: float,
     clear = [o for o in candidates if is_clear(o)]
     if clear:
         smallest = min(o["magnitude_deg"] for o in clear)
-        return pick(sorted([o for o in clear if o["magnitude_deg"] == smallest],
-                           key=lambda o: (o["ttc_s"] is not None, -(o["ttc_s"] or 0.0))))
+        return pick(
+            sorted(
+                [o for o in clear if o["magnitude_deg"] == smallest],
+                key=lambda o: (o["ttc_s"] is not None, -(o["ttc_s"] or 0.0)),
+            )
+        )
 
     if current_ttc_s is not None:
-        better = [o for o in candidates
-                  if o["ttc_s"] is not None
-                  and o["ttc_s"] >= current_ttc_s + DRIFT_IMPROVE_S]
+        better = [
+            o
+            for o in candidates
+            if o["ttc_s"] is not None and o["ttc_s"] >= current_ttc_s + DRIFT_IMPROVE_S
+        ]
         if better:
             best = max(o["ttc_s"] for o in better)
-            return pick(sorted([o for o in better if o["ttc_s"] == best],
-                               key=lambda o: o["magnitude_deg"]))
+            return pick(
+                sorted(
+                    [o for o in better if o["ttc_s"] == best],
+                    key=lambda o: o["magnitude_deg"],
+                )
+            )
     return None
 
 
-def steer_phrase(what: str, hazard_side: Optional[str],
-                 escape_side: Optional[str], wording: str) -> str:
+def steer_phrase(
+    what: str, hazard_side: Optional[str], escape_side: Optional[str], wording: str
+) -> str:
     """The spoken line for "something is in your path, steer around it"."""
     lead = f"{_article(what).capitalize()} {what}"
     if escape_side and hazard_side and hazard_side != escape_side:
@@ -514,8 +563,7 @@ def steer_phrase(what: str, hazard_side: Optional[str],
     return f"{lead} coming up — {wording}."
 
 
-def _phrase_correction(magnitude_deg: float,
-                       side: Optional[str]) -> Tuple[str, str]:
+def _phrase_correction(magnitude_deg: float, side: Optional[str]) -> Tuple[str, str]:
     """(action, spoken phrase) for a required heading change."""
     if side is None or magnitude_deg < DRIFT_FAN_STEP_DEG:
         return "straighten", "straighten up"
@@ -538,19 +586,28 @@ def _band(value: float, bands: Sequence[Tuple[float, str]]) -> str:
     return bands[-1][1]
 
 
-_PACE_BANDS = ((0.25, "standing still"), (0.8, "walking slowly"),
-               (1.6, "walking"), (float("inf"), "walking quickly"))
+_PACE_BANDS = (
+    (0.25, "standing still"),
+    (0.8, "walking slowly"),
+    (1.6, "walking"),
+    (float("inf"), "walking quickly"),
+)
 
-_TURN_BANDS = ((1.0, ""), (4.0, "turning slightly"),
-               (10.0, "turning"), (float("inf"), "turning sharply"))
+_TURN_BANDS = (
+    (1.0, ""),
+    (4.0, "turning slightly"),
+    (10.0, "turning"),
+    (float("inf"), "turning sharply"),
+)
 
-_LINE_BANDS = ((5.0, ""), (15.0, "slightly"),
-               (40.0, ""), (float("inf"), "well"))
+_LINE_BANDS = ((5.0, ""), (15.0, "slightly"), (40.0, ""), (float("inf"), "well"))
 
-_SENSING_BANDS = ((0.15, "surroundings too plain to track heading"),
-                  (0.40, "heading tracking is weak here"),
-                  (0.70, "heading tracking is fair"),
-                  (float("inf"), "heading tracking is good"))
+_SENSING_BANDS = (
+    (0.15, "surroundings too plain to track heading"),
+    (0.40, "heading tracking is weak here"),
+    (0.70, "heading tracking is fair"),
+    (float("inf"), "heading tracking is good"),
+)
 
 
 def describe_heading(heading: Dict[str, Any]) -> Dict[str, str]:
@@ -665,10 +722,15 @@ class _CueGate:
             if self._pending_count < DRIFT_CONFIRM_SCANS:
                 return False, self._sequence
 
-            escalated = (key == self._spoken_key
-                         and _LEVEL_RANK[level] > _LEVEL_RANK[self._spoken_level])
-            if (key == self._spoken_key and not escalated
-                    and (now - self._spoken_at) < DRIFT_REPEAT_S):
+            escalated = (
+                key == self._spoken_key
+                and _LEVEL_RANK[level] > _LEVEL_RANK[self._spoken_level]
+            )
+            if (
+                key == self._spoken_key
+                and not escalated
+                and (now - self._spoken_at) < DRIFT_REPEAT_S
+            ):
                 return False, self._sequence
 
             self._spoken_key, self._spoken_level, self._spoken_at = key, level, now
@@ -701,8 +763,11 @@ def _grade(ttc_s: Optional[float]) -> str:
         elif ttc_s <= DRIFT_ALERT_TTC_S:
             level = LEVEL_ADVISORY
         elif ttc_s <= DRIFT_RELEASE_TTC_S:
-            level = (LEVEL_ADVISORY if _active_level in (LEVEL_ADVISORY, LEVEL_URGENT)
-                     else LEVEL_NOTICE)
+            level = (
+                LEVEL_ADVISORY
+                if _active_level in (LEVEL_ADVISORY, LEVEL_URGENT)
+                else LEVEL_NOTICE
+            )
         else:
             level = LEVEL_CLEAR
         _active_level = level
@@ -718,24 +783,30 @@ def reset_state() -> None:
         _active_level = LEVEL_CLEAR
 
 
-def analyze(lidar_state: Optional[Dict[str, Any]] = None,
-            radar_state: Optional[Dict[str, Any]] = None,
-            camera_state: Optional[Dict[str, Any]] = None,
-            heading: Optional[Dict[str, Any]] = None,
-            now: Optional[float] = None) -> Dict[str, Any]:
+def analyze(
+    lidar_state: Optional[Dict[str, Any]] = None,
+    radar_state: Optional[Dict[str, Any]] = None,
+    camera_state: Optional[Dict[str, Any]] = None,
+    heading: Optional[Dict[str, Any]] = None,
+    now: Optional[float] = None,
+) -> Dict[str, Any]:
     """One drift assessment from the current sensor state."""
     now = time.time() if now is None else now
 
     if lidar_state is None or radar_state is None or camera_state is None:
         from utils.shared_state import (
-            get_camera_state, get_lidar_state, get_radar_state,
+            get_camera_state,
+            get_lidar_state,
+            get_radar_state,
         )
+
         lidar_state = get_lidar_state() if lidar_state is None else lidar_state
         radar_state = get_radar_state() if radar_state is None else radar_state
         camera_state = get_camera_state() if camera_state is None else camera_state
 
     if heading is None:
         from utils.heading_tracker import get_tracker
+
         heading = get_tracker().state()
 
     if not DRIFT_ENABLED:
@@ -784,8 +855,10 @@ def analyze(lidar_state: Optional[Dict[str, Any]] = None,
     if near_wall is not None and not (glass_leads and level == LEVEL_URGENT):
         if near_wall["narrow"]:
             action = "caution_narrow"
-            phrase = (f"Narrow gap, about {near_wall['distance_ft']:.1f} feet "
-                      f"either side — walk slowly and straight.")
+            phrase = (
+                f"Narrow gap, about {near_wall['distance_ft']:.1f} feet "
+                f"either side — walk slowly and straight."
+            )
             reason = "walls close on both sides; no room to move across"
             level = LEVEL_ADVISORY
         else:
@@ -793,78 +866,116 @@ def analyze(lidar_state: Optional[Dict[str, Any]] = None,
             away = _opposite(side)
             action = f"move_away_{away}"
             if near_wall["closing"]:
-                phrase = (f"You are going toward the wall on your {side} — "
-                          f"move {away} and walk straight.")
+                phrase = (
+                    f"You are going toward the wall on your {side} — "
+                    f"move {away} and walk straight."
+                )
             else:
-                phrase = (f"You are walking close to the wall on your {side} — "
-                          f"ease {away} and walk straight.")
-            room = ("open ground" if near_wall["room_ft"] is None
-                    else f"{near_wall['room_ft']:.1f} ft")
-            reason = (f"wall {near_wall['distance_ft']:.1f} ft to your {side}"
-                      + (" and closing" if near_wall["closing"] else "")
-                      + f"; {room} on your {away}")
+                phrase = (
+                    f"You are walking close to the wall on your {side} — "
+                    f"ease {away} and walk straight."
+                )
+            room = (
+                "open ground"
+                if near_wall["room_ft"] is None
+                else f"{near_wall['room_ft']:.1f} ft"
+            )
+            reason = (
+                f"wall {near_wall['distance_ft']:.1f} ft to your {side}"
+                + (" and closing" if near_wall["closing"] else "")
+                + f"; {room} on your {away}"
+            )
             level = LEVEL_URGENT if near_wall["closing"] else LEVEL_ADVISORY
 
     elif level in (LEVEL_ADVISORY, LEVEL_URGENT) and glass_leads:
-        where = ("ahead" if glass["direction"] == "front"
-                 else f"on your {glass['direction']}")
+        where = (
+            "ahead"
+            if glass["direction"] == "front"
+            else f"on your {glass['direction']}"
+        )
         if level == LEVEL_URGENT:
             action, phrase = "stop", f"Stop. Glass door or window {where}."
         else:
             action = "caution_glass"
             phrase = f"Slow down — possible glass door or window {where}."
-        reason = (f"radar sees something {glass['distance_ft']:.1f} ft {where} "
-                  f"that the laser looks straight through, "
-                  f"{_describe_seconds(glass['ttc_s'])} — that pattern means glass")
+        reason = (
+            f"radar sees something {glass['distance_ft']:.1f} ft {where} "
+            f"that the laser looks straight through, "
+            f"{_describe_seconds(glass['ttc_s'])} — that pattern means glass"
+        )
 
     elif level in (LEVEL_ADVISORY, LEVEL_URGENT):
         correction = find_correction(
-            points, speed,
+            points,
+            speed,
             avoid_side=hazard["side"] if hazard else None,
-            current_ttc_s=effective_ttc)
+            current_ttc_s=effective_ttc,
+        )
         if correction is None:
             what = hazard["object"] if hazard else "obstacle"
             where = _describe_where(hazard)
-            feet = ((hazard["distance_mm"] / MM_PER_FT) if hazard
-                    else speed * effective_ttc / 0.3048)
+            feet = (
+                (hazard["distance_mm"] / MM_PER_FT)
+                if hazard
+                else speed * effective_ttc / 0.3048
+            )
             if level == LEVEL_URGENT:
                 action = "stop"
                 phrase = f"Stop. {what.capitalize()} {where}."
             else:
                 action = "caution_ahead"
-                phrase = (f"{what.capitalize()} {where}, {feet:.0f} feet away, "
-                          f"{_describe_seconds(effective_ttc)}.")
-            reason = (f"it is {_describe_seconds(effective_ttc)} and neither "
-                      f"side is any better — nothing to steer around")
+                phrase = (
+                    f"{what.capitalize()} {where}, {feet:.0f} feet away, "
+                    f"{_describe_seconds(effective_ttc)}."
+                )
+            reason = (
+                f"it is {_describe_seconds(effective_ttc)} and neither "
+                f"side is any better — nothing to steer around"
+            )
         else:
             action, wording = _phrase_correction(
-                correction["magnitude_deg"], correction["side"])
+                correction["magnitude_deg"], correction["side"]
+            )
             what = hazard["object"] if hazard else "obstacle"
             if action == "straighten":
-                phrase = (f"You are veering {_side(yaw_rate)} toward "
-                          f"{_article(what)} {what} — {wording}.")
+                phrase = (
+                    f"You are veering {_side(yaw_rate)} toward "
+                    f"{_article(what)} {what} — {wording}."
+                )
             else:
                 phrase = steer_phrase(
                     what,
                     hazard["side"] if hazard else _side_of(path_bearing),
-                    correction["side"], wording)
-            reason = (f"on your current course that is "
-                      f"{_describe_seconds(effective_ttc)}; "
-                      f"{_describe_turn_size(correction['magnitude_deg'], correction['side'])}"
-                      f" clears it"
-                      + (f"; you are veering {_side(yaw_rate)}"
-                         if abs(yaw_rate) >= DRIFT_VEER_RATE_DPS else "")
-                      + (f"; it is on your {hazard['side']}"
-                         if hazard and hazard["side"] else ""))
+                    correction["side"],
+                    wording,
+                )
+            reason = (
+                f"on your current course that is "
+                f"{_describe_seconds(effective_ttc)}; "
+                f"{_describe_turn_size(correction['magnitude_deg'], correction['side'])}"
+                f" clears it"
+                + (
+                    f"; you are veering {_side(yaw_rate)}"
+                    if abs(yaw_rate) >= DRIFT_VEER_RATE_DPS
+                    else ""
+                )
+                + (
+                    f"; it is on your {hazard['side']}"
+                    if hazard and hazard["side"]
+                    else ""
+                )
+            )
 
     elif veer["veering"]:
         # Nothing to hit, but the user is not going where they think they are.
         side = veer["side"]
         action, wording = _phrase_correction(abs(veer["veer_deg"]), _opposite(side))
         phrase = f"You are drifting {side} — {wording}."
-        reason = (f"you have been {_describe_veer(veer['veer_deg'])} to the "
-                  f"{side} over the last {DRIFT_VEER_WINDOW_S:.0f} seconds, with "
-                  f"nothing ahead to explain it")
+        reason = (
+            f"you have been {_describe_veer(veer['veer_deg'])} to the "
+            f"{side} over the last {DRIFT_VEER_WINDOW_S:.0f} seconds, with "
+            f"nothing ahead to explain it"
+        )
         level = LEVEL_ADVISORY
 
     key = None if action == "hold_course" else f"{action}|{level}"
@@ -874,7 +985,7 @@ def analyze(lidar_state: Optional[Dict[str, Any]] = None,
         "enabled": True,
         "action": action,
         "level": level,
-        "speak": speak,                 # has passed confirmation + anti-repeat
+        "speak": speak,  # has passed confirmation + anti-repeat
         "cue_seq": cue_seq,
         "instruction": phrase,
         "reason": reason,
@@ -900,15 +1011,24 @@ def _veer_check(heading: Dict[str, Any], now: float) -> Dict[str, Any]:
     from utils.heading_tracker import get_tracker
 
     if not heading.get("moving"):
-        return {"veering": False, "veer_deg": 0.0, "side": None,
-                "plain": "standing still", "reason": "not moving"}
+        return {
+            "veering": False,
+            "veer_deg": 0.0,
+            "side": None,
+            "plain": "standing still",
+            "reason": "not moving",
+        }
 
     accumulated = get_tracker().veer_over(DRIFT_VEER_WINDOW_S, now)
     rate = float(heading.get("yaw_rate_dps") or 0.0)
     if accumulated is None:
-        return {"veering": False, "veer_deg": 0.0, "side": None,
-                "plain": "still working out your line",
-                "reason": "not enough heading history yet"}
+        return {
+            "veering": False,
+            "veer_deg": 0.0,
+            "side": None,
+            "plain": "still working out your line",
+            "reason": "not enough heading history yet",
+        }
 
     by_total = abs(accumulated) >= DRIFT_VEER_DEG
     by_rate = abs(rate) >= DRIFT_VEER_RATE_DPS and (rate * accumulated) > 0
@@ -921,10 +1041,18 @@ def _veer_check(heading: Dict[str, Any], now: float) -> Dict[str, Any]:
         "side": _side(accumulated) if veering else None,
         "window_s": DRIFT_VEER_WINDOW_S,
         # Same fact in words, for anything that shows or speaks it.
-        "plain": (f"{_describe_veer(accumulated)} to the {_side(accumulated)}"
-                  if veering else "holding your line"),
-        "reason": ("accumulated heading change" if by_total
-                   else "sustained turn rate" if by_rate else "on line"),
+        "plain": (
+            f"{_describe_veer(accumulated)} to the {_side(accumulated)}"
+            if veering
+            else "holding your line"
+        ),
+        "reason": (
+            "accumulated heading change"
+            if by_total
+            else "sustained turn rate"
+            if by_rate
+            else "on line"
+        ),
     }
 
 
@@ -947,8 +1075,7 @@ def _cartesian(lidar_state: Dict[str, Any]) -> np.ndarray:
     return np.column_stack((d[ok] * np.cos(rad), d[ok] * np.sin(rad)))
 
 
-def _side_and_forward_points(lidar_state: Dict[str, Any]
-                             ) -> List[Tuple[float, float]]:
+def _side_and_forward_points(lidar_state: Dict[str, Any]) -> List[Tuple[float, float]]:
     """Returns from ahead AND from both sides, for surface fitting."""
     return _points_within(lidar_state, 150.0)
 
@@ -958,8 +1085,9 @@ def _forward_points(lidar_state: Dict[str, Any]) -> List[Tuple[float, float]]:
     return _points_within(lidar_state, 100.0)
 
 
-def _points_within(lidar_state: Dict[str, Any],
-                   max_bearing_deg: float) -> List[Tuple[float, float]]:
+def _points_within(
+    lidar_state: Dict[str, Any], max_bearing_deg: float
+) -> List[Tuple[float, float]]:
     """(angle, distance) pairs within +/- `max_bearing_deg` of straight ahead."""
     pts = (lidar_state or {}).get("points", {}) or {}
     angles = pts.get("angles") or []
@@ -991,8 +1119,12 @@ def _clear_result(heading: Dict[str, Any], reason: str) -> Dict[str, Any]:
         "correction": None,
         "walls": {"left": None, "right": None},
         "near_wall": None,
-        "veer": {"veering": False, "veer_deg": 0.0, "side": None,
-                 "plain": "holding your line"},
+        "veer": {
+            "veering": False,
+            "veer_deg": 0.0,
+            "side": None,
+            "plain": "holding your line",
+        },
         "heading": heading,
         "path_bearing_deg": 0.0,
         "points_considered": 0,

@@ -31,8 +31,8 @@ _started: Optional[float] = None
 _bytes = 0
 _full = False
 _recent: List[Dict[str, Any]] = []
-_counts: Dict[str, int] = {}          # lines this run, by source
-_by_seq: Dict[int, Dict[str, Any]] = {}   # cue_seq -> its record in _recent
+_counts: Dict[str, int] = {}  # lines this run, by source
+_by_seq: Dict[int, Dict[str, Any]] = {}  # cue_seq -> its record in _recent
 _early: Dict[int, List[tuple]] = {}
 _EARLY_MAX = 16
 
@@ -49,7 +49,7 @@ def _open(now: float) -> Optional[str]:
     if _path is not None:
         return _path
     if not SPEECH_LOG_TO_FILE:
-        return None               # in memory only (config.SPEECH_LOG_TO_FILE)
+        return None  # in memory only (config.SPEECH_LOG_TO_FILE)
     try:
         os.makedirs(SPEECH_LOG_DIR, exist_ok=True)
         _prune_old_runs()
@@ -68,9 +68,12 @@ def _open(now: float) -> Optional[str]:
 def _prune_old_runs() -> None:
     """Keep the newest SPEECH_LOG_KEEP_RUNS - 1 logs, making room for this run's."""
     try:
-        runs = sorted(n for n in os.listdir(SPEECH_LOG_DIR)
-                      if n.startswith("speech_") and n.endswith(".log"))
-        for name in runs[:max(0, len(runs) - (SPEECH_LOG_KEEP_RUNS - 1))]:
+        runs = sorted(
+            n
+            for n in os.listdir(SPEECH_LOG_DIR)
+            if n.startswith("speech_") and n.endswith(".log")
+        )
+        for name in runs[: max(0, len(runs) - (SPEECH_LOG_KEEP_RUNS - 1))]:
             os.remove(os.path.join(SPEECH_LOG_DIR, name))
     except Exception:
         pass
@@ -82,13 +85,23 @@ def _one_line(value: Any) -> str:
     return " ".join("".join(c if c.isprintable() else " " for c in text).split())
 
 
-def say(source: str, text: str, level: str = "", detail: str = "",
-        now: Optional[float] = None, cue_seq: Optional[int] = None,
-        via: str = "") -> None:
+def say(
+    source: str,
+    text: str,
+    level: str = "",
+    detail: str = "",
+    now: Optional[float] = None,
+    cue_seq: Optional[int] = None,
+    via: str = "",
+) -> None:
     """Record one utterance."""
     global _bytes, _full
-    source, level, text, detail = (_one_line(source), _one_line(level),
-                                   _one_line(text), _one_line(detail))
+    source, level, text, detail = (
+        _one_line(source),
+        _one_line(level),
+        _one_line(text),
+        _one_line(detail),
+    )
     via = _one_line(via)
     if not SPEECH_LOG_ENABLED or not text:
         return
@@ -96,9 +109,17 @@ def say(source: str, text: str, level: str = "", detail: str = "",
     now = time.time() if now is None else now
     try:
         with _lock:
-            rec = {"t": now, "source": source, "level": level,
-                   "text": text, "detail": detail, "cue_seq": cue_seq,
-                   "via": via, "outcome": "admitted", "outcomes": []}
+            rec = {
+                "t": now,
+                "source": source,
+                "level": level,
+                "text": text,
+                "detail": detail,
+                "cue_seq": cue_seq,
+                "via": via,
+                "outcome": "admitted",
+                "outcomes": [],
+            }
             _recent.append(rec)
             early = []
             if cue_seq is not None:
@@ -106,8 +127,9 @@ def say(source: str, text: str, level: str = "", detail: str = "",
                 early = _early.pop(cue_seq, [])
                 for event, t_ev, det in early:
                     rec["outcome"] = event
-                    rec["outcomes"].append({"event": event, "t": round(t_ev, 3),
-                                            "detail": det})
+                    rec["outcomes"].append(
+                        {"event": event, "t": round(t_ev, 3), "detail": det}
+                    )
             for old in _recent[:-SPEECH_LOG_KEEP_LINES]:
                 _by_seq.pop(old.get("cue_seq"), None)
             del _recent[:-SPEECH_LOG_KEEP_LINES]
@@ -120,23 +142,30 @@ def say(source: str, text: str, level: str = "", detail: str = "",
             tag = ""
             if cue_seq is not None:
                 tag = f"cue {cue_seq}" + (f" via {via}" if via else "") + "  "
-            line = (f"{stamp}.{int(now % 1 * 1000):03d}  {_elapsed(now)}  "
-                    f"{source:<17} {level or '-':<8} {tag}{text}")
+            line = (
+                f"{stamp}.{int(now % 1 * 1000):03d}  {_elapsed(now)}  "
+                f"{source:<17} {level or '-':<8} {tag}{text}"
+            )
             if detail:
                 line += f"   ({detail})"
             line += "\n"
 
             if _bytes + len(line) > SPEECH_LOG_MAX_BYTES:
-                note = ("# SPEECH_LOG_MAX_BYTES reached — logging stopped. "
-                        "The walk continued; only this file ended.\n")
+                note = (
+                    "# SPEECH_LOG_MAX_BYTES reached — logging stopped. "
+                    "The walk continued; only this file ended.\n"
+                )
                 with open(_path, "a", encoding="utf-8") as f:
                     f.write(note)
                 _full = True
                 return
 
             for event, t_ev, det in early:
-                line += (f"#   cue {cue_seq}  {event:<11} {_elapsed(t_ev)}"
-                         + (f"  ({det})" if det else "") + "\n")
+                line += (
+                    f"#   cue {cue_seq}  {event:<11} {_elapsed(t_ev)}"
+                    + (f"  ({det})" if det else "")
+                    + "\n"
+                )
             with open(_path, "a", encoding="utf-8") as f:
                 f.write(line)
             _bytes += len(line)
@@ -144,8 +173,13 @@ def say(source: str, text: str, level: str = "", detail: str = "",
         pass
 
 
-def delivery(cue_seq: int, event: str, text: str = "", detail: str = "",
-             now: Optional[float] = None) -> None:
+def delivery(
+    cue_seq: int,
+    event: str,
+    text: str = "",
+    detail: str = "",
+    now: Optional[float] = None,
+) -> None:
     """Record what became of cue `cue_seq` after admission (utils/pi_voice)."""
     global _bytes
     if not SPEECH_LOG_ENABLED:
@@ -161,13 +195,17 @@ def delivery(cue_seq: int, event: str, text: str = "", detail: str = "",
                     _early.pop(next(iter(_early)))
                 return
             rec["outcome"] = event
-            rec["outcomes"].append({"event": event, "t": round(now, 3),
-                                    "detail": detail})
+            rec["outcomes"].append(
+                {"event": event, "t": round(now, 3), "detail": detail}
+            )
             del rec["outcomes"][:-8]
             if _full or _path is None:
                 return
-            line = (f"#   cue {cue_seq}  {event:<11} {_elapsed(now)}"
-                    + (f"  ({detail})" if detail else "") + "\n")
+            line = (
+                f"#   cue {cue_seq}  {event:<11} {_elapsed(now)}"
+                + (f"  ({detail})" if detail else "")
+                + "\n"
+            )
             if _bytes + len(line) > SPEECH_LOG_MAX_BYTES:
                 return
             with open(_path, "a", encoding="utf-8") as f:
@@ -180,7 +218,7 @@ def delivery(cue_seq: int, event: str, text: str = "", detail: str = "",
 def recent(limit: int = 50) -> Dict[str, Any]:
     """The last utterances, newest last. For /guidance/log and the dashboard."""
     with _lock:
-        rows = _recent[-max(1, limit):]
+        rows = _recent[-max(1, limit) :]
         return {
             "enabled": bool(SPEECH_LOG_ENABLED),
             "path": _path,

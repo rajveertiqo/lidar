@@ -31,25 +31,52 @@ CLASSES = ["person", "path", "road", "crosswalk", "tactile", "stairs"]
 
 # Other datasets' names -> ours (lower case; "-" and "_" read as spaces).
 ALIASES = {
-    "person": "person", "people": "person", "pedestrian": "person", "human": "person",
-    "path": "path", "sidewalk": "path", "pavement": "path", "footpath": "path",
-    "walkway": "path", "footway": "path", "floor": "path", "corridor": "path",
+    "person": "person",
+    "people": "person",
+    "pedestrian": "person",
+    "human": "person",
+    "path": "path",
+    "sidewalk": "path",
+    "pavement": "path",
+    "footpath": "path",
+    "walkway": "path",
+    "footway": "path",
+    "floor": "path",
+    "corridor": "path",
     "hallway": "path",
-    "road": "road", "street": "road", "carriageway": "road", "lane": "road",
-    "crosswalk": "crosswalk", "zebra": "crosswalk", "zebra crossing": "crosswalk",
-    "pedestrian crossing": "crosswalk", "crossing": "crosswalk",
-    "tactile": "tactile", "tactile paving": "tactile", "tactile pavement": "tactile",
-    "tactile path": "tactile", "tactile tile": "tactile", "warning tactile": "tactile",
-    "warning": "tactile", "directional": "tactile", "horizontal directional": "tactile",
-    "vertical directional": "tactile", "truncated dome": "tactile",
-    "truncated domes": "tactile", "blister": "tactile", "blister paving": "tactile",
-    "stairs": "stairs", "stair": "stairs", "staircase": "stairs", "steps": "stairs",
+    "road": "road",
+    "street": "road",
+    "carriageway": "road",
+    "lane": "road",
+    "crosswalk": "crosswalk",
+    "zebra": "crosswalk",
+    "zebra crossing": "crosswalk",
+    "pedestrian crossing": "crosswalk",
+    "crossing": "crosswalk",
+    "tactile": "tactile",
+    "tactile paving": "tactile",
+    "tactile pavement": "tactile",
+    "tactile path": "tactile",
+    "tactile tile": "tactile",
+    "warning tactile": "tactile",
+    "warning": "tactile",
+    "directional": "tactile",
+    "horizontal directional": "tactile",
+    "vertical directional": "tactile",
+    "truncated dome": "tactile",
+    "truncated domes": "tactile",
+    "blister": "tactile",
+    "blister paving": "tactile",
+    "stairs": "stairs",
+    "stair": "stairs",
+    "staircase": "stairs",
+    "steps": "stairs",
     "step": "stairs",
 }
 
-ASPECT = 16.0 / 9.0          # the device's camera picture, 960x540
-SIZE = 640                   # the model's input, stretched to a square on the device
-MIN_AREA = 0.0002            # polygons smaller than this share of the picture are dropped
+ASPECT = 16.0 / 9.0  # the device's camera picture, 960x540
+SIZE = 640  # the model's input, stretched to a square on the device
+MIN_AREA = 0.0002  # polygons smaller than this share of the picture are dropped
 SPLITS = {"train": "train", "valid": "val", "val": "val", "test": "test"}
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
@@ -73,6 +100,7 @@ def _names(src: Path) -> dict:
 
 def _clip(poly, x0, y0, x1, y1):
     """Sutherland-Hodgman: the part of polygon `poly` inside the rectangle."""
+
     def cut(points, inside, cross):
         out = []
         for i, cur in enumerate(points):
@@ -91,8 +119,12 @@ def _clip(poly, x0, y0, x1, y1):
     def at_y(y):
         return lambda p, q: (p[0] + (q[0] - p[0]) * (y - p[1]) / (q[1] - p[1]), y)
 
-    for inside, cross in ((lambda p: p[0] >= x0, at_x(x0)), (lambda p: p[0] <= x1, at_x(x1)),
-                          (lambda p: p[1] >= y0, at_y(y0)), (lambda p: p[1] <= y1, at_y(y1))):
+    for inside, cross in (
+        (lambda p: p[0] >= x0, at_x(x0)),
+        (lambda p: p[0] <= x1, at_x(x1)),
+        (lambda p: p[1] >= y0, at_y(y0)),
+        (lambda p: p[1] <= y1, at_y(y1)),
+    ):
         poly = cut(poly, inside, cross)
         if not poly:
             break
@@ -100,8 +132,15 @@ def _clip(poly, x0, y0, x1, y1):
 
 
 def _area(poly) -> float:
-    return abs(sum(poly[i - 1][0] * p[1] - p[0] * poly[i - 1][1]
-                   for i, p in enumerate(poly))) / 2.0
+    return (
+        abs(
+            sum(
+                poly[i - 1][0] * p[1] - p[0] * poly[i - 1][1]
+                for i, p in enumerate(poly)
+            )
+        )
+        / 2.0
+    )
 
 
 def _split_for(name: str, split: str, has_val: bool) -> str:
@@ -114,8 +153,10 @@ def _split_for(name: str, split: str, has_val: bool) -> str:
 
 def convert(sources, out: Path, quality: int = 92) -> int:
     if len(CLASSES) in (4, 32, 64):
-        sys.exit(f"{len(CLASSES)} classes: the app cannot tell such a class head from a "
-                 f"box / mask head (utils/seg_inference.py) — add or merge a class")
+        sys.exit(
+            f"{len(CLASSES)} classes: the app cannot tell such a class head from a "
+            f"box / mask head (utils/seg_inference.py) — add or merge a class"
+        )
     for split in ("train", "val", "test"):
         (out / "images" / split).mkdir(parents=True, exist_ok=True)
         (out / "labels" / split).mkdir(parents=True, exist_ok=True)
@@ -165,53 +206,84 @@ def convert(sources, out: Path, quality: int = 92) -> int:
                             continue
                         ours = mapping.get(int(float(vals[0])))
                         if ours is None:
-                            dropped_names[f"{src.name}: {names.get(int(float(vals[0])), vals[0])}"] += 1
+                            dropped_names[
+                                f"{src.name}: {names.get(int(float(vals[0])), vals[0])}"
+                            ] += 1
                             continue
                         xy = [float(v) for v in vals[1:]]
-                        if len(xy) == 4:          # a box, not a polygon: no mask to learn
+                        if len(xy) == 4:  # a box, not a polygon: no mask to learn
                             skipped_box += 1
                             continue
                         poly = _clip(list(zip(xy[0::2], xy[1::2])), x0, y0, x1, y1)
-                        poly = [((px - x0) / (x1 - x0), (py - y0) / (y1 - y0)) for px, py in poly]
+                        poly = [
+                            ((px - x0) / (x1 - x0), (py - y0) / (y1 - y0))
+                            for px, py in poly
+                        ]
                         if len(poly) < 3 or _area(poly) < MIN_AREA:
                             continue
-                        lines.append(f"{ours} " + " ".join(f"{min(max(v, 0.0), 1.0):.6f}"
-                                                            for p in poly for v in p))
+                        lines.append(
+                            f"{ours} "
+                            + " ".join(
+                                f"{min(max(v, 0.0), 1.0):.6f}" for p in poly for v in p
+                            )
+                        )
                         counts[target][CLASSES[ours]] += 1
-                crop = img.crop((round(x0 * w), round(y0 * h), round(x1 * w), round(y1 * h)))
+                crop = img.crop(
+                    (round(x0 * w), round(y0 * h), round(x1 * w), round(y1 * h))
+                )
                 name = f"{tag}-{img_path.stem}"
                 crop.resize((SIZE, SIZE), Image.BILINEAR).save(
-                    out / "images" / target / f"{name}.jpg", quality=quality)
+                    out / "images" / target / f"{name}.jpg", quality=quality
+                )
                 (out / "labels" / target / f"{name}.txt").write_text(
-                    "\n".join(lines) + ("\n" if lines else ""))
+                    "\n".join(lines) + ("\n" if lines else "")
+                )
                 images[target] += 1
 
-    (out / "data.yaml").write_text(yaml.safe_dump({
-        "path": str(out.resolve()), "train": "images/train", "val": "images/val",
-        "test": "images/test", "names": dict(enumerate(CLASSES))}, sort_keys=False))
+    (out / "data.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "path": str(out.resolve()),
+                "train": "images/train",
+                "val": "images/val",
+                "test": "images/test",
+                "names": dict(enumerate(CLASSES)),
+            },
+            sort_keys=False,
+        )
+    )
 
     print(f"\nwrote {out / 'data.yaml'}")
-    print(f"images: train {images['train']}, val {images['val']}, test {images['test']}")
+    print(
+        f"images: train {images['train']}, val {images['val']}, test {images['test']}"
+    )
     print(f"{'class':<12}{'train':>8}{'val':>8}{'test':>8}")
     for c in CLASSES:
         n = counts["train"][c]
         flag = "   <- fewer than 300 shapes to learn from" if n < 300 else ""
         print(f"{c:<12}{n:>8}{counts['val'][c]:>8}{counts['test'][c]:>8}{flag}")
     if dropped_names:
-        print("\nclass names not mapped to ours (add them to ALIASES if they should count):")
+        print(
+            "\nclass names not mapped to ours (add them to ALIASES if they should count):"
+        )
         for k, n in sorted(dropped_names.items()):
             print(f"  {k}  ({n} shapes dropped)")
     if skipped_box:
-        print(f"\n{skipped_box} box-only labels skipped (export as SEGMENTATION, not detection)")
+        print(
+            f"\n{skipped_box} box-only labels skipped (export as SEGMENTATION, not detection)"
+        )
     if not images["val"]:
         print("\nWARNING: no validation images — training cannot judge itself")
     return 0
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("sources", nargs="+", help="exported dataset folders (each with data.yaml)")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "sources", nargs="+", help="exported dataset folders (each with data.yaml)"
+    )
     ap.add_argument("--out", default="dataset", help="output folder (default: dataset)")
     args = ap.parse_args()
     return convert(args.sources, Path(args.out))

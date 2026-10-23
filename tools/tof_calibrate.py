@@ -42,10 +42,10 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import config                                               # noqa: E402
-from utils import depth_fusion as df                        # noqa: E402
+import config  # noqa: E402
+from utils import depth_fusion as df  # noqa: E402
 
-TOF_UPSCALE = 4          # the 240 x 180 picture is enlarged this much to find the corners
+TOF_UPSCALE = 4  # the 240 x 180 picture is enlarged this much to find the corners
 
 
 def board_points(cols: int, rows: int, square_mm: float) -> np.ndarray:
@@ -55,26 +55,41 @@ def board_points(cols: int, rows: int, square_mm: float) -> np.ndarray:
     return grid
 
 
-def find_corners(gray: np.ndarray, cols: int, rows: int, upscale: int = 1) -> Optional[np.ndarray]:
+def find_corners(
+    gray: np.ndarray, cols: int, rows: int, upscale: int = 1
+) -> Optional[np.ndarray]:
     """The board's inner corners in a grey picture (N, 1, 2), or None."""
     import cv2
+
     img = gray
     if upscale > 1:
-        img = cv2.resize(gray, None, fx=upscale, fy=upscale, interpolation=cv2.INTER_CUBIC)
+        img = cv2.resize(
+            gray, None, fx=upscale, fy=upscale, interpolation=cv2.INTER_CUBIC
+        )
         img = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(img)
     found, corners = False, None
     if hasattr(cv2, "findChessboardCornersSB"):
-        found, corners = cv2.findChessboardCornersSB(img, (cols, rows), cv2.CALIB_CB_NORMALIZE_IMAGE)
+        found, corners = cv2.findChessboardCornersSB(
+            img, (cols, rows), cv2.CALIB_CB_NORMALIZE_IMAGE
+        )
     if not found:
         found, corners = cv2.findChessboardCorners(
-            img, (cols, rows), cv2.CALIB_CB_ADAPTIVE_THRESH | cv2.CALIB_CB_NORMALIZE_IMAGE)
+            img,
+            (cols, rows),
+            cv2.CALIB_CB_ADAPTIVE_THRESH | cv2.CALIB_CB_NORMALIZE_IMAGE,
+        )
         if found:
-            corners = cv2.cornerSubPix(img, corners, (5, 5), (-1, -1),
-                                       (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 50, 1e-3))
+            corners = cv2.cornerSubPix(
+                img,
+                corners,
+                (5, 5),
+                (-1, -1),
+                (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 50, 1e-3),
+            )
     if not found:
         return None
     corners = corners.reshape(-1, 1, 2).astype(np.float32)
-    if upscale > 1:                      # back to the small picture's pixels (centres at whole numbers)
+    if upscale > 1:  # back to the small picture's pixels (centres at whole numbers)
         corners = (corners + 0.5) / upscale - 0.5
     return corners
 
@@ -88,50 +103,95 @@ def same_order(cam: np.ndarray, tof: np.ndarray) -> np.ndarray:
     return tof[::-1].copy() if float(a @ b) < 0.0 else tof
 
 
-def calibrate(views: Sequence[Tuple[np.ndarray, Optional[np.ndarray], Optional[np.ndarray]]],
-              tof_size: Tuple[int, int], cam_size: Tuple[int, int]) -> Dict:
+def calibrate(
+    views: Sequence[Tuple[np.ndarray, Optional[np.ndarray], Optional[np.ndarray]]],
+    tof_size: Tuple[int, int],
+    cam_size: Tuple[int, int],
+) -> Dict:
     """Each lens from every view it saw the board in, then the pair from the views both
     saw it in: P_cam = R P_tof + t. Views are (board points, ToF corners or None, camera
     corners or None); board units in, metres out. The pair's views only cover where the
     two pictures overlap (the camera's lower part), so boards seen by one lens alone —
     across its whole picture — are what pin its own numbers down."""
     import cv2
+
     crit = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 1e-6)
     tof_v = [(o, t) for o, t, _ in views if t is not None]
     cam_v = [(o, c) for o, _, c in views if c is not None]
     both = [(o, t, c) for o, t, c in views if t is not None and c is not None]
     if len(tof_v) < 6 or len(cam_v) < 6 or len(both) < 4:
-        raise ValueError(f"too few views: ToF {len(tof_v)}, camera {len(cam_v)}, both "
-                         f"{len(both)} (need 6, 6 and 4)")
+        raise ValueError(
+            f"too few views: ToF {len(tof_v)}, camera {len(cam_v)}, both "
+            f"{len(both)} (need 6, 6 and 4)"
+        )
     # The small ToF picture cannot pin a 3rd radial term down; a fixed k3 keeps it honest.
-    rms_t, Kt, Dt, _, _ = cv2.calibrateCamera([o for o, _ in tof_v], [t for _, t in tof_v],
-                                              tof_size, None, None, flags=cv2.CALIB_FIX_K3,
-                                              criteria=crit)
-    rms_c, Kc, Dc, _, _ = cv2.calibrateCamera([o for o, _ in cam_v], [c for _, c in cam_v],
-                                              cam_size, None, None, criteria=crit)
-    out = cv2.stereoCalibrate([o for o, _, _ in both], [t for _, t, _ in both],
-                              [c for _, _, c in both], Kt, Dt, Kc, Dc, cam_size,
-                              flags=cv2.CALIB_FIX_INTRINSIC, criteria=crit)
+    rms_t, Kt, Dt, _, _ = cv2.calibrateCamera(
+        [o for o, _ in tof_v],
+        [t for _, t in tof_v],
+        tof_size,
+        None,
+        None,
+        flags=cv2.CALIB_FIX_K3,
+        criteria=crit,
+    )
+    rms_c, Kc, Dc, _, _ = cv2.calibrateCamera(
+        [o for o, _ in cam_v],
+        [c for _, c in cam_v],
+        cam_size,
+        None,
+        None,
+        criteria=crit,
+    )
+    out = cv2.stereoCalibrate(
+        [o for o, _, _ in both],
+        [t for _, t, _ in both],
+        [c for _, _, c in both],
+        Kt,
+        Dt,
+        Kc,
+        Dc,
+        cam_size,
+        flags=cv2.CALIB_FIX_INTRINSIC,
+        criteria=crit,
+    )
     rms_s, R, T = out[0], out[5], out[6]
 
     def lens(K, D, size):
         d = [float(v) for v in np.ravel(D)[:5]] + [0.0] * max(0, 5 - np.size(D))
-        return {"fx": float(K[0, 0]), "fy": float(K[1, 1]), "cx": float(K[0, 2]),
-                "cy": float(K[1, 2]), "width": int(size[0]), "height": int(size[1]), "dist": d}
+        return {
+            "fx": float(K[0, 0]),
+            "fy": float(K[1, 1]),
+            "cx": float(K[0, 2]),
+            "cy": float(K[1, 2]),
+            "width": int(size[0]),
+            "height": int(size[1]),
+            "dist": d,
+        }
 
-    return {"tof": lens(Kt, Dt, tof_size), "camera": lens(Kc, Dc, cam_size),
-            "R": np.asarray(R).tolist(), "t_m": (np.ravel(T) / 1000.0).tolist(),
-            "rms": {"tof": round(float(rms_t), 3), "camera": round(float(rms_c), 3),
-                    "stereo": round(float(rms_s), 3)},
-            "pairs": len(both), "views": {"tof": len(tof_v), "camera": len(cam_v)}}
+    return {
+        "tof": lens(Kt, Dt, tof_size),
+        "camera": lens(Kc, Dc, cam_size),
+        "R": np.asarray(R).tolist(),
+        "t_m": (np.ravel(T) / 1000.0).tolist(),
+        "rms": {
+            "tof": round(float(rms_t), 3),
+            "camera": round(float(rms_c), 3),
+            "stereo": round(float(rms_s), 3),
+        },
+        "pairs": len(both),
+        "views": {"tof": len(tof_v), "camera": len(cam_v)},
+    }
 
 
 def _pairs(folder: str) -> List[str]:
-    return sorted(p[:-len("_cam.png")] for p in glob.glob(os.path.join(folder, "*_cam.png")))
+    return sorted(
+        p[: -len("_cam.png")] for p in glob.glob(os.path.join(folder, "*_cam.png"))
+    )
 
 
 def solve(args) -> int:
     import cv2
+
     cols, rows = (int(v) for v in args.board.lower().split("x"))
     grid = board_points(cols, rows, args.square_mm)
     views, used = [], []
@@ -149,36 +209,61 @@ def solve(args) -> int:
             print(f"  {name}: board not found in either picture — skipped")
             continue
         if c is None or t is None:
-            print(f"  {name}: board only in the {'ToF' if c is None else 'camera'}'s picture "
-                  f"— used for that lens alone")
+            print(
+                f"  {name}: board only in the {'ToF' if c is None else 'camera'}'s picture "
+                f"— used for that lens alone"
+            )
         if c is not None and t is not None:
             t = same_order(c, t)
         views.append((grid, t, c))
         used.append(name)
-    print(f"{len(used)} usable of {len(_pairs(args.pairs))}: "
-          f"{sum(1 for _, t, c in views if t is not None and c is not None)} seen by both")
+    print(
+        f"{len(used)} usable of {len(_pairs(args.pairs))}: "
+        f"{sum(1 for _, t, c in views if t is not None and c is not None)} seen by both"
+    )
     try:
         res = calibrate(views, tof_size, cam_size)
     except ValueError as e:
-        print(f"{e}. Capture more: 15-25 with the board where both pictures see all of it, "
-              f"moved and tilted.")
+        print(
+            f"{e}. Capture more: 15-25 with the board where both pictures see all of it, "
+            f"moved and tilted."
+        )
         return 1
-    res.update({"date": datetime.date.today().isoformat(), "board": args.board,
-                "square_mm": args.square_mm, "used": used})
-    cal = df.Calibration(df.Lens.from_dict(res["tof"]), df.Lens.from_dict(res["camera"]),
-                         np.array(res["R"]), np.array(res["t_m"]), "bench")
+    res.update(
+        {
+            "date": datetime.date.today().isoformat(),
+            "board": args.board,
+            "square_mm": args.square_mm,
+            "used": used,
+        }
+    )
+    cal = df.Calibration(
+        df.Lens.from_dict(res["tof"]),
+        df.Lens.from_dict(res["camera"]),
+        np.array(res["R"]),
+        np.array(res["t_m"]),
+        "bench",
+    )
     s = cal.summary()
-    print(f"error: ToF {res['rms']['tof']} px, camera {res['rms']['camera']} px, "
-          f"pair {res['rms']['stereo']} px")
-    print(f"ToF view {s['tof_fov_deg'][0]} x {s['tof_fov_deg'][1]} deg; camera picture "
-          f"{s['camera_fov_deg'][0]} x {s['camera_fov_deg'][1]} deg")
-    print(f"lenses {s['baseline_cm']} cm apart; ToF aimed {s['tof_down_deg']} deg further "
-          f"down and {s['tof_right_deg']} deg right of the camera "
-          f"(design: {math.hypot(*config.FUSION_TOF_OFFSET_M) * 100:.1f} cm, "
-          f"{config.FUSION_TOF_DOWN_DEG:.0f} deg down)")
+    print(
+        f"error: ToF {res['rms']['tof']} px, camera {res['rms']['camera']} px, "
+        f"pair {res['rms']['stereo']} px"
+    )
+    print(
+        f"ToF view {s['tof_fov_deg'][0]} x {s['tof_fov_deg'][1]} deg; camera picture "
+        f"{s['camera_fov_deg'][0]} x {s['camera_fov_deg'][1]} deg"
+    )
+    print(
+        f"lenses {s['baseline_cm']} cm apart; ToF aimed {s['tof_down_deg']} deg further "
+        f"down and {s['tof_right_deg']} deg right of the camera "
+        f"(design: {math.hypot(*config.FUSION_TOF_OFFSET_M) * 100:.1f} cm, "
+        f"{config.FUSION_TOF_DOWN_DEG:.0f} deg down)"
+    )
     if res["rms"]["stereo"] > 1.0:
-        print("WARNING: the pair's error is over 1 px — a pair was blurred or the board "
-              "moved between the two pictures; look at `check` and drop bad pairs.")
+        print(
+            "WARNING: the pair's error is over 1 px — a pair was blurred or the board "
+            "moved between the two pictures; look at `check` and drop bad pairs."
+        )
     out = args.out or config.TOF_CALIBRATION_FILE
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w") as f:
@@ -190,6 +275,7 @@ def solve(args) -> int:
 def check(args) -> int:
     """Each pair's camera picture with its own depth drawn where the calibration places it."""
     import cv2
+
     proj = df.DepthProjector(df.load_calibration(args.calib))
     print(f"calibration: {proj.calib.source} — {proj.calib.note}")
     out_dir = os.path.join(args.pairs, "check")
@@ -205,17 +291,23 @@ def check(args) -> int:
     return 0
 
 
-def wall_fit(depth_mm: np.ndarray, lens: df.Lens, middle: float = 0.6) -> Dict[str, float]:
+def wall_fit(
+    depth_mm: np.ndarray, lens: df.Lens, middle: float = 0.6
+) -> Dict[str, float]:
     """How flat a wall comes out (RMS mm off the best plane) read each way, from the
     middle of the picture (the floor or ceiling may be at its edges)."""
     out = {}
     depth = np.asarray(depth_mm, dtype=np.float64)
     h, w = depth.shape
     vv, uu = np.mgrid[0:h, 0:w]
-    centre = ((np.abs(uu - (w - 1) / 2.0) <= middle * w / 2.0)
-              & (np.abs(vv - (h - 1) / 2.0) <= middle * h / 2.0)).reshape(-1)
+    centre = (
+        (np.abs(uu - (w - 1) / 2.0) <= middle * w / 2.0)
+        & (np.abs(vv - (h - 1) / 2.0) <= middle * h / 2.0)
+    ).reshape(-1)
     for radial in (True, False):
-        p = df.DepthProjector(df.Calibration(lens, lens, np.eye(3), np.zeros(3)), radial)
+        p = df.DepthProjector(
+            df.Calibration(lens, lens, np.eye(3), np.zeros(3)), radial
+        )
         d = depth.reshape(-1)
         ok = centre & np.isfinite(d) & (d > config.TOF_MIN_MM) & (d < config.TOF_MAX_MM)
         pts = p.rays[ok] * d[ok, None]
@@ -229,10 +321,14 @@ def wall(args) -> int:
     lens = df.load_calibration(args.calib).tof
     fit = wall_fit(np.load(args.depth), lens)
     best = "radial" if fit["radial"] < fit["axis"] else "axis"
-    print(f"off a flat plane: read along each ray {fit['radial']:.1f} mm, along the lens "
-          f"axis {fit['axis']:.1f} mm")
-    print(f"-> TOF_DEPTH_IS_RADIAL = {best == 'radial'} "
-          f"(config now {config.TOF_DEPTH_IS_RADIAL})")
+    print(
+        f"off a flat plane: read along each ray {fit['radial']:.1f} mm, along the lens "
+        f"axis {fit['axis']:.1f} mm"
+    )
+    print(
+        f"-> TOF_DEPTH_IS_RADIAL = {best == 'radial'} "
+        f"(config now {config.TOF_DEPTH_IS_RADIAL})"
+    )
     return 0
 
 

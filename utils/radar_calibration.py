@@ -13,8 +13,13 @@ from typing import Dict, Iterable, Optional, Tuple
 
 import config as _config
 from config import (
-    RADAR_BEAM_H_DEG, RADAR_BEARING_OFFSET_DEG, RADAR_BEARING_STEP_DEG, RADAR_BEARINGS,
-    RADAR_CARDINAL_CENTRES, _radar_ang_diff, radar_board_key,
+    RADAR_BEAM_H_DEG,
+    RADAR_BEARING_OFFSET_DEG,
+    RADAR_BEARING_STEP_DEG,
+    RADAR_BEARINGS,
+    RADAR_CARDINAL_CENTRES,
+    _radar_ang_diff,
+    radar_board_key,
 )
 
 BEARINGS_FILE = Path(__file__).resolve().parent.parent / "radar_bearings.json"
@@ -34,7 +39,7 @@ def is_board_serial(serial) -> bool:
 _NEW_FILE_MODE = 0o644
 
 _lock = threading.Lock()
-_measured: Optional[Dict[str, float]] = None      # serial -> bearing, from disk
+_measured: Optional[Dict[str, float]] = None  # serial -> bearing, from disk
 
 
 class CalibrationRejected(ValueError):
@@ -70,17 +75,21 @@ def _load() -> Dict[str, float]:
                 continue
             value = _finite_number(bearing)
             if value is None:
-                print(f"[RADAR] calibration file: bearing {bearing!r} for {serial} "
-                      f"is not a finite number — treating that board as unmeasured")
+                print(
+                    f"[RADAR] calibration file: bearing {bearing!r} for {serial} "
+                    f"is not a finite number — treating that board as unmeasured"
+                )
                 data[str(serial)] = None
                 continue
             data[str(serial)] = value % 360.0
     except FileNotFoundError:
         pass
-    except Exception as exc:                      # corrupt file must not brick boot
+    except Exception as exc:  # corrupt file must not brick boot
         data = {}
-        print(f"[RADAR] calibration file unreadable ({type(exc).__name__}: {exc}) "
-              f"— treating every board as unmeasured")
+        print(
+            f"[RADAR] calibration file unreadable ({type(exc).__name__}: {exc}) "
+            f"— treating every board as unmeasured"
+        )
     _measured = data
     return _measured
 
@@ -94,8 +103,9 @@ def _write_atomic(path: Path, text: str) -> None:
     except FileNotFoundError:
         mode = _NEW_FILE_MODE
 
-    fd, tmp = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp",
-                               dir=str(directory))
+    fd, tmp = tempfile.mkstemp(
+        prefix=f".{target.name}.", suffix=".tmp", dir=str(directory)
+    )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(text)
@@ -117,9 +127,11 @@ def _write_atomic(path: Path, text: str) -> None:
         finally:
             os.close(dfd)
     except OSError as exc:
-        print(f"[RADAR] calibration saved, but the directory fsync failed "
-              f"({type(exc).__name__}: {exc}) — a power cut in the next few "
-              f"seconds could lose it")
+        print(
+            f"[RADAR] calibration saved, but the directory fsync failed "
+            f"({type(exc).__name__}: {exc}) — a power cut in the next few "
+            f"seconds could lose it"
+        )
 
 
 def get_bearings() -> Dict[str, Optional[float]]:
@@ -136,8 +148,9 @@ def get_bearings() -> Dict[str, Optional[float]]:
 _save_lock = threading.Lock()
 
 
-def prepare_bearings(mapping: Dict[str, Optional[float]]
-                     ) -> Tuple[Dict[str, Optional[float]], str]:
+def prepare_bearings(
+    mapping: Dict[str, Optional[float]],
+) -> Tuple[Dict[str, Optional[float]], str]:
     """Validate `mapping` against the current table and build what would be saved: (new measured table, file text)."""
     with _lock:
         measured = dict(_load())
@@ -164,12 +177,15 @@ def prepare_bearings(mapping: Dict[str, Optional[float]]
         if clash:
             raise ValueError(
                 f"bearing {bearing:.0f}° claimed by both {clash} and {serial} "
-                f"— two boards cannot face the same way")
+                f"— two boards cannot face the same way"
+            )
         seen[key] = serial
 
     # allow_nan=False: NaN is not JSON, and every value is finite by now.
-    text = json.dumps({"bearings": measured}, indent=2, sort_keys=True,
-                      allow_nan=False) + "\n"
+    text = (
+        json.dumps({"bearings": measured}, indent=2, sort_keys=True, allow_nan=False)
+        + "\n"
+    )
     return measured, text
 
 
@@ -180,7 +196,8 @@ def persist_bearings(text: str) -> None:
     except OSError as exc:
         raise CalibrationSaveError(
             f"could not save {BEARINGS_FILE.name} ({type(exc).__name__}: {exc}) "
-            f"— nothing was changed") from exc
+            f"— nothing was changed"
+        ) from exc
 
 
 def commit_bearings(measured: Dict[str, Optional[float]]) -> Dict[str, Optional[float]]:
@@ -191,14 +208,16 @@ def commit_bearings(measured: Dict[str, Optional[float]]) -> Dict[str, Optional[
     return get_bearings()
 
 
-def validate_request(mapping, discovered: Iterable[str] = (),
-                     connected: Iterable[str] = ()) -> Dict[str, Optional[float]]:
+def validate_request(
+    mapping, discovered: Iterable[str] = (), connected: Iterable[str] = ()
+) -> Dict[str, Optional[float]]:
     """Check one POST /radar/calibrate table; return it cleaned, or raise."""
     if not isinstance(mapping, dict) or not mapping:
         raise CalibrationRejected("expected {'bearings': {serial: degrees}}")
     if len(mapping) > MAX_CALIBRATE_ENTRIES:
         raise CalibrationRejected(
-            f"{len(mapping)} entries — at most {MAX_CALIBRATE_ENTRIES} per request")
+            f"{len(mapping)} entries — at most {MAX_CALIBRATE_ENTRIES} per request"
+        )
 
     discovered, connected = list(discovered), list(connected)
     seen_twice = {s for s in discovered if discovered.count(s) > 1}
@@ -220,18 +239,21 @@ def validate_request(mapping, discovered: Iterable[str] = (),
             if serial not in clearable:
                 raise CalibrationRejected(
                     f"unknown board {serial} — not on the roster, not connected "
-                    f"and not in the calibration file, so there is nothing to clear")
+                    f"and not in the calibration file, so there is nothing to clear"
+                )
             clean[serial] = None
             continue
 
         if serial in seen_twice:
             raise CalibrationRejected(
                 f"board serial {serial} answered on more than one port — the two "
-                f"cannot be told apart, so neither can be given a bearing")
+                f"cannot be told apart, so neither can be given a bearing"
+            )
         if serial not in settable:
             raise CalibrationRejected(
                 f"unknown board {serial} — not on the roster and not connected; "
-                f"a bearing can only be recorded for a board this device has seen")
+                f"a bearing can only be recorded for a board this device has seen"
+            )
 
         number = value
         if isinstance(value, str):
@@ -239,28 +261,34 @@ def validate_request(mapping, discovered: Iterable[str] = (),
                 number = float(value.strip())
             except ValueError:
                 raise CalibrationRejected(
-                    f"bearing for {serial} is not a number: {value[:32]!r}") from None
+                    f"bearing for {serial} is not a number: {value[:32]!r}"
+                ) from None
         bearing = _finite_number(number)
         if bearing is None:
             raise CalibrationRejected(
-                f"bearing for {serial} is not a finite number: {str(value)[:32]!r}")
+                f"bearing for {serial} is not a finite number: {str(value)[:32]!r}"
+            )
         if not 0.0 <= bearing < 360.0:
             raise CalibrationRejected(
                 f"bearing for {serial} is {bearing:g} — degrees clockwise from "
-                f"ahead, in [0, 360)")
+                f"ahead, in [0, 360)"
+            )
         slot = slots.get(radar_board_key(bearing))
         if slot is None:
             raise CalibrationRejected(
                 f"bearing {bearing:g} for {serial} is not a slot on this mount "
-                f"(the legal bearings are {legal})")
+                f"(the legal bearings are {legal})"
+            )
         clean[serial] = slot
     return clean
 
 
 def board_keys() -> Tuple[str, ...]:
     """State keys of every MEASURED board, in bearing order."""
-    return tuple(radar_board_key(b) for b in
-                 sorted(v for v in get_bearings().values() if v is not None))
+    return tuple(
+        radar_board_key(b)
+        for b in sorted(v for v in get_bearings().values() if v is not None)
+    )
 
 
 def cardinal_sources() -> Dict[str, Tuple[str, ...]]:
@@ -268,8 +296,9 @@ def cardinal_sources() -> Dict[str, Tuple[str, ...]]:
     bearings = sorted(v for v in get_bearings().values() if v is not None)
     half = RADAR_BEAM_H_DEG / 2.0 + 22.5
     return {
-        name: tuple(radar_board_key(b) for b in bearings
-                    if _radar_ang_diff(b, centre) < half)
+        name: tuple(
+            radar_board_key(b) for b in bearings if _radar_ang_diff(b, centre) < half
+        )
         for name, centre in RADAR_CARDINAL_CENTRES.items()
     }
 
@@ -277,8 +306,10 @@ def cardinal_sources() -> Dict[str, Tuple[str, ...]]:
 def ring_slots() -> Tuple[float, ...]:
     """The intended mount: RADAR_BEARING_OFFSET_DEG + one per step around 360."""
     step = RADAR_BEARING_STEP_DEG
-    return tuple((RADAR_BEARING_OFFSET_DEG + i * step) % 360.0
-                 for i in range(int(round(360.0 / step))))
+    return tuple(
+        (RADAR_BEARING_OFFSET_DEG + i * step) % 360.0
+        for i in range(int(round(360.0 / step)))
+    )
 
 
 def status() -> Dict[str, object]:

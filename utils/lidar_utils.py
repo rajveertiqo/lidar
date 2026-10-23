@@ -14,20 +14,43 @@ import bisect
 from collections import deque
 
 from config import (
-    LIDAR_PORT, LIDAR_PORT_CANDIDATES, LIDAR_BAUD, LIDAR_SECTORS, LIDAR_SECTOR_ORDER,
+    LIDAR_PORT,
+    LIDAR_PORT_CANDIDATES,
+    LIDAR_BAUD,
+    LIDAR_SECTORS,
+    LIDAR_SECTOR_ORDER,
     LIDAR_ANGLE_OFFSET,
-    LIDAR_RPM, LIDAR_MAX_RPM, LIDAR_MIRROR,
-    GUIDANCE_CONE_DEG, GUIDANCE_CONE_CENTRES,
-    GUIDANCE_CORRIDOR_HALF_WIDTH_MM, GUIDANCE_CORRIDOR_MAX_MM,
-    LIDAR_CLUSTER_MIN_POINTS, LIDAR_CLUSTER_WINDOW_MM,
-    LIDAR_PERSIST_DEG, LIDAR_PERSIST_MAX_AGE_S, LIDAR_SELF_PERSIST_S, LIDAR_SELF_RANGE_MM,
-    LIDAR_MAX_BACKLOG_S, LIDAR_KEEP_BACKLOG_S, LIDAR_MEAS_RATE_HZ,
-    LIDAR_SCAN_MAX_GAP_DEG, LIDAR_RETRY_BACKOFF_S, LIDAR_SIMULATION_ALLOWED,
-    HEADING_ENABLED, DRIFT_ENABLED, DRIFT_ANALYZE_HZ,
-    BEV_ENABLED, LIDAR_MOVERS_ENABLED, MOTION_TRACKER_ENABLED,
+    LIDAR_RPM,
+    LIDAR_MAX_RPM,
+    LIDAR_MIRROR,
+    GUIDANCE_CONE_DEG,
+    GUIDANCE_CONE_CENTRES,
+    GUIDANCE_CORRIDOR_HALF_WIDTH_MM,
+    GUIDANCE_CORRIDOR_MAX_MM,
+    LIDAR_CLUSTER_MIN_POINTS,
+    LIDAR_CLUSTER_WINDOW_MM,
+    LIDAR_PERSIST_DEG,
+    LIDAR_PERSIST_MAX_AGE_S,
+    LIDAR_SELF_PERSIST_S,
+    LIDAR_SELF_RANGE_MM,
+    LIDAR_MAX_BACKLOG_S,
+    LIDAR_KEEP_BACKLOG_S,
+    LIDAR_MEAS_RATE_HZ,
+    LIDAR_SCAN_MAX_GAP_DEG,
+    LIDAR_RETRY_BACKOFF_S,
+    LIDAR_SIMULATION_ALLOWED,
+    HEADING_ENABLED,
+    DRIFT_ENABLED,
+    DRIFT_ANALYZE_HZ,
+    BEV_ENABLED,
+    LIDAR_MOVERS_ENABLED,
+    MOTION_TRACKER_ENABLED,
 )
 from utils.shared_state import (
-    update_lidar_state, update_drift_state, get_radar_state, get_camera_state,
+    update_lidar_state,
+    update_drift_state,
+    get_radar_state,
+    get_camera_state,
 )
 from utils.heading_tracker import get_tracker
 from utils import drift_guidance
@@ -36,6 +59,7 @@ from utils import drift_guidance
 def lidar_port() -> str:
     """The LiDAR's serial port NOW: the first of config.LIDAR_PORT_CANDIDATES that exists — a SHAPPE_LIDAR_PORT override, then the rig's /dev/serial/by-id name, then /dev/ttyUSB0 — resolved at every (re)connect, so a re-enumerated device is followed instead of its old node being retried forever (F13)."""
     import os
+
     for candidate in LIDAR_PORT_CANDIDATES:
         if os.path.exists(candidate):
             return candidate
@@ -48,23 +72,33 @@ def correct_angle(raw_angle: float) -> float:
         return (LIDAR_ANGLE_OFFSET - raw_angle) % 360.0
     return (raw_angle + LIDAR_ANGLE_OFFSET) % 360.0
 
+
 # ============== GLOBAL STATE ==============
 clients = set()
 stop_scanner = threading.Event()
 lidar_instance = None
 lidar_lock = threading.Lock()
 
-MIN_SCAN_INTERVAL = 0.066   # cap ~15 Hz (matches 900 RPM motor; bounds broadcast/UI load)
+MIN_SCAN_INTERVAL = (
+    0.066  # cap ~15 Hz (matches 900 RPM motor; bounds broadcast/UI load)
+)
 
 _pending_scan = None
 _scan_cv = threading.Condition()
 
-_reader_health = {"backlog_meas": 0, "dropped_meas": 0, "resyncs": 0,
-                  "partial_scans": 0, "meas_rate_hz": None,
-                  "source": "starting",
-                  "requested_rpm": LIDAR_RPM, "pwm_command": None,
-                  "points_per_scan": None, "packets_per_scan": None,
-                  "connected": False}
+_reader_health = {
+    "backlog_meas": 0,
+    "dropped_meas": 0,
+    "resyncs": 0,
+    "partial_scans": 0,
+    "meas_rate_hz": None,
+    "source": "starting",
+    "requested_rpm": LIDAR_RPM,
+    "pwm_command": None,
+    "points_per_scan": None,
+    "packets_per_scan": None,
+    "connected": False,
+}
 
 
 def reader_health():
@@ -75,7 +109,7 @@ def reader_health():
 _previous_scan = None
 
 # ============== MOTOR SPEED CONTROL ==============
-MAX_MOTOR_PWM = 1023        # RPLIDAR PWM range is 0..1023
+MAX_MOTOR_PWM = 1023  # RPLIDAR PWM range is 0..1023
 MOTOR_REASSERT_INTERVAL = 1.0  # seconds; re-send PWM to resist transient resets
 
 
@@ -87,13 +121,14 @@ def rpm_to_pwm(rpm: float) -> int:
 
 def _open_without_motor(RPLidar, port):
     """RPLidar(port) WITHOUT the motor kick its constructor gives."""
+
     class _NoConstructorKick(RPLidar):
         _opened = False
 
         def start_motor(self):
             if self._opened:
                 return super().start_motor()
-            self.motor_running = False     # left disabled until the ramp
+            self.motor_running = False  # left disabled until the ramp
 
     lidar = _NoConstructorKick(port, baudrate=LIDAR_BAUD, timeout=3)
     lidar._opened = True
@@ -150,6 +185,7 @@ _previous_handlers = {}
 
 def setup_signal_handlers():
     """Setup signal handlers for graceful shutdown"""
+
     def say(line):
         try:
             print(line)
@@ -161,22 +197,25 @@ def setup_signal_handlers():
 
         try:
             from utils import service
+
             service.arm_shutdown_backstop()
         except Exception as exc:
-            say(f"[WARN] could not arm the shutdown backstop: "
-                f"{type(exc).__name__}: {exc}")
+            say(
+                f"[WARN] could not arm the shutdown backstop: "
+                f"{type(exc).__name__}: {exc}"
+            )
 
         try:
             from utils.pi_camera_utils import begin_shutdown
+
             begin_shutdown()
         except Exception as exc:
-            say(f"[WARN] could not stop camera streams: "
-                f"{type(exc).__name__}: {exc}")
+            say(f"[WARN] could not stop camera streams: {type(exc).__name__}: {exc}")
 
         stop_scanner.set()
         try:
             cleanup_lidar()
-        except Exception as exc:          # never before the hand-over below
+        except Exception as exc:  # never before the hand-over below
             say(f"[WARN] LiDAR cleanup failed: {type(exc).__name__}: {exc}")
         previous = _previous_handlers.get(signum)
         if callable(previous):
@@ -240,7 +279,9 @@ def _persists(dist, angle, previous) -> bool:
     ranges, pairs = previous
     lo = bisect.bisect_left(ranges, dist - LIDAR_CLUSTER_WINDOW_MM)
     hi = bisect.bisect_right(ranges, dist + LIDAR_CLUSTER_WINDOW_MM)
-    return any(_angular_gap(pairs[i][1], angle) <= LIDAR_PERSIST_DEG for i in range(lo, hi))
+    return any(
+        _angular_gap(pairs[i][1], angle) <= LIDAR_PERSIST_DEG for i in range(lo, hi)
+    )
 
 
 def _angular_gap(a: float, centre: float) -> float:
@@ -265,7 +306,8 @@ def analyze_cones(points, previous=None):
                 and GUIDANCE_CORRIDOR_HALF_WIDTH_MM > 0
                 and gap < 90.0
                 and dist <= GUIDANCE_CORRIDOR_MAX_MM
-                and abs(dist * math.sin(math.radians(gap))) <= GUIDANCE_CORRIDOR_HALF_WIDTH_MM
+                and abs(dist * math.sin(math.radians(gap)))
+                <= GUIDANCE_CORRIDOR_HALF_WIDTH_MM
             )
             if in_cone or in_corridor:
                 buckets[name].append((dist, angle))
@@ -274,7 +316,9 @@ def analyze_cones(points, previous=None):
             if name == "front" and in_cone:
                 line.append((dist, angle))
     prev = _persistence_index(previous)
-    out = {name: _cluster_min(pts, support[name], prev) for name, pts in buckets.items()}
+    out = {
+        name: _cluster_min(pts, support[name], prev) for name, pts in buckets.items()
+    }
     out["front_line"] = _cluster_min(line, support["front"], prev)
     return out
 
@@ -315,15 +359,15 @@ def remove_client(websocket):
     print(f"[INFO] Client disconnected. Total: {len(clients)}")
 
 
-_MEAS_LEN = 5            # bytes per measurement in the standard scan response
-_READ_CHUNK = 65536      # cap on a single bulk read
-_SYNC_RUN = 4            # consecutive plausible packets required to re-lock
+_MEAS_LEN = 5  # bytes per measurement in the standard scan response
+_READ_CHUNK = 65536  # cap on a single bulk read
+_SYNC_RUN = 4  # consecutive plausible packets required to re-lock
 
 _RATE_WARMUP_S = 2.0
 
 _SILENCE_TIMEOUT_S = 2.0
-_NO_SCAN_TIMEOUT_S = 5.0     # bytes arriving but no complete scan this long: reconnect
-_MAX_PACKETS_PER_SCAN = 10000   # ~2.5 s of packets: far more than one revolution holds
+_NO_SCAN_TIMEOUT_S = 5.0  # bytes arriving but no complete scan this long: reconnect
+_MAX_PACKETS_PER_SCAN = 10000  # ~2.5 s of packets: far more than one revolution holds
 
 
 def _plausible(buf, i: int) -> bool:
@@ -362,18 +406,18 @@ class _ScanStream:
         self._lidar = lidar
         self._port = lidar._serial_port
         self._buf = bytearray()
-        self._pos = 0            # read cursor; the buffer is compacted on refill
-        self._locked = False     # byte phase known good
-        self._synced = False     # sitting on a scan boundary
-        self._last_data = 0.0    # when bytes last arrived — silence detection
-        self.dropped_meas = 0    # cumulative — reported as reader health
+        self._pos = 0  # read cursor; the buffer is compacted on refill
+        self._locked = False  # byte phase known good
+        self._synced = False  # sitting on a scan boundary
+        self._last_data = 0.0  # when bytes last arrived — silence detection
+        self.dropped_meas = 0  # cumulative — reported as reader health
         self.resyncs = 0
-        self.partial_scans = 0   # fragments discarded by the coverage check
-        self.backlog_meas = 0    # measurements still waiting at the last refill
+        self.partial_scans = 0  # fragments discarded by the coverage check
+        self.backlog_meas = 0  # measurements still waiting at the last refill
         self.captured_at = None  # when the device finished the last yielded scan
         self.swept = []
-        self._rx_bytes = 0       # bytes received since the first arrived...
-        self._rx_since = 0.0     # ...at this time — the measured rate
+        self._rx_bytes = 0  # bytes received since the first arrived...
+        self._rx_since = 0.0  # ...at this time — the measured rate
 
     def start(self):
         """Put the device into continuous scan mode."""
@@ -382,7 +426,8 @@ class _ScanStream:
         status, error_code = self._lidar.get_health()
         if status == "Error":
             raise RPLidarException(
-                f"RPLidar hardware failure. Error code: {error_code}")
+                f"RPLidar hardware failure. Error code: {error_code}"
+            )
         if status == "Warning":
             print(f"[WARN] LiDAR health warning, error code {error_code}")
 
@@ -391,12 +436,13 @@ class _ScanStream:
         if dsize != _MEAS_LEN or is_single or dtype != SCAN_TYPE:
             raise RPLidarException(
                 f"Unexpected scan descriptor: size={dsize} single={is_single} "
-                f"type={dtype}")
+                f"type={dtype}"
+            )
 
     def _refill(self) -> bool:
         """Pull everything the port holds into our buffer in as few reads as possible."""
         if self._pos:
-            del self._buf[:self._pos]      # one memmove per refill, not per measurement
+            del self._buf[: self._pos]  # one memmove per refill, not per measurement
             self._pos = 0
 
         chunk = self._port.read(1)
@@ -404,8 +450,10 @@ class _ScanStream:
         if not chunk:
             if self._last_data and now - self._last_data > _SILENCE_TIMEOUT_S:
                 from rplidar import RPLidarException
+
                 raise RPLidarException(
-                    f"No data from LiDAR for {now - self._last_data:.1f}s")
+                    f"No data from LiDAR for {now - self._last_data:.1f}s"
+                )
             self._last_data = self._last_data or now
             return False
 
@@ -443,15 +491,18 @@ class _ScanStream:
     def iter_scans(self, min_len=5):
         """Yield complete scans as lists of (quality, angle, distance)."""
         scan = []
-        angles = []          # every packet's bearing, valid or not — coverage
+        angles = []  # every packet's bearing, valid or not — coverage
         last_scan = time.monotonic()
         while not stop_scanner.is_set():
             if time.monotonic() - last_scan > _NO_SCAN_TIMEOUT_S:
                 # Bytes still arrive (silence is _refill's), but nothing that makes a scan:
                 # end the session so it reconnects (fuzz test 2026-10-22).
                 from rplidar import RPLidarException
-                raise RPLidarException(f"LiDAR data but no complete scan for "
-                                       f"{time.monotonic() - last_scan:.1f}s")
+
+                raise RPLidarException(
+                    f"LiDAR data but no complete scan for "
+                    f"{time.monotonic() - last_scan:.1f}s"
+                )
             if len(self._buf) - self._pos < _SYNC_RUN * _MEAS_LEN:
                 if not self._refill():
                     continue
@@ -479,7 +530,7 @@ class _ScanStream:
             b0 = self._buf[i]
             self._pos += _MEAS_LEN
 
-            if b0 & 0b1:                        # start-of-revolution flag
+            if b0 & 0b1:  # start-of-revolution flag
                 if self._synced and len(scan) > min_len:
                     if _max_gap(angles) <= LIDAR_SCAN_MAX_GAP_DEG:
                         self.captured_at = time.time() - self._arrived_since()
@@ -492,7 +543,7 @@ class _ScanStream:
                 scan = []
                 angles = []
             if not self._synced:
-                continue                        # mid-scan after a drop; wait it out
+                continue  # mid-scan after a drop; wait it out
             if len(angles) >= _MAX_PACKETS_PER_SCAN:
                 # No start flag for far longer than a revolution: a lost flag, not a scan.
                 # Drop it rather than let the lists grow without end.
@@ -543,31 +594,41 @@ def _mark_unswept(cones, swept):
             continue
         if not any(_angular_gap(a, centre) <= half for a in bearings):
             out[name] = {**cone, "unswept": True}
-            if name == "front" and isinstance(out.get("front_line"), dict) \
-                    and out["front_line"].get("min_dist") is None:
+            if (
+                name == "front"
+                and isinstance(out.get("front_line"), dict)
+                and out["front_line"].get("min_dist") is None
+            ):
                 out["front_line"] = {**out["front_line"], "unswept": True}
     return out
 
 
 _SELF_BIN_DEG = 10.0
-_self_since = {}     # 10-degree slice -> first scan with a near return there, while it lasts
+_self_since = {}  # 10-degree slice -> first scan with a near return there, while it lasts
 
 
 def _drop_transient_self(points, captured_at):
     """Returns nearer than LIDAR_SELF_RANGE_MM, dropped until they have held in one slice for LIDAR_SELF_PERSIST_S: the wearer's arm or cane handle swinging through the cones raised false "Turn" warnings (2026-10-21)."""
     if LIDAR_SELF_RANGE_MM <= 0:
         return points
-    near = {int((a % 360.0) // _SELF_BIN_DEG) for a, d in points if d < LIDAR_SELF_RANGE_MM}
+    near = {
+        int((a % 360.0) // _SELF_BIN_DEG) for a, d in points if d < LIDAR_SELF_RANGE_MM
+    }
     for b in list(_self_since):
-        if b not in near or captured_at < _self_since[b]:       # gone, or a clock step
+        if b not in near or captured_at < _self_since[b]:  # gone, or a clock step
             del _self_since[b]
     for b in near:
         _self_since.setdefault(b, captured_at)
-    held = {b for b in near if captured_at - _self_since[b] >= LIDAR_SELF_PERSIST_S - 1e-6}
+    held = {
+        b for b in near if captured_at - _self_since[b] >= LIDAR_SELF_PERSIST_S - 1e-6
+    }
     if held == near:
         return points
-    return [(a, d) for a, d in points
-            if d >= LIDAR_SELF_RANGE_MM or int((a % 360.0) // _SELF_BIN_DEG) in held]
+    return [
+        (a, d)
+        for a, d in points
+        if d >= LIDAR_SELF_RANGE_MM or int((a % 360.0) // _SELF_BIN_DEG) in held
+    ]
 
 
 def _publish_scan(loop, scan, scan_index, hz, health, captured_at=None, swept=None):
@@ -596,8 +657,15 @@ def _publish_scan(loop, scan, scan_index, hz, health, captured_at=None, swept=No
         "distances": [int(d) for a, d in points],
     }
 
-    update_lidar_state(points_data, sector_stats, hz * 60.0, scan_index, cone_stats,
-                       captured_at=captured_at, valid_fraction=valid_fraction)
+    update_lidar_state(
+        points_data,
+        sector_stats,
+        hz * 60.0,
+        scan_index,
+        cone_stats,
+        captured_at=captured_at,
+        valid_fraction=valid_fraction,
+    )
 
     heading = _step_heading(points, captured_at)
     _update_movers(points, heading, captured_at)
@@ -617,7 +685,7 @@ def _publish_scan(loop, scan, scan_index, hz, health, captured_at=None, swept=No
         asyncio.run_coroutine_threadsafe(broadcast(json.dumps(msg_data)), loop)
 
 
-_last_drift_analysis = float("-inf")     # monotonic
+_last_drift_analysis = float("-inf")  # monotonic
 
 
 def _step_heading(points, captured_at, trusted=True):
@@ -637,6 +705,7 @@ def _update_movers(points, heading, captured_at):
     if LIDAR_MOVERS_ENABLED:
         try:
             from utils.lidar_movers import get_movers
+
             movers = get_movers()
             movers.update(points, captured_at, heading)
             ego = movers.snapshot().get("ego")
@@ -645,8 +714,10 @@ def _update_movers(points, heading, captured_at):
     if MOTION_TRACKER_ENABLED:
         try:
             from utils.motion_tracker import get_motion_tracker
-            get_motion_tracker().update(points, captured_at, heading,
-                                        camera_state=get_camera_state(), ego=ego)
+
+            get_motion_tracker().update(
+                points, captured_at, heading, camera_state=get_camera_state(), ego=ego
+            )
         except Exception as e:
             print(f"[WARN] motion tracker failed: {e}")
 
@@ -673,10 +744,10 @@ def _update_bev(points, heading, captured_at=None):
         return
     try:
         from utils.bev_grid import get_grid
+
         grid = get_grid()
         # Same clock as the tracker, so the grid's dt and the heading's agree.
-        grid.update(points, heading=heading, radar=get_radar_state(),
-                    now=captured_at)
+        grid.update(points, heading=heading, radar=get_radar_state(), now=captured_at)
         grid.maybe_extract(camera=get_camera_state())
     except Exception as e:
         print(f"[WARN] BEV grid failed: {e}")
@@ -718,20 +789,24 @@ def scanner_thread(loop):
     except ImportError as exc:
         if not LIDAR_SIMULATION_ALLOWED:
             _reader_health["source"] = f"unavailable: rplidar not importable ({exc})"
-            print(f"[ERROR] rplidar is not importable ({exc}) — NO LiDAR. Publishing "
-                  f"nothing; health reports it down. (Development simulation "
-                  f"needs SHAPPE_SIMULATE_LIDAR=1.)")
+            print(
+                f"[ERROR] rplidar is not importable ({exc}) — NO LiDAR. Publishing "
+                f"nothing; health reports it down. (Development simulation "
+                f"needs SHAPPE_SIMULATE_LIDAR=1.)"
+            )
             return
-        print("[WARN] rplidar not installed and SHAPPE_SIMULATE_LIDAR=1: SIMULATED "
-              "LiDAR — fabricated scans, flagged, never evidence of a clear path")
+        print(
+            "[WARN] rplidar not installed and SHAPPE_SIMULATE_LIDAR=1: SIMULATED "
+            "LiDAR — fabricated scans, flagged, never evidence of a clear path"
+        )
         _reader_health["source"] = "simulated"
         run_simulation(loop)
         return
     _reader_health["source"] = "hardware"
 
     analysis = threading.Thread(
-        target=_analysis_worker, args=(loop,),
-        name="lidar-analysis", daemon=True)
+        target=_analysis_worker, args=(loop,), name="lidar-analysis", daemon=True
+    )
     analysis.start()
 
     progress = {"scan_index": 0}
@@ -752,8 +827,10 @@ def scanner_thread(loop):
             failures = 0
         delay = LIDAR_RETRY_BACKOFF_S[min(failures, len(LIDAR_RETRY_BACKOFF_S) - 1)]
         failures += 1
-        print(f"[WARN] LiDAR offline — publishing NO scans (state goes stale, "
-              f"health reports it down); reconnecting in {delay:g}s")
+        print(
+            f"[WARN] LiDAR offline — publishing NO scans (state goes stale, "
+            f"health reports it down); reconnecting in {delay:g}s"
+        )
         stop_scanner.wait(delay)
 
 
@@ -786,14 +863,16 @@ def _scan_session(RPLidar, progress):
         except Exception as e:
             print(f"[WARN] LiDAR info attempt {attempt + 1}/3: {e}; resetting…")
             try:
-                lidar.reset()          # full device reset -> back to idle
+                lidar.reset()  # full device reset -> back to idle
                 time.sleep(1.5)
                 lidar.clear_input()
             except Exception:
                 pass
     if info is None:
-        print("[WARN] No LiDAR info after 3 tries — continuing; "
-              "scanning may still work once the buffer settles.")
+        print(
+            "[WARN] No LiDAR info after 3 tries — continuing; "
+            "scanning may still work once the buffer settles."
+        )
 
     # Start motor at the configured speed (soft-started)
     target_pwm = rpm_to_pwm(LIDAR_RPM)
@@ -818,8 +897,10 @@ def _scan_session(RPLidar, progress):
 
     stream = _ScanStream(lidar)
     stream.start()
-    print("[INFO] Starting LiDAR scanning (bulk serial reads, "
-          f"{LIDAR_MAX_BACKLOG_S * 1000:.0f} ms latency budget)...")
+    print(
+        "[INFO] Starting LiDAR scanning (bulk serial reads, "
+        f"{LIDAR_MAX_BACKLOG_S * 1000:.0f} ms latency budget)..."
+    )
 
     last_health_log = 0.0
     reported_drops = 0
@@ -828,7 +909,7 @@ def _scan_session(RPLidar, progress):
         if stop_scanner.is_set():
             break
 
-        current_time = time.time()      # a STAMP: compared with other stamps
+        current_time = time.time()  # a STAMP: compared with other stamps
         mono = time.monotonic()
         progress["scan_index"] += 1
         scan_index = progress["scan_index"]
@@ -841,7 +922,6 @@ def _scan_session(RPLidar, progress):
             except Exception:
                 pass
             last_reassert = mono
-
 
         if len(scan_times) > 1:
             span = scan_times[-1] - scan_times[0]
@@ -856,14 +936,21 @@ def _scan_session(RPLidar, progress):
         _reader_health["meas_rate_hz"] = round(stream.meas_rate())
         _reader_health["points_per_scan"] = len(scan)
         _reader_health["packets_per_scan"] = len(stream.swept)
-        _submit_scan(scan, scan_index, hz, dict(_reader_health),
-                     stream.captured_at or current_time, stream.swept)
+        _submit_scan(
+            scan,
+            scan_index,
+            hz,
+            dict(_reader_health),
+            stream.captured_at or current_time,
+            stream.swept,
+        )
 
-        if (stream.dropped_meas > reported_drops
-                and mono - last_health_log >= 1.0):
-            print(f"[WARN] LiDAR reader behind: dropped "
-                  f"{stream.dropped_meas - reported_drops} stale measurements "
-                  f"(backlog {stream.backlog_meas}, {hz:.1f} Hz)")
+        if stream.dropped_meas > reported_drops and mono - last_health_log >= 1.0:
+            print(
+                f"[WARN] LiDAR reader behind: dropped "
+                f"{stream.dropped_meas - reported_drops} stale measurements "
+                f"(backlog {stream.backlog_meas}, {hz:.1f} Hz)"
+            )
             reported_drops = stream.dropped_meas
             last_health_log = mono
 
@@ -872,25 +959,31 @@ def run_simulation(loop):
     """Simulated scans, for development on a machine without rplidar installed."""
     t0 = time.time()
     scan_index = 0
-    
+
     print("[INFO] Running in simulation mode")
-    print("[INFO] Sectors: 8 x 45 deg, each centred on its direction (front = 337.5-22.5)")
-    
+    print(
+        "[INFO] Sectors: 8 x 45 deg, each centred on its direction (front = 337.5-22.5)"
+    )
+
     while not stop_scanner.is_set():
         scan_index += 1
         points = []
-        
+
         for angle in range(0, 360, 2):
             adjusted_angle = (angle + LIDAR_ANGLE_OFFSET) % 360.0
-            
+
             # FRONT sector (315-360 and 0-45)
             if adjusted_angle >= 315 or adjusted_angle < 45:
                 obstacle_center = (scan_index * 5) % 90 - 45 + 360
                 obstacle_center = obstacle_center % 360
-                if (adjusted_angle >= 315 and obstacle_center >= 315) or (adjusted_angle < 45 and obstacle_center < 45):
-                    dist_from_center = min(abs(adjusted_angle - obstacle_center), 
-                                          abs(adjusted_angle - obstacle_center + 360), 
-                                          abs(adjusted_angle - obstacle_center - 360))
+                if (adjusted_angle >= 315 and obstacle_center >= 315) or (
+                    adjusted_angle < 45 and obstacle_center < 45
+                ):
+                    dist_from_center = min(
+                        abs(adjusted_angle - obstacle_center),
+                        abs(adjusted_angle - obstacle_center + 360),
+                        abs(adjusted_angle - obstacle_center - 360),
+                    )
                     if dist_from_center < 20:
                         d = 600 + 200 * math.sin(scan_index * 0.3)
                     else:
@@ -903,26 +996,27 @@ def run_simulation(loop):
                 d = 2500 + 200 * math.sin(math.radians(angle))
             else:
                 d = 1200 + 100 * math.cos(math.radians(angle))
-            
+
             if d > 0:
                 d += random.uniform(-20, 20)
                 points.append((adjusted_angle, max(100, d)))
-        
+
         elapsed = max(1e-6, time.time() - t0)
         hz = scan_index / elapsed
         rpm_val = hz * 60.0
-        
+
         sector_stats = analyze_sectors(points)
-        
+
         cone_stats = analyze_cones(points)
-        
+
         points_data = {
             "angles": [round(a, 1) for a, d in points],
-            "distances": [int(d) for a, d in points]
+            "distances": [int(d) for a, d in points],
         }
-        
-        update_lidar_state(points_data, sector_stats, rpm_val, scan_index, cone_stats,
-                           simulated=True)
+
+        update_lidar_state(
+            points_data, sector_stats, rpm_val, scan_index, cone_stats, simulated=True
+        )
 
         _update_drift(_step_heading(points, time.time(), trusted=False))
 
@@ -946,6 +1040,7 @@ def start_scanner(loop):
     if BEV_ENABLED:
         try:
             from utils.bev_grid import reset_grid
+
             reset_grid()
         except Exception as e:
             print(f"[WARN] BEV grid reset failed: {e}")

@@ -17,18 +17,20 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ORDER = ["README.md",
-         "01-project-overview.md",
-         "02-hardware-architecture.md",
-         "03-perception-and-navigation-pipeline.md",
-         "04-bluetooth-communication-architecture.md",
-         "05-mobile-developer-integration-guide.md",
-         "06-interface-control-document.md",
-         "07-user-journeys-and-accessibility.md",
-         "08-safety-reliability-failure-management.md",
-         "09-roadmap-and-integration-checklist.md",
-         "10-architecture-and-sequence-diagrams.md",
-         "references.md"]
+ORDER = [
+    "README.md",
+    "01-project-overview.md",
+    "02-hardware-architecture.md",
+    "03-perception-and-navigation-pipeline.md",
+    "04-bluetooth-communication-architecture.md",
+    "05-mobile-developer-integration-guide.md",
+    "06-interface-control-document.md",
+    "07-user-journeys-and-accessibility.md",
+    "08-safety-reliability-failure-management.md",
+    "09-roadmap-and-integration-checklist.md",
+    "10-architecture-and-sequence-diagrams.md",
+    "references.md",
+]
 MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"
 
 
@@ -39,7 +41,9 @@ def anchor(name: str) -> str:
 def rewrite_links(text: str) -> str:
     names = "|".join(re.escape(n) for n in ORDER)
     # (02-hardware-architecture.md#x) or (02-hardware-architecture.md) -> (#doc-02-...)
-    text = re.sub(rf"\(({names})(#[^)]*)?\)", lambda m: f"(#{anchor(m.group(1))})", text)
+    text = re.sub(
+        rf"\(({names})(#[^)]*)?\)", lambda m: f"(#{anchor(m.group(1))})", text
+    )
     # links out of docs/ (../ble_bridge/...) stay relative to docs/; fine for MASTER.* beside them
     return text
 
@@ -50,7 +54,7 @@ def build_md() -> str:
         with open(os.path.join(HERE, name), encoding="utf-8") as fh:
             body = rewrite_links(fh.read())
         parts.append(f'<a id="{anchor(name)}"></a>\n\n{body.strip()}\n')
-    return "\n\n<div class=\"pagebreak\"></div>\n\n".join(parts)
+    return '\n\n<div class="pagebreak"></div>\n\n'.join(parts)
 
 
 CSS = """
@@ -90,6 +94,7 @@ blockquote { border-left: 4px solid var(--accent); margin: 1em 0; padding: .2em 
 
 def build_html(md_text: str) -> str:
     import markdown
+
     blocks = []
 
     def stash(m):
@@ -99,14 +104,18 @@ def build_html(md_text: str) -> str:
     text = re.sub(r"```mermaid\n(.*?)```", stash, md_text, flags=re.S)
     body = markdown.markdown(text, extensions=["tables", "fenced_code", "sane_lists"])
     for i, src in enumerate(blocks):
-        body = body.replace(f"<p>MERMAIDBLOCK{i}END</p>",
-                            f'<pre class="mermaid">{html.escape(src)}</pre>')
-    cover = ('<div class="cover"><h1>Shappe Guide: Engineering Documentation Package</h1>'
-             '<p>AI-assisted obstacle-warning wearable for blind and visually impaired pedestrians<br>'
-             'Hardware, perception pipeline, Bluetooth protocol and mobile integration</p>'
-             '<p>Prepared 2026-10-09 from repository <code>~/Documents/lidar</code> (HEAD e209c48 + working tree)</p>'
-             '<p>Status labels: CONFIRMED · HW-VERIFIED · PROPOSED · NOT IMPLEMENTED · NEEDS VALIDATION</p></div>'
-             '<div class="pagebreak"></div>')
+        body = body.replace(
+            f"<p>MERMAIDBLOCK{i}END</p>",
+            f'<pre class="mermaid">{html.escape(src)}</pre>',
+        )
+    cover = (
+        '<div class="cover"><h1>Shappe Guide: Engineering Documentation Package</h1>'
+        "<p>AI-assisted obstacle-warning wearable for blind and visually impaired pedestrians<br>"
+        "Hardware, perception pipeline, Bluetooth protocol and mobile integration</p>"
+        "<p>Prepared 2026-10-09 from repository <code>~/Documents/lidar</code> (HEAD e209c48 + working tree)</p>"
+        "<p>Status labels: CONFIRMED · HW-VERIFIED · PROPOSED · NOT IMPLEMENTED · NEEDS VALIDATION</p></div>"
+        '<div class="pagebreak"></div>'
+    )
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -129,7 +138,11 @@ def build_html(md_text: str) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pdf", action="store_true", help="also print MASTER.pdf with headless Chromium")
+    ap.add_argument(
+        "--pdf",
+        action="store_true",
+        help="also print MASTER.pdf with headless Chromium",
+    )
     args = ap.parse_args()
     md_text = build_md()
     with open(os.path.join(HERE, "MASTER.md"), "w", encoding="utf-8") as fh:
@@ -139,16 +152,33 @@ def main() -> int:
         fh.write(build_html(md_text))
     print(f"MASTER.md, MASTER.html written ({len(md_text) // 1024} KiB of Markdown)")
     if args.pdf:
-        chrome = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
+        chrome = (
+            shutil.which("chromium")
+            or shutil.which("chromium-browser")
+            or shutil.which("google-chrome")
+        )
         if not chrome:
             print("no Chromium found; open MASTER.html and print to PDF")
             return 1
         out = os.path.join(HERE, "MASTER.pdf")
-        subprocess.run([chrome, "--headless=new", "--disable-gpu", "--no-pdf-header-footer",
-                        "--virtual-time-budget=60000", "--run-all-compositor-stages-before-draw",
-                        "--force-prefers-reduced-motion", "--blink-settings=preferredColorScheme=1",
-                        f"--print-to-pdf={out}", "file://" + html_path],
-                       check=True, timeout=300, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            [
+                chrome,
+                "--headless=new",
+                "--disable-gpu",
+                "--no-pdf-header-footer",
+                "--virtual-time-budget=60000",
+                "--run-all-compositor-stages-before-draw",
+                "--force-prefers-reduced-motion",
+                "--blink-settings=preferredColorScheme=1",
+                f"--print-to-pdf={out}",
+                "file://" + html_path,
+            ],
+            check=True,
+            timeout=300,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         print(f"MASTER.pdf written ({os.path.getsize(out) // 1024} KiB)")
     return 0
 

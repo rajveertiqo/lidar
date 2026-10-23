@@ -24,35 +24,60 @@ SCENES = {
 def scan(x, y, heading_deg, scene, n_beams, rng=None):
     """One revolution of `scene` from a pose, as [(bearing_deg, range_mm)]."""
     from drift_sim import ray_cast
+
     g = SCENES[scene]
     phase = rng.uniform(0.0, 360.0 / n_beams) if rng is not None else 0.0
-    pts = ray_cast(x, y, heading_deg + phase, g["hw"], length_mm=g["length"],
-                   back_mm=g["back"], n_beams=n_beams)
+    pts = ray_cast(
+        x,
+        y,
+        heading_deg + phase,
+        g["hw"],
+        length_mm=g["length"],
+        back_mm=g["back"],
+        n_beams=n_beams,
+    )
     if not phase:
         return pts
     return [((b + phase) % 360.0, r) for b, r in pts]
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--bin-deg", type=float, default=None,
-                    help="HEADING_BIN_DEG to evaluate (default: config's)")
-    ap.add_argument("--beams", default="1080,250,164",
-                    help="points per revolution to test (comma-separated)")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--bin-deg",
+        type=float,
+        default=None,
+        help="HEADING_BIN_DEG to evaluate (default: config's)",
+    )
+    ap.add_argument(
+        "--beams",
+        default="1080,250,164",
+        help="points per revolution to test (comma-separated)",
+    )
     ap.add_argument("--seconds", type=float, default=2.0)
-    ap.add_argument("--no-phase-jitter", action="store_true",
-                    help="sample the same bearings every revolution (the "
-                         "pre-2026-09-29 behaviour, which aliases yaw)")
-    ap.add_argument("--seed", type=int, default=1,
-                    help="seed for the per-revolution bearing phase")
+    ap.add_argument(
+        "--no-phase-jitter",
+        action="store_true",
+        help="sample the same bearings every revolution (the "
+        "pre-2026-09-29 behaviour, which aliases yaw)",
+    )
+    ap.add_argument(
+        "--seed", type=int, default=1, help="seed for the per-revolution bearing phase"
+    )
     args = ap.parse_args()
 
     import config
+
     if args.bin_deg is not None:
         scale = config.HEADING_BIN_DEG / args.bin_deg
-        config.HEADING_MATCH_MIN_BINS = max(1, int(round(config.HEADING_MATCH_MIN_BINS * scale)))
-        config.HEADING_SENS_SMOOTH_BINS = max(1, int(round(config.HEADING_SENS_SMOOTH_BINS * scale)) | 1)
+        config.HEADING_MATCH_MIN_BINS = max(
+            1, int(round(config.HEADING_MATCH_MIN_BINS * scale))
+        )
+        config.HEADING_SENS_SMOOTH_BINS = max(
+            1, int(round(config.HEADING_SENS_SMOOTH_BINS * scale)) | 1
+        )
         config.HEADING_BIN_DEG = args.bin_deg
     import numpy as np
     from unittest import mock
@@ -76,11 +101,15 @@ def main():
                 hd += yaw_dps / hz
         return st
 
-    print(f"HEADING_BIN_DEG={config.HEADING_BIN_DEG}  min bins={config.HEADING_MATCH_MIN_BINS}"
-          f"  smoothing={config.HEADING_SENS_SMOOTH_BINS}  ({args.seconds:g} s walks, 15 Hz, "
-          f"bearing phase {'LOCKED' if args.no_phase_jitter else f'random per revolution, seed {args.seed}'})")
-    print(f"{'scene':9} {'beams':>5} {'deg':>3} {'true':>5}  {'pace':>6} {'source':9} "
-          f"{'still':>5} {'obs':>5} {'fwd':>6}")
+    print(
+        f"HEADING_BIN_DEG={config.HEADING_BIN_DEG}  min bins={config.HEADING_MATCH_MIN_BINS}"
+        f"  smoothing={config.HEADING_SENS_SMOOTH_BINS}  ({args.seconds:g} s walks, 15 Hz, "
+        f"bearing phase {'LOCKED' if args.no_phase_jitter else f'random per revolution, seed {args.seed}'})"
+    )
+    print(
+        f"{'scene':9} {'beams':>5} {'deg':>3} {'true':>5}  {'pace':>6} {'source':9} "
+        f"{'still':>5} {'obs':>5} {'fwd':>6}"
+    )
     bad = 0
     for scene in SCENES:
         for beams in (int(b) for b in args.beams.split(",")):
@@ -90,17 +119,21 @@ def main():
                     pace = st["speed_measured_mps"] if st["moving_confirmed"] else None
                     wrong_still = bool(st["confidently_still"]) and true > 0
                     bad += wrong_still
-                    print(f"{scene:9} {beams:5d} {theta:3d} {true:5.1f}  "
-                          f"{'-' if pace is None else f'{pace:.2f}':>6} {st['speed_source']:9} "
-                          f"{str(st['confidently_still']):>5} {str(st['speed_observable']):>5} "
-                          f"{st['forward_sensitivity']:6.3f}"
-                          + ("   <-- WALKING REPORTED STILL" if wrong_still else ""))
+                    print(
+                        f"{scene:9} {beams:5d} {theta:3d} {true:5.1f}  "
+                        f"{'-' if pace is None else f'{pace:.2f}':>6} {st['speed_source']:9} "
+                        f"{str(st['confidently_still']):>5} {str(st['speed_observable']):>5} "
+                        f"{st['forward_sensitivity']:6.3f}"
+                        + ("   <-- WALKING REPORTED STILL" if wrong_still else "")
+                    )
     for beams in (int(b) for b in args.beams.split(",")):
         st = run("room", 0, beams, 0.0, yaw_dps=20.0)
         rest = run("room", 0, beams, 0.0, yaw_dps=0.0)
-        print(f"yaw, {beams} beams: turning 20.0 deg/s on the spot reads {st['yaw_rate_dps']} deg/s "
-              f"(quality {st['yaw_quality']}); standing still, not turning, reads "
-              f"{rest['yaw_rate_dps']} deg/s")
+        print(
+            f"yaw, {beams} beams: turning 20.0 deg/s on the spot reads {st['yaw_rate_dps']} deg/s "
+            f"(quality {st['yaw_quality']}); standing still, not turning, reads "
+            f"{rest['yaw_rate_dps']} deg/s"
+        )
     return 1 if bad else 0
 
 

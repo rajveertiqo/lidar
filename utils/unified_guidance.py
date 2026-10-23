@@ -21,6 +21,7 @@ def _warn(layer: str, exc: Exception) -> None:
         _warned[layer] = (msg, now)
     print(f"[WARN] unified guidance: {layer} failed: {msg}")
 
+
 _turn_lock = threading.Lock()
 _last_turn = None
 
@@ -38,6 +39,7 @@ def _current_seq() -> int:
     the last sentence (2026-10-22, fuzz test)."""
     try:
         from utils import simple_guidance
+
         return int(simple_guidance.state()["cue_seq"])
     except Exception:
         return 0
@@ -46,6 +48,7 @@ def _current_seq() -> int:
 def _note_guidance(exc: Optional[Exception]) -> str:
     """Count one tick of the guidance step; the fault once GUIDANCE_FAIL_TICKS fail in a row, else ""."""
     from config import GUIDANCE_FAIL_TICKS
+
     global _fail_count, _fail_error
     with _fail_lock:
         if exc is None:
@@ -59,6 +62,7 @@ def _note_guidance(exc: Optional[Exception]) -> str:
 def guidance_fault() -> str:
     """Why the guidance step is failing, or "" — for the loop's heartbeat (pi_voice) and /health."""
     from config import GUIDANCE_FAIL_TICKS
+
     with _fail_lock:
         return _fail_error if _fail_count >= GUIDANCE_FAIL_TICKS else ""
 
@@ -68,11 +72,13 @@ def _fault_result(why: str) -> Dict[str, Any]:
     global _fallback_said_at
     try:
         from utils import simple_guidance
+
         return simple_guidance.fault_notice(why)
     except Exception as e:
         _warn("fault notice", e)
     # The gate itself is broken: straight to the Pi voice, without a cue for the phone.
     from config import SIMPLE_OFFLINE_REPEAT_S
+
     text = "Guidance stopped, use your cane"
     try:
         from utils.simple_guidance import SENSORS_OFFLINE as text
@@ -83,13 +89,22 @@ def _fault_result(why: str) -> Dict[str, Any]:
         _fallback_said_at = mono
         try:
             from utils import pi_voice
+
             pi_voice.speak(text, urgent=True, seq=None)
         except Exception:
             pass
-    return {"instruction": text, "action": "sensors_offline", "speak": False,
-            "cue_seq": _current_seq(), "quiet_reason": "said directly by the Pi voice",
-            "rule": "offline", "reason": f"the guidance step is failing: {why}",
-            "side": None, "raw": {}}
+    return {
+        "instruction": text,
+        "action": "sensors_offline",
+        "speak": False,
+        "cue_seq": _current_seq(),
+        "quiet_reason": "said directly by the Pi voice",
+        "rule": "offline",
+        "reason": f"the guidance step is failing: {why}",
+        "side": None,
+        "raw": {},
+    }
+
 
 # The guidance loop's newest result: (result, time.monotonic() when made).
 _latest_lock = threading.Lock()
@@ -99,6 +114,7 @@ _latest: Optional[Tuple[Dict[str, Any], float]] = None
 def latest_guidance() -> Dict[str, Any]:
     """The newest result of the guidance loop (pi_voice), for the web pages."""
     from config import GUIDANCE_RESULT_STALE_S
+
     with _latest_lock:
         latest = _latest
     age = None if latest is None else time.monotonic() - latest[1]
@@ -106,18 +122,35 @@ def latest_guidance() -> Dict[str, Any]:
         return {**latest[0], "loop": {"age_s": round(age, 2), "stale": False}}
 
     from utils import pi_voice, simple_guidance
-    why = ("the guidance loop has not produced a result yet" if latest is None else
-           f"the guidance loop is not updating (newest result {age:.1f} s old)")
+
+    why = (
+        "the guidance loop has not produced a result yet"
+        if latest is None
+        else f"the guidance loop is not updating (newest result {age:.1f} s old)"
+    )
     error = pi_voice.loop_status().get("error")
     if error:
         why += f": {error}"
-    seq = simple_guidance.state()["cue_seq"]      # unchanged: nothing to announce
+    seq = simple_guidance.state()["cue_seq"]  # unchanged: nothing to announce
     return {
-        "notify": {"speak": False, "cue_seq": seq, "instruction": "",
-                   "level": "advisory", "source": None, "reason": why,
-                   "quiet_reason": why},
-        "path": {"instruction": "", "action": "unknown", "rule": "unavailable",
-                 "reason": why, "speak": False, "cue_seq": seq, "raw": {}},
+        "notify": {
+            "speak": False,
+            "cue_seq": seq,
+            "instruction": "",
+            "level": "advisory",
+            "source": None,
+            "reason": why,
+            "quiet_reason": why,
+        },
+        "path": {
+            "instruction": "",
+            "action": "unknown",
+            "rule": "unavailable",
+            "reason": why,
+            "speak": False,
+            "cue_seq": seq,
+            "raw": {},
+        },
         "walk": {},
         "obstacles": {"level": "unknown", "summary": "", "count": 0, "items": []},
         "crossing": False,
@@ -131,22 +164,39 @@ def _startup_ready() -> Dict[str, Any]:
     """Whether the sensors have settled enough to speak. Never raises."""
     try:
         from utils import startup_gate
+
         return startup_gate.check()
     except Exception:
         return {"ready": True, "cue": "", "quiet_reason": ""}
 
 
-def _record(now: float, mono: float, inputs: Dict[str, Any],
-            simple: Dict[str, Any]) -> None:
+def _record(
+    now: float, mono: float, inputs: Dict[str, Any], simple: Dict[str, Any]
+) -> None:
     """Hand one tick to the walk recorder, if it is recording (utils/walk_recorder)."""
     try:
         from utils.walk_recorder import get_recorder
+
         rec = get_recorder()
         if rec.active:
-            rec.tick(now, mono, inputs,
-                     {k: simple.get(k) for k in ("instruction", "speak", "cue_seq",
-                                                 "quiet_reason", "rule", "reason",
-                                                 "mover_shadow", "route_shadow")})
+            rec.tick(
+                now,
+                mono,
+                inputs,
+                {
+                    k: simple.get(k)
+                    for k in (
+                        "instruction",
+                        "speak",
+                        "cue_seq",
+                        "quiet_reason",
+                        "rule",
+                        "reason",
+                        "mover_shadow",
+                        "route_shadow",
+                    )
+                },
+            )
     except Exception as e:
         _warn("walk recorder", e)
 
@@ -156,7 +206,9 @@ def get_unified_guidance() -> Dict[str, Any]:
     from utils.unified_navigation_system import decisionMaker
     from utils.sensor_fusion import fresh_camera_state, merge_navigation_inputs
     from utils.shared_state import (
-        get_lidar_state, get_radar_state, get_camera_state,
+        get_lidar_state,
+        get_radar_state,
+        get_camera_state,
     )
 
     lidar, camera, seen = {}, {}, {}
@@ -172,36 +224,46 @@ def get_unified_guidance() -> Dict[str, Any]:
             "precomputed_cones": cones,
             "front": seen.get("front", {}).get("detections", []),
             "right": seen.get("right", {}).get("detections", []),
-            "left":  seen.get("left", {}).get("detections", []),
-            "back":  seen.get("back", {}).get("detections", []),
+            "left": seen.get("left", {}).get("detections", []),
+            "back": seen.get("back", {}).get("detections", []),
             "context": {},
         }
         from utils.sensor_fusion import lidar_is_fresh
+
         if lidar_is_fresh(lidar):
             nav = decisionMaker(sample)
         else:
-            nav = {"action": "no_lidar_data", "crossing_mode": False,
-                   "urgent_message": "No LiDAR data — the way ahead is unknown."}
+            nav = {
+                "action": "no_lidar_data",
+                "crossing_mode": False,
+                "urgent_message": "No LiDAR data — the way ahead is unknown.",
+            }
     except Exception as e:
         nav = {}
         _warn("nav decision", e)
 
     at_crossing = False
     try:
-        from utils.unified_navigation_system import detect_traffic_lights_from_detections
+        from utils.unified_navigation_system import (
+            detect_traffic_lights_from_detections,
+        )
+
         front_lights = detect_traffic_lights_from_detections(
-            {"front": (seen.get("front") or {}).get("detections", [])})
+            {"front": (seen.get("front") or {}).get("detections", [])}
+        )
         at_crossing = bool(front_lights["directions"]["front"]["has_light"])
     except Exception as e:
         _warn("crossing (front camera)", e)
 
     path = {
         "clear_ft": (nav.get("cone_distances", {}) or {})
-                    .get("front", {}).get("distance_ft"),
+        .get("front", {})
+        .get("distance_ft"),
     }
 
     try:
         from utils import walk_policy
+
         walk_decision = walk_policy.decide(lidar, get_radar_state())
     except Exception as e:
         walk_decision = {"action": "unknown", "instruction": "—", "units": "ft"}
@@ -232,45 +294,63 @@ def get_unified_guidance() -> Dict[str, Any]:
     drift = {}
     try:
         from utils.shared_state import get_drift_state
+
         drift = get_drift_state()
     except Exception as e:
         _warn("drift state", e)
 
-    simple = {"instruction": "", "action": "unknown", "speak": False,
-              "cue_seq": _current_seq(), "quiet_reason": "", "rule": "unavailable",
-              "reason": "", "side": None}
+    simple = {
+        "instruction": "",
+        "action": "unknown",
+        "speak": False,
+        "cue_seq": _current_seq(),
+        "quiet_reason": "",
+        "rule": "unavailable",
+        "reason": "",
+        "side": None,
+    }
     try:
         from utils import simple_guidance
+
         ready = _startup_ready()
         motion = None
         try:
             from utils.heading_tracker import get_tracker
+
             motion = get_tracker().state()
         except Exception as e:
             _warn("heading state", e)
         movers = None
         try:
             from utils.lidar_movers import get_movers
+
             movers = get_movers().snapshot()
         except Exception as e:
             _warn("lidar movers", e)
         try:
             from config import MOTION_TRACKER_ENABLED
+
             if MOTION_TRACKER_ENABLED:
                 # Kalman tracks (utils/motion_tracker): read here so the walk recorder keeps them.
                 from utils.motion_tracker import get_motion_tracker
+
                 movers = {**(movers or {}), "kalman": get_motion_tracker().snapshot()}
         except Exception as e:
             _warn("motion tracker", e)
         try:
             from config import RADAR_MOVERS_ENABLED
+
             if RADAR_MOVERS_ENABLED:
                 # Fed here, once a tick: this loop is the only caller (latest_guidance).
                 from utils.radar_movers import get_radar_movers
+
                 radar_movers = get_radar_movers()
-                radar_movers.update(get_radar_state(), (movers or {}).get("blobs"),
-                                    (movers or {}).get("ego"),
-                                    turn_dps=(motion or {}).get("yaw_rate_dps"))
+                radar_movers.update(
+                    get_radar_state(),
+                    (movers or {}).get("blobs"),
+                    (movers or {}).get("ego"),
+                    turn_dps=(motion or {}).get("yaw_rate_dps"),
+                )
                 movers = {**(movers or {}), "radar": radar_movers.snapshot()}
         except Exception as e:
             _warn("radar movers", e)
@@ -278,13 +358,15 @@ def get_unified_guidance() -> Dict[str, Any]:
         system = None
         try:
             from utils import pi_health
+
             system = pi_health.read()
         except Exception as e:
             _warn("pi health", e)
         hold = None if ready["ready"] else (ready["quiet_reason"] or "scanning")
         tick_t, tick_mono = time.time(), time.monotonic()
         simple = simple_guidance.guidance(
-            walk_decision, lidar,
+            walk_decision,
+            lidar,
             now=tick_t,
             hold=hold,
             hold_lidar_absent=bool(ready.get("lidar_absent")),
@@ -293,13 +375,25 @@ def get_unified_guidance() -> Dict[str, Any]:
             camera_state=camera,
             motion=motion,
             movers=movers,
-            system=system)
+            system=system,
+        )
         _note_guidance(None)
-        _record(tick_t, tick_mono, {
-            "walk_decision": walk_decision, "lidar": lidar, "radar": radar_now,
-            "camera": camera, "motion": motion, "movers": movers, "hold": hold,
-            "hold_lidar_absent": bool(ready.get("lidar_absent")),
-            "at_crossing": at_crossing}, simple)
+        _record(
+            tick_t,
+            tick_mono,
+            {
+                "walk_decision": walk_decision,
+                "lidar": lidar,
+                "radar": radar_now,
+                "camera": camera,
+                "motion": motion,
+                "movers": movers,
+                "hold": hold,
+                "hold_lidar_absent": bool(ready.get("lidar_absent")),
+                "at_crossing": at_crossing,
+            },
+            simple,
+        )
     except Exception as e:
         _warn("simple guidance", e)
         fault = _note_guidance(e)
@@ -310,10 +404,17 @@ def get_unified_guidance() -> Dict[str, Any]:
         # Not spoken (LIDAR_MOVERS_SPEAK False): logged so a test walk can judge it.
         try:
             from utils import speech_log, test_console
-            speech_log.say(source="lidar-movers", text=f"would say: {simple['mover_shadow']}",
-                           level="silent", detail=simple.get("mover_shadow_reason", ""),
-                           via="none")
-            test_console.would_say(simple["mover_shadow"], simple.get("mover_shadow_reason", ""))
+
+            speech_log.say(
+                source="lidar-movers",
+                text=f"would say: {simple['mover_shadow']}",
+                level="silent",
+                detail=simple.get("mover_shadow_reason", ""),
+                via="none",
+            )
+            test_console.would_say(
+                simple["mover_shadow"], simple.get("mover_shadow_reason", "")
+            )
         except Exception:
             pass
 
@@ -321,10 +422,17 @@ def get_unified_guidance() -> Dict[str, Any]:
         # Not spoken (ROUTE_PLANNER_SPEAK False): logged so a test walk can judge it.
         try:
             from utils import speech_log, test_console
-            speech_log.say(source="route-planner", text=f"would say: {simple['route_shadow']}",
-                           level="silent", detail=simple.get("route_shadow_reason", ""),
-                           via="none")
-            test_console.would_say(simple["route_shadow"], simple.get("route_shadow_reason", ""))
+
+            speech_log.say(
+                source="route-planner",
+                text=f"would say: {simple['route_shadow']}",
+                level="silent",
+                detail=simple.get("route_shadow_reason", ""),
+                via="none",
+            )
+            test_console.would_say(
+                simple["route_shadow"], simple.get("route_shadow_reason", "")
+            )
         except Exception:
             pass
 
@@ -344,31 +452,36 @@ def get_unified_guidance() -> Dict[str, Any]:
 
     if drift_stale:
         note = "waiting for enough scans to judge your heading"
-    elif drift.get("glass") and drift.get("ttc_s") == (drift["glass"] or {}).get("ttc_s"):
+    elif drift.get("glass") and drift.get("ttc_s") == (drift["glass"] or {}).get(
+        "ttc_s"
+    ):
         g = drift["glass"]
         where = "ahead" if g["direction"] == "front" else f"on your {g['direction']}"
         note = f"radar sees glass {where} — the laser looks straight through it"
     elif veer.get("veering"):
         note = veer.get("plain", "")
     elif hazard and drift.get("ttc_s") is not None:
-        note = (f"{hazard.get('object', 'obstacle')} "
-                f"{drift.get('ttc_phrase', '')}").strip()
+        note = (
+            f"{hazard.get('object', 'obstacle')} {drift.get('ttc_phrase', '')}"
+        ).strip()
     else:
         note = plain.get("line", "")
 
-    path.update({
-        "ttc_s": drift.get("ttc_s"),
-        "ttc_phrase": drift.get("ttc_phrase", ""),
-        # How the user is actually moving, in plain English.
-        "status": plain.get("summary", ""),
-        "sensing": plain.get("sensing", ""),
-        "note": note,
-        # What drift is converging on, if anything — named and placed.
-        "hazard": hazard or None,
-        "drift_level": drift.get("level", "clear"),
-        "drift_instruction": drift.get("instruction", ""),
-        "stale": drift_stale,
-    })
+    path.update(
+        {
+            "ttc_s": drift.get("ttc_s"),
+            "ttc_phrase": drift.get("ttc_phrase", ""),
+            # How the user is actually moving, in plain English.
+            "status": plain.get("summary", ""),
+            "sensing": plain.get("sensing", ""),
+            "note": note,
+            # What drift is converging on, if anything — named and placed.
+            "hazard": hazard or None,
+            "drift_level": drift.get("level", "clear"),
+            "drift_instruction": drift.get("instruction", ""),
+            "stale": drift_stale,
+        }
+    )
 
     path["drift"] = {
         "action": drift.get("action", "hold_course"),
@@ -387,7 +500,11 @@ def get_unified_guidance() -> Dict[str, Any]:
 
     global _last_turn
     turning = str(walk_decision.get("action", "")).startswith(("turn_", "stop"))
-    key = (walk_decision.get("action"), walk_decision.get("direction")) if turning else None
+    key = (
+        (walk_decision.get("action"), walk_decision.get("direction"))
+        if turning
+        else None
+    )
     with _turn_lock:
         new_turn = key is not None and key != _last_turn
         _last_turn = key
@@ -395,19 +512,25 @@ def get_unified_guidance() -> Dict[str, Any]:
         try:
             from utils.heading_tracker import get_tracker
             from utils import drift_guidance
+
             get_tracker().reset_reference()
             drift_guidance.reset_state()
         except Exception as e:
             _warn("heading reset", e)
 
-    obstacles = {"level": "clear", "summary": "No obstacles nearby",
-                 "count": 0, "items": []}
+    obstacles = {
+        "level": "clear",
+        "summary": "No obstacles nearby",
+        "count": 0,
+        "items": [],
+    }
     try:
         from utils.sensor_fusion import fuse_guidance
+
         fused = fuse_guidance()
         hz = fused.get("hazards", []) or []
         obstacles = {
-            "level": fused.get("action", "clear"),   # clear|proceed_slow|caution|stop
+            "level": fused.get("action", "clear"),  # clear|proceed_slow|caution|stop
             "summary": fused.get("primary", ""),
             "count": len(hz),
             "items": [
@@ -427,7 +550,11 @@ def get_unified_guidance() -> Dict[str, Any]:
         _warn("obstacle list", e)
 
     instruction = simple.get("instruction") or ""
-    urgent = simple.get("rule") in ("blocked", "vehicle_approaching", "mover_approaching")
+    urgent = simple.get("rule") in (
+        "blocked",
+        "vehicle_approaching",
+        "mover_approaching",
+    )
 
     say = bool(simple.get("speak"))
     notify_seq = simple.get("cue_seq", 0)
@@ -435,27 +562,44 @@ def get_unified_guidance() -> Dict[str, Any]:
 
     try:
         from utils import pi_voice
+
         voice = pi_voice.status()
     except Exception:
-        voice = {"enabled": False, "running": False, "usable": False,
-                 "sink_usable": False}
+        voice = {
+            "enabled": False,
+            "running": False,
+            "usable": False,
+            "sink_usable": False,
+        }
 
     if say:
         handed = "none"
         try:
             from utils import pi_voice
-            handed = pi_voice.speak(instruction, urgent=urgent, seq=notify_seq,
-                                    sink_usable=bool(voice.get("sink_usable")))
+
+            handed = pi_voice.speak(
+                instruction,
+                urgent=urgent,
+                seq=notify_seq,
+                sink_usable=bool(voice.get("sink_usable")),
+            )
         except Exception:
-            pass          # the voice must never cost the instruction
+            pass  # the voice must never cost the instruction
         try:
             from utils import test_console
-            test_console.spoken(instruction, str(path.get("reason") or ""),
-                                urgent=urgent, raw=path.get("raw"), voice=voice)
+
+            test_console.spoken(
+                instruction,
+                str(path.get("reason") or ""),
+                urgent=urgent,
+                raw=path.get("raw"),
+                voice=voice,
+            )
         except Exception:
             pass
         try:
             from utils import speech_log
+
             speech_log.say(
                 source=str(path.get("source") or "guidance"),
                 text=instruction,
@@ -465,10 +609,11 @@ def get_unified_guidance() -> Dict[str, Any]:
                 via={"queued": "pi", "unavailable": "phone"}.get(handed, "none"),
             )
         except Exception:
-            pass          # a log must never cost the instruction it records
+            pass  # a log must never cost the instruction it records
 
     try:
         from utils import pi_voice
+
         voice = {**voice, "accepted_seq": pi_voice.accepted_seq()}
     except Exception:
         voice = {**voice, "accepted_seq": None}
@@ -498,8 +643,9 @@ def get_unified_guidance() -> Dict[str, Any]:
         "crossing": bool(nav.get("crossing_mode", False)),
         "at_crossing": at_crossing,
         # All 8 sectors — threat awareness is reported at the finer resolution.
-        "sector_ft": {s: sectors.get(s, {}).get("distance_ft")
-                      for s in LIDAR_SECTOR_ORDER},
+        "sector_ft": {
+            s: sectors.get(s, {}).get("distance_ft") for s in LIDAR_SECTOR_ORDER
+        },
     }
     global _latest
     with _latest_lock:

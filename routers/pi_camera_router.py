@@ -6,7 +6,11 @@ from fastapi.responses import StreamingResponse
 from config import CAMERA_WIDTH, CAMERA_HEIGHT, JPEG_QUALITY, TARGET_FPS, HEF_PATH
 from utils import hailo_stats
 from utils.pi_camera_utils import (
-    gen_frames, gen_seg_frames, gen_seg_grid, get_camera_stats, fps_stats,
+    gen_frames,
+    gen_seg_frames,
+    gen_seg_grid,
+    get_camera_stats,
+    fps_stats,
     get_frame_payload,
 )
 
@@ -19,8 +23,7 @@ VALID_SECTORS = ["front", "right", "left", "back"]
 async def video_feed():
     """MJPEG video stream for front camera (default)"""
     return StreamingResponse(
-        gen_frames("front"),
-        media_type="multipart/x-mixed-replace; boundary=frame"
+        gen_frames("front"), media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
 
@@ -31,8 +34,7 @@ async def sector_video_feed(sector: str):
         return {"error": f"Invalid sector. Valid: {VALID_SECTORS}"}
 
     return StreamingResponse(
-        gen_frames(sector),
-        media_type="multipart/x-mixed-replace; boundary=frame"
+        gen_frames(sector), media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
 
@@ -43,8 +45,7 @@ async def sector_seg_feed(sector: str):
         return {"error": f"Invalid sector. Valid: {VALID_SECTORS}"}
 
     return StreamingResponse(
-        gen_seg_frames(sector),
-        media_type="multipart/x-mixed-replace; boundary=frame"
+        gen_seg_frames(sector), media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
 
@@ -52,8 +53,7 @@ async def sector_seg_feed(sector: str):
 async def seg_grid_feed():
     """Single MJPEG stream: 2x2 colorized segmentation of all four sectors."""
     return StreamingResponse(
-        gen_seg_grid(),
-        media_type="multipart/x-mixed-replace; boundary=frame"
+        gen_seg_grid(), media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
 
@@ -61,6 +61,7 @@ async def seg_grid_feed():
 async def stats():
     """Camera and detection statistics; every detection carries how far away it is (`distance_ft`, `distance_source`: lidar / camera / camera_cut / tof; and `depth` when the ToF measured it)."""
     from utils.sensor_fusion import with_distances
+
     return with_distances(get_camera_stats())
 
 
@@ -68,8 +69,12 @@ async def stats():
 async def distances():
     """Why each detection's distance is what it is: the bearings searched, every thing the laser ranges there, the box-size estimate, and which was chosen."""
     from utils.sensor_fusion import with_distances
+
     stats = with_distances(get_camera_stats(), explain=True)
-    return {s: (stats.get(s) or {}).get("detections", []) for s in ("front", "right", "left", "back")}
+    return {
+        s: (stats.get(s) or {}).get("detections", [])
+        for s in ("front", "right", "left", "back")
+    }
 
 
 @router.get("/fps")
@@ -77,7 +82,7 @@ async def fps():
     """Get current detection FPS"""
     return {
         "capture_fps": fps_stats["capture_fps"],
-        "detection_fps": fps_stats["detection_fps"]
+        "detection_fps": fps_stats["detection_fps"],
     }
 
 
@@ -96,7 +101,7 @@ async def config():
         "quality": JPEG_QUALITY,
         "target_fps": TARGET_FPS,
         "hef_path": HEF_PATH,
-        "sectors": VALID_SECTORS
+        "sectors": VALID_SECTORS,
     }
 
 
@@ -104,8 +109,12 @@ async def config():
 def get_frame():
     """Get current frame as base64 (front camera)"""
     p = get_frame_payload("front")
-    return {"frame": p["frame"], "sector": "front", "success": bool(p["frame"]),
-            "simulated": p["simulated"]}
+    return {
+        "frame": p["frame"],
+        "sector": "front",
+        "success": bool(p["frame"]),
+        "simulated": p["simulated"],
+    }
 
 
 @router.get("/frame/{sector}")
@@ -115,12 +124,16 @@ def get_sector_frame(sector: str):
         return {
             "error": "Invalid sector",
             "valid_sectors": VALID_SECTORS,
-            "success": False
+            "success": False,
         }
 
     p = get_frame_payload(sector)
-    return {"frame": p["frame"], "sector": sector, "success": bool(p["frame"]),
-            "simulated": p["simulated"]}
+    return {
+        "frame": p["frame"],
+        "sector": sector,
+        "success": bool(p["frame"]),
+        "simulated": p["simulated"],
+    }
 
 
 @router.get("/frames/all")
@@ -135,7 +148,4 @@ def get_all_frames():
             "simulated": p["simulated"],
         }
 
-    return {
-        "frames": frames,
-        "success": True
-    }
+    return {"frames": frames, "success": True}

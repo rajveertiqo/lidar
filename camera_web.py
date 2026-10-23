@@ -21,13 +21,13 @@ from picamera2 import Picamera2
 
 # Register 0x24 on the HAT controller at i2c address 0x24.
 CAMARRAY_MODES = {
-    "4ch":    0x00,   # all four merged, synchronised, 1/4 res each
-    "dual01": 0x01,   # sensors 0+1 side by side
-    "dual23": 0x11,   # sensors 2+3 side by side
-    "cam0":   0x02,
-    "cam1":   0x12,
-    "cam2":   0x22,
-    "cam3":   0x32,
+    "4ch": 0x00,  # all four merged, synchronised, 1/4 res each
+    "dual01": 0x01,  # sensors 0+1 side by side
+    "dual23": 0x11,  # sensors 2+3 side by side
+    "cam0": 0x02,
+    "cam1": 0x12,
+    "cam2": 0x22,
+    "cam3": 0x32,
 }
 
 # How each mode tiles the composite, used as the default --split.
@@ -41,9 +41,9 @@ FRAME_TIMEOUT_S = 5.0
 TEARDOWN_TIMEOUT_S = 8.0
 
 
-I2C_SLAVE = 0x0703      # linux/i2c-dev.h
-HAT_ADDR = 0x24         # CamArray controller
-MODE_REG = 0x24         # channel-mode register
+I2C_SLAVE = 0x0703  # linux/i2c-dev.h
+HAT_ADDR = 0x24  # CamArray controller
+MODE_REG = 0x24  # channel-mode register
 
 
 def set_camarray_mode(bus, mode):
@@ -55,25 +55,32 @@ def set_camarray_mode(bus, mode):
     except FileNotFoundError:
         sys.exit(f"{path} does not exist - try a different --i2c-bus")
     except PermissionError:
-        sys.exit(f"no access to {path} - join the i2c group:\n"
-                 f"  sudo adduser $USER i2c   (then log out and back in)")
+        sys.exit(
+            f"no access to {path} - join the i2c group:\n"
+            f"  sudo adduser $USER i2c   (then log out and back in)"
+        )
     try:
         fcntl.ioctl(fd, I2C_SLAVE, HAT_ADDR)
-        os.write(fd, bytes([MODE_REG, value]))     # write mode
-        os.write(fd, bytes([MODE_REG]))            # seek register
-        readback = os.read(fd, 1)[0]               # confirm it stuck
+        os.write(fd, bytes([MODE_REG, value]))  # write mode
+        os.write(fd, bytes([MODE_REG]))  # seek register
+        readback = os.read(fd, 1)[0]  # confirm it stuck
     except OSError as exc:
-        sys.exit(f"i2c error on {path} addr {HAT_ADDR:#04x}: {exc}\n"
-                 f"is the CamArray HAT really on this bus?")
+        sys.exit(
+            f"i2c error on {path} addr {HAT_ADDR:#04x}: {exc}\n"
+            f"is the CamArray HAT really on this bus?"
+        )
     finally:
         os.close(fd)
 
     if readback != value:
-        sys.exit(f"HAT rejected the mode (wrote {value:#04x}, read back {readback:#04x})")
+        sys.exit(
+            f"HAT rejected the mode (wrote {value:#04x}, read back {readback:#04x})"
+        )
     print(f"CamArray HAT -> {mode} (reg {MODE_REG:#04x} = {readback:#04x})")
 
 
 # ---------------------------------------------------------------- frame broker
+
 
 class FrameBroker:
     """Holds the newest JPEG for each view and wakes clients when one arrives."""
@@ -101,14 +108,20 @@ class FrameBroker:
 
 # ---------------------------------------------------------------- capture loop
 
+
 def _arm_teardown_watchdog():
     """Guarantee the process exits, so the camera is always released."""
+
     def bail():
         time.sleep(TEARDOWN_TIMEOUT_S)
-        print(f"teardown still wedged after {TEARDOWN_TIMEOUT_S:.0f}s - forcing "
-              f"exit so the camera is released", file=sys.stderr)
+        print(
+            f"teardown still wedged after {TEARDOWN_TIMEOUT_S:.0f}s - forcing "
+            f"exit so the camera is released",
+            file=sys.stderr,
+        )
         sys.stderr.flush()
         os._exit(1)
+
     threading.Thread(target=bail, daemon=True).start()
 
 
@@ -119,7 +132,7 @@ def _capture_bounded(picam2, stop):
     while True:
         try:
             return picam2.wait(job, timeout=0.25)
-        except TimeoutError:      # concurrent.futures.TimeoutError on py3.11+
+        except TimeoutError:  # concurrent.futures.TimeoutError on py3.11+
             if stop.is_set() or time.monotonic() >= deadline:
                 return None
 
@@ -129,24 +142,29 @@ def capture_loop(picam2, broker, views, quality, stop):
     while not stop.is_set():
         try:
             frame = _capture_bounded(picam2, stop)
-        except Exception as exc:                      # camera stopped / yanked
+        except Exception as exc:  # camera stopped / yanked
             if not stop.is_set():
-                print(f"capture failed: {exc} - shutting down rather than "
-                      f"holding the camera", file=sys.stderr)
+                print(
+                    f"capture failed: {exc} - shutting down rather than "
+                    f"holding the camera",
+                    file=sys.stderr,
+                )
                 stop.set()
             break
 
-        if frame is None:                             # timed out or stopping
+        if frame is None:  # timed out or stopping
             if not stop.is_set():
-                print(f"no frame for {FRAME_TIMEOUT_S:.0f}s - the camera is not "
-                      f"delivering. Shutting down rather than holding it open.",
-                      file=sys.stderr)
+                print(
+                    f"no frame for {FRAME_TIMEOUT_S:.0f}s - the camera is not "
+                    f"delivering. Shutting down rather than holding it open.",
+                    file=sys.stderr,
+                )
                 stop.set()
             break
 
         out = {}
         for name, (x, y, w, h) in views.items():
-            tile = frame if single else frame[y:y + h, x:x + w]
+            tile = frame if single else frame[y : y + h, x : x + w]
             # picamera2's "RGB888" hands back B,G,R in memory order.
             out[name] = simplejpeg.encode_jpeg(
                 np.ascontiguousarray(tile), quality=quality, colorspace="BGR"
@@ -194,13 +212,13 @@ def make_handler(broker, views, page):
     class Handler(server.BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
-        def log_message(self, *a):            # keep the console quiet
+        def log_message(self, *a):  # keep the console quiet
             pass
 
         @staticmethod
         def _view_from(path, prefix, suffix):
             if path.startswith(prefix) and path.endswith(suffix):
-                name = path[len(prefix):-len(suffix)]
+                name = path[len(prefix) : -len(suffix)]
                 if name in views:
                     return name
             return None
@@ -252,7 +270,7 @@ def make_handler(broker, views, page):
                         self.wfile.write(jpeg)
                         self.wfile.write(b"\r\n")
                 except (BrokenPipeError, ConnectionResetError):
-                    pass                       # browser closed the tab
+                    pass  # browser closed the tab
                 return
 
             self.send_error(404)
@@ -299,15 +317,25 @@ def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("--mode", choices=sorted(CAMARRAY_MODES),
-                    help="set CamArray HAT channel mode before starting")
-    ap.add_argument("--split", metavar="CxR",
-                    help="slice each frame into a CxR grid (default follows --mode)")
-    ap.add_argument("--size", default="1280x720", help="capture size (default 1280x720)")
+    ap.add_argument(
+        "--mode",
+        choices=sorted(CAMARRAY_MODES),
+        help="set CamArray HAT channel mode before starting",
+    )
+    ap.add_argument(
+        "--split",
+        metavar="CxR",
+        help="slice each frame into a CxR grid (default follows --mode)",
+    )
+    ap.add_argument(
+        "--size", default="1280x720", help="capture size (default 1280x720)"
+    )
     ap.add_argument("--port", type=int, default=8000, help="HTTP port (default 8000)")
     ap.add_argument("--quality", type=int, default=85, help="JPEG quality (default 85)")
     ap.add_argument("--camera", type=int, default=0, help="camera index (default 0)")
-    ap.add_argument("--i2c-bus", type=int, default=11, help="i2c bus the HAT sits on (default 11)")
+    ap.add_argument(
+        "--i2c-bus", type=int, default=11, help="i2c bus the HAT sits on (default 11)"
+    )
     args = ap.parse_args()
 
     if args.mode:
@@ -320,16 +348,19 @@ def main():
     views, note = build_views(layout, w, h)
 
     picam2 = Picamera2(args.camera)
-    picam2.configure(picam2.create_video_configuration(
-        main={"size": (w, h), "format": "RGB888"},
-        raw={"size": SAFE_SENSOR_MODE},
-    ))
+    picam2.configure(
+        picam2.create_video_configuration(
+            main={"size": (w, h), "format": "RGB888"},
+            raw={"size": SAFE_SENSOR_MODE},
+        )
+    )
     picam2.start()
 
     broker = FrameBroker(views)
     stop = threading.Event()
     worker = threading.Thread(
-        target=capture_loop, args=(picam2, broker, views, args.quality, stop),
+        target=capture_loop,
+        args=(picam2, broker, views, args.quality, stop),
         daemon=True,
     )
     worker.start()
@@ -355,8 +386,10 @@ def main():
             try:
                 set_camarray_mode(args.i2c_bus, "4ch")
             except SystemExit:
-                print("warning: could not restore HAT to 4ch - "
-                      "run: sudo i2cset -y %d 0x24 0x24 0x00" % args.i2c_bus)
+                print(
+                    "warning: could not restore HAT to 4ch - "
+                    "run: sudo i2cset -y %d 0x24 0x24 0x00" % args.i2c_bus
+                )
 
 
 if __name__ == "__main__":

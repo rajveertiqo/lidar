@@ -5,12 +5,16 @@ import math
 from typing import List, Dict, Any, Optional
 
 from config import GUIDANCE_DANGER_MM, GUIDANCE_WARNING_MM, GUIDANCE_SAFE_MM
-DANGER_MM = GUIDANCE_DANGER_MM     # ~2.6 ft
-WARNING_MM = GUIDANCE_WARNING_MM   # ~5 ft
-SAFE_MM = GUIDANCE_SAFE_MM         # ~6.5 ft
+
+DANGER_MM = GUIDANCE_DANGER_MM  # ~2.6 ft
+WARNING_MM = GUIDANCE_WARNING_MM  # ~5 ft
+SAFE_MM = GUIDANCE_SAFE_MM  # ~6.5 ft
 
 from config import (
-    LIDAR_SECTOR_ORDER, GUIDANCE_SECTORS, CAMERA_SECTORS, LIDAR_MAX_DISTANCE,
+    LIDAR_SECTOR_ORDER,
+    GUIDANCE_SECTORS,
+    CAMERA_SECTORS,
+    LIDAR_MAX_DISTANCE,
 )
 
 # THREAT detection spans all 8 x 45° LiDAR sectors (finer hazard direction).
@@ -22,8 +26,15 @@ SECTORS = list(CAMERA_SECTORS)
 from utils.lidar_utils import get_sector
 
 TRAFFIC_LIGHT_KEYWORDS = [
-    "traffic", "light", "signal", "red", "green", "yellow",
-    "walk", "pedestrian", "crossing"
+    "traffic",
+    "light",
+    "signal",
+    "red",
+    "green",
+    "yellow",
+    "walk",
+    "pedestrian",
+    "crossing",
 ]
 
 
@@ -64,47 +75,47 @@ def safe_json(obj):
 
 def detect_traffic_lights_from_detections(camera_data: Dict) -> Dict[str, Any]:
     """Extract traffic light information from camera detections"""
-    traffic_lights = {
-        "detected": False,
-        "at_intersection": False,
-        "directions": {}
-    }
-    
+    traffic_lights = {"detected": False, "at_intersection": False, "directions": {}}
+
     for direction in SECTORS:
         detections = camera_data.get(direction, [])
-        
+
         # Handle both formats: list or dict with detections key
         if isinstance(detections, dict):
             detections = detections.get("detections", [])
         if not isinstance(detections, list):
             detections = []
-        
+
         traffic_lights["directions"][direction] = {
             "has_light": False,
             "state": "unknown",
             "pedestrian_signal": "unknown",
-            "confidence": 0
+            "confidence": 0,
         }
-        
+
         for det in detections:
             if not isinstance(det, dict):
                 continue
-                
+
             class_name = (det.get("class_name") or "").lower().strip()
             confidence = det.get("confidence", 0)
 
             is_traffic_light = class_name == "traffic light"
 
-            if is_traffic_light and confidence >= 0.4:  # Lower threshold for traffic lights
+            if (
+                is_traffic_light and confidence >= 0.4
+            ):  # Lower threshold for traffic lights
                 logging.getLogger(__name__).debug(
                     "Traffic light detected: '%s' (%.0f%%) from %s",
-                    class_name, confidence * 100, direction
+                    class_name,
+                    confidence * 100,
+                    direction,
                 )
                 traffic_lights["detected"] = True
                 traffic_lights["at_intersection"] = True
                 traffic_lights["directions"][direction]["has_light"] = True
                 traffic_lights["directions"][direction]["confidence"] = confidence
-    
+
     return traffic_lights
 
 
@@ -116,7 +127,7 @@ def get_crossing_guidance(traffic_lights: Dict) -> Dict[str, Any]:
         "action": "wait",
         "message": "",
         "urgency": "normal",
-        "detected_direction": None
+        "detected_direction": None,
     }
 
     if not traffic_lights["detected"]:
@@ -130,12 +141,11 @@ def get_crossing_guidance(traffic_lights: Dict) -> Dict[str, Any]:
 def determine_intersection_type(traffic_lights: Dict) -> str:
     """Determine intersection type from detected lights"""
     directions_with_lights = [
-        d for d in SECTORS 
-        if traffic_lights["directions"][d]["has_light"]
+        d for d in SECTORS if traffic_lights["directions"][d]["has_light"]
     ]
-    
+
     count = len(directions_with_lights)
-    
+
     if count >= 3:
         return "4-way"
     elif count == 2:
@@ -154,8 +164,10 @@ def decisionMaker(sample: Dict[str, Any]) -> Dict[str, Any]:
 
     if precomputed:
         sectors = {
-            sec: {"min": precomputed.get(sec, {}).get("min_dist"),
-                  "count": precomputed.get(sec, {}).get("count", 0)}
+            sec: {
+                "min": precomputed.get(sec, {}).get("min_dist"),
+                "count": precomputed.get(sec, {}).get("count", 0),
+            }
             for sec in LIDAR_SECTORS_8
         }
         lidar_point_count = sum(s["count"] for s in sectors.values())
@@ -184,7 +196,7 @@ def decisionMaker(sample: Dict[str, Any]) -> Dict[str, Any]:
             except:
                 continue
         lidar_point_count = len(scan_data)
-    
+
     # Build camera data dict - handle both list and dict formats
     camera_data = {}
     for sec in SECTORS:
@@ -193,7 +205,7 @@ def decisionMaker(sample: Dict[str, Any]) -> Dict[str, Any]:
             camera_data[sec] = sec_data.get("detections", [])
         else:
             camera_data[sec] = sec_data if isinstance(sec_data, list) else []
-    
+
     traffic_lights = detect_traffic_lights_from_detections(camera_data)
 
     crossing_guidance = None
@@ -201,11 +213,11 @@ def decisionMaker(sample: Dict[str, Any]) -> Dict[str, Any]:
     if traffic_lights["detected"]:
         crossing_guidance = get_crossing_guidance(traffic_lights)
         intersection_type = determine_intersection_type(traffic_lights)
-    
+
     dangerous = []
     warning = []
     safe = []
-    
+
     # THREAT: classify all 8 LiDAR sectors (finer awareness of where danger is).
     for sec in LIDAR_SECTORS_8:
         min_d = sectors[sec]["min"]
@@ -216,7 +228,7 @@ def decisionMaker(sample: Dict[str, Any]) -> Dict[str, Any]:
                 warning.append(sec)
             else:
                 safe.append(sec)
-    
+
     cones = sample.get("precomputed_cones") or {}
 
     def _cone_min(name):
@@ -228,8 +240,10 @@ def decisionMaker(sample: Dict[str, Any]) -> Dict[str, Any]:
 
     front_min = _cone_min("front")
     front_blocked = front_min is not None and front_min <= DANGER_MM
-    front_warn = (not front_blocked) and front_min is not None and front_min <= WARNING_MM
-    
+    front_warn = (
+        (not front_blocked) and front_min is not None and front_min <= WARNING_MM
+    )
+
     # Check for critical objects (people, vehicles)
     critical = []
     for cam in SECTORS:
@@ -243,9 +257,20 @@ def decisionMaker(sample: Dict[str, Any]) -> Dict[str, Any]:
                     # Skip traffic lights from critical objects
                     if any(kw in name for kw in TRAFFIC_LIGHT_KEYWORDS):
                         continue
-                    if any(x in name for x in ["person", "car", "truck", "bus", "bicycle", "motorcycle", "scooter"]):
+                    if any(
+                        x in name
+                        for x in [
+                            "person",
+                            "car",
+                            "truck",
+                            "bus",
+                            "bicycle",
+                            "motorcycle",
+                            "scooter",
+                        ]
+                    ):
                         critical.append({"name": name, "direction": cam})
-    
+
     action = "go_forward"
     message = "Path clear"
     direction = "front"
@@ -261,21 +286,20 @@ def decisionMaker(sample: Dict[str, Any]) -> Dict[str, Any]:
             """Usable clearance for a turn candidate, or None if unusable."""
             d = _cone_min(alt)
             if d is not None and d <= DANGER_MM:
-                return None               # something right there
+                return None  # something right there
             return d if d else LIDAR_MAX_DISTANCE
 
-        sides = [(a, c) for a in ("right", "left")
-                 if (c := _clearance(a)) is not None]
+        sides = [(a, c) for a in ("right", "left") if (c := _clearance(a)) is not None]
         sides.sort(key=lambda t: -t[1])
         back = [(a, c) for a in ("back",) if (c := _clearance(a)) is not None]
 
         best_sec, best_dist = None, 0
-        for pool in (sides, back):                      # sides first
+        for pool in (sides, back):  # sides first
             good = [t for t in pool if t[1] > WARNING_MM]
             if good:
                 best_sec, best_dist = good[0]
                 break
-        if best_sec is None:                            # nothing roomy — take any
+        if best_sec is None:  # nothing roomy — take any
             fallback = sorted(sides + back, key=lambda t: -t[1])
             if fallback and fallback[0][1] > DANGER_MM:
                 best_sec, best_dist = fallback[0]
@@ -295,15 +319,19 @@ def decisionMaker(sample: Dict[str, Any]) -> Dict[str, Any]:
 
         critical_front = [c for c in critical if c["direction"] == "front"]
         if critical_front:
-            obj_name = critical_front[0]['name']
+            obj_name = critical_front[0]["name"]
             # Vehicles require STOP, not caution
             if any(v in obj_name for v in ["car", "truck", "bus", "motorcycle"]):
                 action = "stop"
-                message = f"STOP! {obj_name.title()} detected {front_ft}ft ahead - too close!"
+                message = (
+                    f"STOP! {obj_name.title()} detected {front_ft}ft ahead - too close!"
+                )
                 direction = "stop"
             else:
                 action = "proceed_cautiously"
-                message = f"CAUTION: {obj_name.title()} {front_ft}ft ahead. Move slowly."
+                message = (
+                    f"CAUTION: {obj_name.title()} {front_ft}ft ahead. Move slowly."
+                )
                 direction = "front"
         else:
             action = "proceed_cautiously"
@@ -313,13 +341,17 @@ def decisionMaker(sample: Dict[str, Any]) -> Dict[str, Any]:
     # Priority 3: Traffic light / road crossing scenario (only if path is physically clear)
     elif traffic_lights["detected"]:
         crossing_mode = True
-        action = "wait_for_signal"          # the colour cannot be read: never "cross"
+        action = "wait_for_signal"  # the colour cannot be read: never "cross"
         message = crossing_guidance["message"]
         direction = "stop"
 
     # Priority 4: Camera-detected critical objects (when LiDAR shows safe distance)
     elif critical:
-        vehicles = [c for c in critical if any(v in c["name"] for v in ["car", "truck", "bus", "motorcycle"])]
+        vehicles = [
+            c
+            for c in critical
+            if any(v in c["name"] for v in ["car", "truck", "bus", "motorcycle"])
+        ]
         people = [c for c in critical if "person" in c["name"]]
 
         critical_in_danger = False
@@ -344,16 +376,36 @@ def decisionMaker(sample: Dict[str, Any]) -> Dict[str, Any]:
 
             # Only STOP if person is in a dangerous sector (confirmed by LiDAR)
             if critical_in_danger:
-                closest_obstacle = min([sectors[s]['min'] for s in dangerous if sectors[s]['min'] is not None]) if dangerous else None
-                obstacle_dist = mm_to_ft(closest_obstacle) if closest_obstacle else "unknown"
+                closest_obstacle = (
+                    min(
+                        [
+                            sectors[s]["min"]
+                            for s in dangerous
+                            if sectors[s]["min"] is not None
+                        ]
+                    )
+                    if dangerous
+                    else None
+                )
+                obstacle_dist = (
+                    mm_to_ft(closest_obstacle) if closest_obstacle else "unknown"
+                )
                 action = "stop"
                 message = f"STOP! Person detected on {person_dir} - obstacles at {obstacle_dist}ft."
                 direction = "stop"
-            elif person_dir == "front" and person_sector_dist and person_sector_dist > WARNING_MM:
+            elif (
+                person_dir == "front"
+                and person_sector_dist
+                and person_sector_dist > WARNING_MM
+            ):
                 action = "caution_person"
                 message = f"Person detected ahead at {mm_to_ft(person_sector_dist)}ft. Proceed carefully."
                 direction = "front"
-            elif person_dir == "front" and person_sector_dist and person_sector_dist > DANGER_MM:
+            elif (
+                person_dir == "front"
+                and person_sector_dist
+                and person_sector_dist > DANGER_MM
+            ):
                 action = "proceed_cautiously"
                 message = f"Person detected {mm_to_ft(person_sector_dist)}ft ahead. Move slowly."
                 direction = "front"
@@ -363,12 +415,17 @@ def decisionMaker(sample: Dict[str, Any]) -> Dict[str, Any]:
                 direction = "front"
 
     elif any((_cone_min(s) or 1e9) <= DANGER_MM for s in ("left", "right")):
-        side = [(s, _cone_min(s)) for s in ("left", "right")
-                if (_cone_min(s) or 1e9) <= DANGER_MM]
+        side = [
+            (s, _cone_min(s))
+            for s in ("left", "right")
+            if (_cone_min(s) or 1e9) <= DANGER_MM
+        ]
         closest_sector, closest_danger = min(side, key=lambda t: t[1])
         action = "caution_surroundings"
-        message = (f"Forward is clear. CAUTION: {closest_sector.upper()} close at "
-                   f"{mm_to_ft(closest_danger)}ft. Move slowly forward.")
+        message = (
+            f"Forward is clear. CAUTION: {closest_sector.upper()} close at "
+            f"{mm_to_ft(closest_danger)}ft. Move slowly forward."
+        )
         direction = "front"
 
     # Priority 6: Path clear - proceed normally
@@ -376,18 +433,24 @@ def decisionMaker(sample: Dict[str, Any]) -> Dict[str, Any]:
         if front_min:
             message = f"Path clear. Continue forward ({mm_to_ft(front_min)}ft clear)"
         else:
-            message = (f"Path clear. Continue forward — nothing detected within "
-                       f"{mm_to_ft(LIDAR_MAX_DISTANCE)}ft.")
-    
+            message = (
+                f"Path clear. Continue forward — nothing detected within "
+                f"{mm_to_ft(LIDAR_MAX_DISTANCE)}ft."
+            )
+
     result = {
         "action": action,
         "urgent_message": message,
         "primary_direction": direction,
         "speed": {
-            "speed": "stop" if "stop" in action or "wait" in action else 
-                    ("slow" if "cautiously" in action or "caution" in action else "normal"),
-            "multiplier": 0.0 if "stop" in action or "wait" in action else 
-                         (0.5 if "cautiously" in action or "caution" in action else 1.0)
+            "speed": "stop"
+            if "stop" in action or "wait" in action
+            else (
+                "slow" if "cautiously" in action or "caution" in action else "normal"
+            ),
+            "multiplier": 0.0
+            if "stop" in action or "wait" in action
+            else (0.5 if "cautiously" in action or "caution" in action else 1.0),
         },
         "dangerous_sectors": dangerous,
         "warning_sectors": warning,
@@ -397,7 +460,7 @@ def decisionMaker(sample: Dict[str, Any]) -> Dict[str, Any]:
                 "distance_mm": sectors[sec]["min"],
                 "distance_ft": mm_to_ft(sectors[sec]["min"]),
                 "count": sectors[sec]["count"],
-                "is_safe": sec not in dangerous and sec not in warning
+                "is_safe": sec not in dangerous and sec not in warning,
             }
             for sec in LIDAR_SECTORS_8
         },
@@ -411,13 +474,18 @@ def decisionMaker(sample: Dict[str, Any]) -> Dict[str, Any]:
         },
         "wall_detection": {
             sec: {
-                "wall_detected": sectors[sec]["count"] >= 10 and sectors[sec]["min"] and sectors[sec]["min"] < 3000,
-                "distance": sectors[sec]["min"] if sectors[sec]["count"] >= 10 else None,
-                "warning": sectors[sec]["min"] and sectors[sec]["min"] < 2500 if sectors[sec]["count"] >= 10 else False
+                "wall_detected": sectors[sec]["count"] >= 10
+                and sectors[sec]["min"]
+                and sectors[sec]["min"] < 3000,
+                "distance": sectors[sec]["min"]
+                if sectors[sec]["count"] >= 10
+                else None,
+                "warning": sectors[sec]["min"] and sectors[sec]["min"] < 2500
+                if sectors[sec]["count"] >= 10
+                else False,
             }
             for sec in LIDAR_SECTORS_8
         },
-        
         "crossing_mode": crossing_mode,
         "traffic_lights": {
             "detected": traffic_lights["detected"],
@@ -426,28 +494,29 @@ def decisionMaker(sample: Dict[str, Any]) -> Dict[str, Any]:
             "left": traffic_lights["directions"]["left"],
             "right": traffic_lights["directions"]["right"],
             "back": traffic_lights["directions"]["back"],
-            "guidance": crossing_guidance
+            "guidance": crossing_guidance,
         },
-        
         "path": {
             "direction": direction,
-            "clear_distance_ft": mm_to_ft(sectors[direction]["min"]) if direction in sectors else 10,
-            "recommended": message
+            "clear_distance_ft": mm_to_ft(sectors[direction]["min"])
+            if direction in sectors
+            else 10,
+            "recommended": message,
         },
         "cues": {
             "primary": _cue_for_action(action),
             "detail": message,
-            "warning": message if dangerous or "stop" in action else None
+            "warning": message if dangerous or "stop" in action else None,
         },
         "landmarks": [],
         "critical_objects": critical,
         "sensor_health": {
             "lidar_active": lidar_point_count > 0,
             "lidar_points": lidar_point_count,
-            "cameras_active": sum(1 for s in SECTORS if sample.get(s))
-        }
+            "cameras_active": sum(1 for s in SECTORS if sample.get(s)),
+        },
     }
-    
+
     return safe_json(result)
 
 
@@ -463,7 +532,7 @@ def _cue_for_action(action: str) -> str:
         "proceed_cautiously": "Proceed carefully",
         "turn_left": "Turn left",
         "turn_right": "Turn right",
-        "turn_back": "Turn around"
+        "turn_back": "Turn around",
     }
     return phrases.get(action, action.replace("_", " ").title())
 

@@ -451,7 +451,9 @@ class MotionTracker:
         # ~60% of the tracker's time in clutter (fuzz test 2026-10-22).
         spread = d.get("_gate_spread")
         if spread is None:
-            spread = d["_gate_spread"] = 2.0 * math.sqrt(float(np.max(np.linalg.eigvalsh(d["R"]))))
+            spread = d["_gate_spread"] = 2.0 * math.sqrt(
+                float(np.max(np.linalg.eigvalsh(d["R"])))
+            )
         gate += spread
         return math.hypot(d["x"] - tr["s"][0], d["y"] - tr["s"][1]) <= gate
 

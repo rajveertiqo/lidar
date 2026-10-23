@@ -14,12 +14,9 @@ path_guidance_lock = threading.Lock()
 
 def _default_lidar_state():
     return {
-        "points": {
-            "angles": [],
-            "distances": []
-        },
-        "sectors": {},      # 8 x 45° — threat detection
-        "cones": {},        # narrow per-cardinal cones — steering guidance
+        "points": {"angles": [], "distances": []},
+        "sectors": {},  # 8 x 45° — threat detection
+        "cones": {},  # narrow per-cardinal cones — steering guidance
         "rpm": 0,
         "last_update": 0,
         "scan_index": 0,
@@ -29,9 +26,9 @@ def _default_lidar_state():
 
 def _default_radar_state():
     return {
-        "sectors": {},      # position -> {min_dist, strength_db, peaks_mm, online, last_update}
-        "boards": [],       # discovery result: device / serial / hub_port / position / assumed
-        "missing": [],      # configured boards that did not answer discovery
+        "sectors": {},  # position -> {min_dist, strength_db, peaks_mm, online, last_update}
+        "boards": [],  # discovery result: device / serial / hub_port / position / assumed
+        "missing": [],  # configured boards that did not answer discovery
         "last_update": 0,
     }
 
@@ -64,8 +61,11 @@ def _default_navigation_state():
 
 def _default_drift_state():
     return {
-        "action": "hold_course", "level": "clear", "instruction": "",
-        "ttc_s": None, "last_update": 0,
+        "action": "hold_course",
+        "level": "clear",
+        "instruction": "",
+        "ttc_s": None,
+        "last_update": 0,
     }
 
 
@@ -77,11 +77,20 @@ navigation_state = _default_navigation_state()
 
 # ============== STATE UPDATE FUNCTIONS ==============
 
-def update_lidar_state(points: Dict, sectors: Dict, rpm: float, scan_index: int,
-                       cones: Dict = None, captured_at: Optional[float] = None,
-                       simulated: bool = False, valid_fraction: Optional[float] = None):
+
+def update_lidar_state(
+    points: Dict,
+    sectors: Dict,
+    rpm: float,
+    scan_index: int,
+    cones: Dict = None,
+    captured_at: Optional[float] = None,
+    simulated: bool = False,
+    valid_fraction: Optional[float] = None,
+):
     """Thread-safe update of LiDAR state. `valid_fraction`: valid returns / packets swept (NEW-043), None when not known."""
     from utils.freshness import RECEIVED_KEY, received_mono
+
     stamp = time.time() if captured_at is None else captured_at
     with lidar_lock:
         lidar_state["points"] = points
@@ -105,6 +114,7 @@ def get_lidar_state() -> Dict[str, Any]:
 def update_radar_sector(position: str, data: Dict[str, Any]):
     """Thread-safe update of ONE radar direction (called by that board's thread)."""
     from utils.freshness import RECEIVED_KEY, received_mono
+
     with radar_lock:
         entry = dict(data)
         if entry.get("last_update") is None:
@@ -112,11 +122,14 @@ def update_radar_sector(position: str, data: Dict[str, Any]):
         if entry.get(RECEIVED_KEY) is None:
             entry[RECEIVED_KEY] = received_mono(entry["last_update"])
         radar_state["sectors"][position] = entry
-        radar_state["last_update"] = max(radar_state.get("last_update") or 0.0,
-                                         entry["last_update"])
+        radar_state["last_update"] = max(
+            radar_state.get("last_update") or 0.0, entry["last_update"]
+        )
 
 
-def set_radar_boards(boards: List[Dict[str, Any]], missing: Optional[List[Dict[str, Any]]] = None):
+def set_radar_boards(
+    boards: List[Dict[str, Any]], missing: Optional[List[Dict[str, Any]]] = None
+):
     """Record the discovery result for diagnostics."""
     with radar_lock:
         radar_state["boards"] = list(boards)
@@ -220,6 +233,7 @@ def get_navigation_state() -> Dict[str, Any]:
 
 # ============== FUSED STATE ==============
 
+
 def get_fused_sensor_state() -> Dict[str, Any]:
     """Get combined state from all sensors"""
     lidar = get_lidar_state()
@@ -231,6 +245,7 @@ def get_fused_sensor_state() -> Dict[str, Any]:
 
     from config import LIDAR_STALE_S, SIMPLE_CAMERA_FRESH_S
     from utils.freshness import is_fresh, reading_is_current
+
     now = time.time()
 
     return {
@@ -240,13 +255,21 @@ def get_fused_sensor_state() -> Dict[str, Any]:
         "navigation": nav,
         "timestamp": now,
         "sensors_active": {
-            "lidar": (reading_is_current(lidar, LIDAR_STALE_S, now)
-                      and not lidar.get("simulated")),
+            "lidar": (
+                reading_is_current(lidar, LIDAR_STALE_S, now)
+                and not lidar.get("simulated")
+            ),
             "radar": radar_active,
-            "camera": (is_fresh((camera.get("front") or {}).get(
-                           "frame_time", camera.get("last_update")),
-                           SIMPLE_CAMERA_FRESH_S, now)
-                       and not (camera.get("front") or {}).get("simulated")),
+            "camera": (
+                is_fresh(
+                    (camera.get("front") or {}).get(
+                        "frame_time", camera.get("last_update")
+                    ),
+                    SIMPLE_CAMERA_FRESH_S,
+                    now,
+                )
+                and not (camera.get("front") or {}).get("simulated")
+            ),
         },
         "lidar_simulated": bool(lidar.get("simulated")),
         "camera_simulated": bool((camera.get("front") or {}).get("simulated")),
@@ -254,6 +277,7 @@ def get_fused_sensor_state() -> Dict[str, Any]:
 
 
 # ============== UTILITY FUNCTIONS ==============
+
 
 def reset_all_states():
     """Reset every shared store to its default."""

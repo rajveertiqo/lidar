@@ -21,27 +21,62 @@ except Exception:
     _simplejpeg = None
 
 from config import (
-    CAMERA_WIDTH, CAMERA_HEIGHT, JPEG_QUALITY, TARGET_FPS,
-    FRAME_INTERVAL, HEF_PATH, DETECTION_CONF, DETECTION_IOU,
-    FRAME_GRID_ROWS, FRAME_GRID_COLS, FRAME_SECTOR_LAYOUT,
-    SEG_ENABLED, SEG_HEF_PATH, SEG_TARGET_FPS,
-    STREAM_MAX_WIDTH, STREAM_QUALITY, STREAM_FPS, STREAM_STALL_TIMEOUT_S,
+    CAMERA_WIDTH,
+    CAMERA_HEIGHT,
+    JPEG_QUALITY,
+    TARGET_FPS,
+    FRAME_INTERVAL,
+    HEF_PATH,
+    DETECTION_CONF,
+    DETECTION_IOU,
+    FRAME_GRID_ROWS,
+    FRAME_GRID_COLS,
+    FRAME_SECTOR_LAYOUT,
+    SEG_ENABLED,
+    SEG_HEF_PATH,
+    SEG_TARGET_FPS,
+    STREAM_MAX_WIDTH,
+    STREAM_QUALITY,
+    STREAM_FPS,
+    STREAM_STALL_TIMEOUT_S,
     CAMERA_CAPTURE_FPS,
-    SEG_VIEW_FPS, SEG_VIEW_PRIORITY,
-    ENV_TRUST_ENABLED, ENV_ANALYZE_HZ,
-    SEG_ALWAYS, DETECTION_FRONT_EVERY_PASS,
-    CAMERA_FRAME_TIMEOUT_S, CAMERA_STOP_TIMEOUT_S, CAMERA_RETRY_BACKOFF_S,
-    HAILO_RETRY_BACKOFF_S, HAILO_INFER_FAIL_RESET_S, HAILO_SEG_RUN_TIMEOUT_MS,
-    HAILO_VDEVICE_RESET, HAILO_VDEVICE_RESET_AFTER, HAILO_VDEVICE_RESET_WAIT_S,
+    SEG_VIEW_FPS,
+    SEG_VIEW_PRIORITY,
+    ENV_TRUST_ENABLED,
+    ENV_ANALYZE_HZ,
+    SEG_ALWAYS,
+    DETECTION_FRONT_EVERY_PASS,
+    CAMERA_FRAME_TIMEOUT_S,
+    CAMERA_STOP_TIMEOUT_S,
+    CAMERA_RETRY_BACKOFF_S,
+    HAILO_RETRY_BACKOFF_S,
+    HAILO_INFER_FAIL_RESET_S,
+    HAILO_SEG_RUN_TIMEOUT_MS,
+    HAILO_VDEVICE_RESET,
+    HAILO_VDEVICE_RESET_AFTER,
+    HAILO_VDEVICE_RESET_WAIT_S,
     HAILO_PROBE_TIMEOUT_S,
     SIMPLE_CAMERA_FRESH_S,
-    CAMERA_SINGLE_CHANNEL, CAMERA_HAT_ADDRESS, CAMERA_HAT_CHANNEL, CAMERA_HAT_I2C_BUS,
-    CAMERA_CORRUPT_PCT, CAMERA_CORRUPT_RESTART_S, CAMERA_CORRUPT_RESTART_SHARE,
-    CAMERA_CORRUPT_WINDOW_S, CAMERA_FALLBACK_RESTARTS, CAMERA_FALLBACK_WINDOW_S,
-    CAMERA_FRONT_RESTART_S, CAMERA_CYCLE, CAMERA_CYCLE_FRONT_FRAMES,
-    CAMERA_VIEW_CHECK_S, CAMERA_DARK_LEVEL, CAMERA_DARK_CONFIRM_S,
-    CAMERA_BLUR_VAR, CAMERA_BLUR_CONFIRM_S,
-    CAMERA_STALL_REOPEN_S, CAMERA_STALL_REOPEN_MAX_S,
+    CAMERA_SINGLE_CHANNEL,
+    CAMERA_HAT_ADDRESS,
+    CAMERA_HAT_CHANNEL,
+    CAMERA_HAT_I2C_BUS,
+    CAMERA_CORRUPT_PCT,
+    CAMERA_CORRUPT_RESTART_S,
+    CAMERA_CORRUPT_RESTART_SHARE,
+    CAMERA_CORRUPT_WINDOW_S,
+    CAMERA_FALLBACK_RESTARTS,
+    CAMERA_FALLBACK_WINDOW_S,
+    CAMERA_FRONT_RESTART_S,
+    CAMERA_CYCLE,
+    CAMERA_CYCLE_FRONT_FRAMES,
+    CAMERA_VIEW_CHECK_S,
+    CAMERA_DARK_LEVEL,
+    CAMERA_DARK_CONFIRM_S,
+    CAMERA_BLUR_VAR,
+    CAMERA_BLUR_CONFIRM_S,
+    CAMERA_STALL_REOPEN_S,
+    CAMERA_STALL_REOPEN_MAX_S,
     TOF_ENABLED,
 )
 
@@ -54,13 +89,13 @@ from config import CAMERA_SIMULATION_ALLOWED  # noqa: E402
 
 # ============== GLOBAL STATE ==============
 picam2 = None
-current_frame = None          # latest full mosaic as a numpy array (H, W, 3)
-current_frame_id = 0          # increments every new capture
-current_frame_t = 0.0         # time.time() when current_frame was captured
+current_frame = None  # latest full mosaic as a numpy array (H, W, 3)
+current_frame_id = 0  # increments every new capture
+current_frame_t = 0.0  # time.time() when current_frame was captured
 current_frame_simulated = False  # current_frame was FABRICATED (_simulate_thread);
-                              # written with the frame, under frame_lock
-capture_stalled = False       # no frame for CAMERA_FRAME_TIMEOUT_S (see _capture_thread)
-_stall_reopens = 0            # times a stuck stream was closed and reopened
+# written with the frame, under frame_lock
+capture_stalled = False  # no frame for CAMERA_FRAME_TIMEOUT_S (see _capture_thread)
+_stall_reopens = 0  # times a stuck stream was closed and reopened
 _camera_source = "not started"  # "hardware", "simulated" or "unavailable: <why>"
 frame_lock = threading.Lock()
 running = True
@@ -77,12 +112,13 @@ def _streams_live() -> bool:
     """Whether MJPEG generators should keep going."""
     return running and not _stream_shutdown.is_set()
 
+
 hailo_ready = False
 hailo_error = None
-hailo_init_attempts = 0       # detector init attempts since start_camera()
+hailo_init_attempts = 0  # detector init attempts since start_camera()
 seg_engine = None
-seg_error = None              # same as hailo_error, for the segmenter
-seg_init_attempts = 0         # same as hailo_init_attempts, for the segmenter
+seg_error = None  # same as hailo_error, for the segmenter
+seg_init_attempts = 0  # same as hailo_init_attempts, for the segmenter
 seg_view_active_ts = 0.0
 seg_front_view_ts = 0.0
 
@@ -90,19 +126,19 @@ seg_latest = {"class_map": None, "frame_id": -1, "infer_ms": 0.0}
 seg_latest_lock = threading.Lock()
 
 fps_stats = {
-    "capture_fps":     0,
-    "detection_fps":   0,
-    "seg_fps":         0,
-    "capture_times":   deque(maxlen=30),
+    "capture_fps": 0,
+    "detection_fps": 0,
+    "seg_fps": 0,
+    "capture_times": deque(maxlen=30),
     "detection_times": deque(maxlen=30),
-    "seg_times":       deque(maxlen=30),
+    "seg_times": deque(maxlen=30),
 }
 
 detection_stats = {
-    "front":         {"detections": [], "num_objects": 0},
-    "right":         {"detections": [], "num_objects": 0},
-    "left":          {"detections": [], "num_objects": 0},
-    "back":          {"detections": [], "num_objects": 0},
+    "front": {"detections": [], "num_objects": 0},
+    "right": {"detections": [], "num_objects": 0},
+    "left": {"detections": [], "num_objects": 0},
+    "back": {"detections": [], "num_objects": 0},
     "total_objects": 0,
     "inference_time": 0,
 }
@@ -117,15 +153,15 @@ _fell_back = False
 # once, at the first camera start) and the order they are visited in.
 _cycle = bool(CAMERA_CYCLE) and not CAMERA_SINGLE_CHANNEL
 _cycle_present = None
-_cycle_order = []                  # [(sector, frames), ...]
-current_quad_meta = {}             # cycling: sector -> {"t", "id"} of its newest frame
+_cycle_order = []  # [(sector, frames), ...]
+current_quad_meta = {}  # cycling: sector -> {"t", "id"} of its newest frame
 _quad_times = {s: deque(maxlen=60) for s in ("front", "right", "left", "back")}
 
 
 def _pass_sectors(pass_no: int) -> tuple:
     """The cameras one detection pass runs, in order."""
     if _single:
-        return (_single,)          # the other quadrants are black
+        return (_single,)  # the other quadrants are black
     if not DETECTION_FRONT_EVERY_PASS:
         return _VALID
     others = tuple(s for s in _VALID if s != "front")
@@ -133,6 +169,7 @@ def _pass_sectors(pass_no: int) -> tuple:
 
 
 # ============== HELPERS ==============
+
 
 def _to_rgb(arr):
     """Return a C-contiguous RGB array from the captured (BGR-order) frame."""
@@ -158,7 +195,7 @@ def _sector_slice(mosaic, sector):
     quad_w = w // FRAME_GRID_COLS
     row, col = FRAME_SECTOR_LAYOUT[sector]
     y1, x1 = row * quad_h, col * quad_w
-    return mosaic[y1:y1 + quad_h, x1:x1 + quad_w]
+    return mosaic[y1 : y1 + quad_h, x1 : x1 + quad_w]
 
 
 def _encode_jpeg(rgb_arr):
@@ -171,13 +208,20 @@ def _encode_jpeg(rgb_arr):
 def _encode_jpeg_stream(arr, colorspace="RGB"):
     """Encode a DOWNSCALED, lower-quality JPEG for the dashboard MJPEG stream."""
     h, w = arr.shape[:2]
-    size = ((STREAM_MAX_WIDTH, max(1, int(h * STREAM_MAX_WIDTH / w)))
-            if w > STREAM_MAX_WIDTH else None)
+    size = (
+        (STREAM_MAX_WIDTH, max(1, int(h * STREAM_MAX_WIDTH / w)))
+        if w > STREAM_MAX_WIDTH
+        else None
+    )
     if _simplejpeg is not None and _cv2 is not None:
         if size:
             arr = _cv2.resize(arr, size, interpolation=_cv2.INTER_AREA)
-        return _simplejpeg.encode_jpeg(np.ascontiguousarray(arr), quality=STREAM_QUALITY,
-                                       colorspace=colorspace, colorsubsampling="420")
+        return _simplejpeg.encode_jpeg(
+            np.ascontiguousarray(arr),
+            quality=STREAM_QUALITY,
+            colorspace=colorspace,
+            colorsubsampling="420",
+        )
     rgb = arr if colorspace == "RGB" else arr[:, :, ::-1]
     img = Image.fromarray(np.ascontiguousarray(rgb))
     if size:
@@ -204,22 +248,26 @@ def start_camera():
     global running, _camera_source
     _new_generation(reset_status=True)
     running = True
-    _stream_shutdown.clear()      # a restart must not inherit the last stop's flag
+    _stream_shutdown.clear()  # a restart must not inherit the last stop's flag
 
     try:
         import picamera2  # noqa: F401 — only asking whether it is installed
     except ImportError as e:
         if not CAMERA_SIMULATION_ALLOWED:
             _camera_source = f"unavailable: picamera2 not importable ({e})"
-            print(f"[ERROR] picamera2 is not importable ({e}) — NO CAMERA. Publishing "
-                  f"nothing; health reports the camera lost and object "
-                  f"identification is off. (Development simulation needs "
-                  f"SHAPPE_SIMULATE_CAMERA=1.)")
+            print(
+                f"[ERROR] picamera2 is not importable ({e}) — NO CAMERA. Publishing "
+                f"nothing; health reports the camera lost and object "
+                f"identification is off. (Development simulation needs "
+                f"SHAPPE_SIMULATE_CAMERA=1.)"
+            )
         else:
             _camera_source = "simulated"
-            print(f"[WARN] picamera2 not installed ({e}) and SHAPPE_SIMULATE_CAMERA=1: "
-                  f"SIMULATED camera frames — flagged `simulated`, never evidence "
-                  f"of anything")
+            print(
+                f"[WARN] picamera2 not installed ({e}) and SHAPPE_SIMULATE_CAMERA=1: "
+                f"SIMULATED camera frames — flagged `simulated`, never evidence "
+                f"of anything"
+            )
             _start_thread(_simulate_thread)
     else:
         _camera_source = "hardware"
@@ -236,8 +284,8 @@ def stop_camera():
     """Stop camera capture and inference threads. Bounded: never hangs."""
     global running, picam2
     running = False
-    _new_generation()             # hailo_ready off now; nothing publishes after
-    begin_shutdown()              # in case we got here without a signal
+    _new_generation()  # hailo_ready off now; nothing publishes after
+    begin_shutdown()  # in case we got here without a signal
     for t in _threads:
         t.join(timeout=3.0)
     _threads.clear()
@@ -252,8 +300,10 @@ def stop_camera():
         _write_board(0x00)
         print("[CAMERA] board left showing all four cameras (2x2)")
     except Exception as e:
-        print(f"[WARN] Camera board not reset to 2x2 ({type(e).__name__}: {e}) — "
-              f"run: i2cset -y -f {CAMERA_HAT_I2C_BUS} 0x24 0x24 0x00")
+        print(
+            f"[WARN] Camera board not reset to 2x2 ({type(e).__name__}: {e}) — "
+            f"run: i2cset -y -f {CAMERA_HAT_I2C_BUS} 0x24 0x24 0x00"
+        )
 
 
 def _close_camera(cam):
@@ -280,8 +330,10 @@ def _bounded(fn, timeout_s: float, what: str) -> bool:
     threading.Thread(target=run, name=what.replace(" ", "-"), daemon=True).start()
     if done.wait(timeout_s):
         return True
-    print(f"[WARN] {what} still blocked after {timeout_s:g}s — abandoning it "
-          f"so shutdown can finish")
+    print(
+        f"[WARN] {what} still blocked after {timeout_s:g}s — abandoning it "
+        f"so shutdown can finish"
+    )
     return False
 
 
@@ -291,7 +343,7 @@ _camera_lock = threading.Lock()
 _QUAD = (CAMERA_WIDTH // FRAME_GRID_COLS, CAMERA_HEIGHT // FRAME_GRID_ROWS)
 
 
-_hat = None                         # smbus2.SMBus to the board, kept open while cycling
+_hat = None  # smbus2.SMBus to the board, kept open while cycling
 
 
 def _board_value(sector) -> int:
@@ -304,6 +356,7 @@ def _write_board(value) -> None:
     global _hat
     if _hat is None:
         from smbus2 import SMBus
+
         _hat = SMBus(CAMERA_HAT_I2C_BUS)
     try:
         _hat.write_byte_data(CAMERA_HAT_ADDRESS, 0x24, value)
@@ -324,11 +377,17 @@ def _set_board_mode() -> None:
         value, what = 0x00, "all four cameras (2x2)"
     try:
         _write_board(value)
-        time.sleep(0.3)                          # let it switch before streaming
+        time.sleep(0.3)  # let it switch before streaming
         print(f"[CAMERA] board set to {what} (0x{value:02x})")
     except Exception as e:
-        print(f"[WARN] Camera board mode not set ({type(e).__name__}: {e}) — wanted "
-              f"{what}; the picture may be the wrong layout")
+        print(
+            f"[WARN] Camera board mode not set ({type(e).__name__}: {e}) — wanted "
+            f"{what}; the picture may be the wrong layout"
+        )
+
+
+class _NoPicture(RuntimeError):
+    """The camera gave no picture at all while the board was being searched."""
 
 
 def _find_cameras(Picamera2) -> tuple:
@@ -341,13 +400,23 @@ def _find_cameras(Picamera2) -> tuple:
     seen = {s: [] for s in _VALID}
     cam = Picamera2()
     try:
-        cam.configure(cam.create_video_configuration(
-            main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"},
-            raw={"size": (CAMERA_WIDTH, CAMERA_HEIGHT)}, buffer_count=4))
+        cam.configure(
+            cam.create_video_configuration(
+                main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"},
+                raw={"size": (CAMERA_WIDTH, CAMERA_HEIGHT)},
+                buffer_count=4,
+            )
+        )
         cam.start()
         time.sleep(1.0)
         for _ in range(20):
-            frame = cam.capture_array("main")
+            # Bounded (2026-10-23): a plain capture_array() waits for ever, and a camera
+            # that had stalled hung the capture thread here for the rest of the session.
+            try:
+                frame = cam.wait(cam.capture_array("main", wait=False),
+                                 timeout=CAMERA_FRAME_TIMEOUT_S)
+            except TimeoutError:
+                raise _NoPicture(f"no picture within {CAMERA_FRAME_TIMEOUT_S:g}s") from None
             for s in _VALID:
                 quad = _sector_slice(frame, s)
                 level = float(quad[::4, ::4].mean())
@@ -356,12 +425,20 @@ def _find_cameras(Picamera2) -> tuple:
                     clean[s].append(level)
     finally:
         _close_camera(cam)
-    present = tuple(s for s in _VALID
-                    if (clean[s] and max(clean[s]) > 3.0)
-                    or (seen[s] and float(np.median(seen[s])) > 40.0))
-    print(f"[CAMERA] cameras on the board: {', '.join(present) or 'none'}"
-          + (f" (no camera: {', '.join(s for s in _VALID if s not in present)})"
-             if len(present) < len(_VALID) else ""))
+    present = tuple(
+        s
+        for s in _VALID
+        if (clean[s] and max(clean[s]) > 3.0)
+        or (seen[s] and float(np.median(seen[s])) > 40.0)
+    )
+    print(
+        f"[CAMERA] cameras on the board: {', '.join(present) or 'none'}"
+        + (
+            f" (no camera: {', '.join(s for s in _VALID if s not in present)})"
+            if len(present) < len(_VALID)
+            else ""
+        )
+    )
     return present
 
 
@@ -372,7 +449,9 @@ def _schedule(present) -> list:
         return [(s, 1) for s in others]
     if not others:
         return [("front", 1)]
-    return [slot for s in others for slot in (("front", CAMERA_CYCLE_FRONT_FRAMES), (s, 1))]
+    return [
+        slot for s in others for slot in (("front", CAMERA_CYCLE_FRONT_FRAMES), (s, 1))
+    ]
 
 
 def _store_quad(sector, arr) -> None:
@@ -381,14 +460,14 @@ def _store_quad(sector, arr) -> None:
     global current_frame, current_frame_id, current_frame_t, current_frame_simulated
     global current_quad_meta
     now = time.time()
-    prev = current_frame                         # the capture thread is the only writer
+    prev = current_frame  # the capture thread is the only writer
     if prev is None or prev.shape != (CAMERA_HEIGHT, CAMERA_WIDTH, 3):
         mosaic = np.zeros((CAMERA_HEIGHT, CAMERA_WIDTH, 3), dtype=arr.dtype)
     else:
         mosaic = prev.copy()
     row, col = FRAME_SECTOR_LAYOUT[sector]
     qw, qh = _QUAD
-    mosaic[row * qh:(row + 1) * qh, col * qw:(col + 1) * qw] = arr[:qh, :qw]
+    mosaic[row * qh : (row + 1) * qh, col * qw : (col + 1) * qw] = arr[:qh, :qw]
     meta = dict(current_quad_meta)
     meta[sector] = {"t": now, "id": (meta.get(sector) or {}).get("id", 0) + 1}
     with frame_lock:
@@ -405,16 +484,16 @@ def _in_mosaic(arr):
     mosaic = np.zeros((CAMERA_HEIGHT, CAMERA_WIDTH, 3), dtype=arr.dtype)
     row, col = FRAME_SECTOR_LAYOUT[_single]
     qw, qh = _QUAD
-    mosaic[row * qh:(row + 1) * qh, col * qw:(col + 1) * qw] = arr[:qh, :qw]
+    mosaic[row * qh : (row + 1) * qh, col * qw : (col + 1) * qw] = arr[:qh, :qw]
     return mosaic
 
 
 _corrupt_lock = threading.Lock()
-_corrupt_hist = {s: deque() for s in ("front", "right", "left", "back")}   # (mono, bad)
-_reopen = threading.Event()         # set: the capture thread restarts the camera
-_want_single = None                 # ...as this camera alone ("front"), if set
-_front_restarts = deque()           # monotonic times the front camera forced a restart
-_last_reopen = float("-inf")        # monotonic
+_corrupt_hist = {s: deque() for s in ("front", "right", "left", "back")}  # (mono, bad)
+_reopen = threading.Event()  # set: the capture thread restarts the camera
+_want_single = None  # ...as this camera alone ("front"), if set
+_front_restarts = deque()  # monotonic times the front camera forced a restart
+_last_reopen = float("-inf")  # monotonic
 
 
 def _corrupt_pct(quad) -> float:
@@ -444,32 +523,45 @@ def _is_corrupt(sector, quad) -> bool:
         while hist and now - hist[0][0] > CAMERA_CORRUPT_WINDOW_S:
             hist.popleft()
         share = sum(b for _, b in hist) / len(hist)
-        if (len(hist) < 10 or share < CAMERA_CORRUPT_RESTART_SHARE
-                or now - _last_reopen < (CAMERA_FRONT_RESTART_S if sector == "front"
-                                         else CAMERA_CORRUPT_RESTART_S)):
+        if (
+            len(hist) < 10
+            or share < CAMERA_CORRUPT_RESTART_SHARE
+            or now - _last_reopen
+            < (
+                CAMERA_FRONT_RESTART_S
+                if sector == "front"
+                else CAMERA_CORRUPT_RESTART_S
+            )
+        ):
             return bad
         _last_reopen = now
         for h in _corrupt_hist.values():
             h.clear()
         if sector == "front":
             _front_restarts.append(now)
-            while _front_restarts and now - _front_restarts[0] > CAMERA_FALLBACK_WINDOW_S:
+            while (
+                _front_restarts and now - _front_restarts[0] > CAMERA_FALLBACK_WINDOW_S
+            ):
                 _front_restarts.popleft()
         if _single is None and len(_front_restarts) >= CAMERA_FALLBACK_RESTARTS:
             _front_restarts.clear()
             _want_single = "front"
-            print(f"[CAMERA] the front camera needed {CAMERA_FALLBACK_RESTARTS} restarts in "
-                  f"{CAMERA_FALLBACK_WINDOW_S:.0f} s and is still corrupted — falling back to "
-                  f"the front camera alone until the app restarts")
+            print(
+                f"[CAMERA] the front camera needed {CAMERA_FALLBACK_RESTARTS} restarts in "
+                f"{CAMERA_FALLBACK_WINDOW_S:.0f} s and is still corrupted — falling back to "
+                f"the front camera alone until the app restarts"
+            )
         else:
-            print(f"[CAMERA] {sector} camera corrupted in {share:.0%} of its pictures — "
-                  f"restarting the camera (the board's 4-in-1 merge)")
+            print(
+                f"[CAMERA] {sector} camera corrupted in {share:.0%} of its pictures — "
+                f"restarting the camera (the board's 4-in-1 merge)"
+            )
         _reopen.set()
     return bad
 
 
 _view_lock = threading.Lock()
-_views = {}                         # sector -> what _view_check last measured
+_views = {}  # sector -> what _view_check last measured
 
 
 def _view_check(sector, quad) -> dict:
@@ -492,11 +584,18 @@ def _view_check(sector, quad) -> dict:
         blur_now = not dark_now and sharpness < CAMERA_BLUR_VAR
         dark_since = (v["dark_since"] or now) if dark_now else None
         blur_since = (v["blur_since"] or now) if blur_now else None
-        v = {"mono": now, "at": time.time(),
-             "brightness": round(level, 1), "sharpness": round(sharpness, 1),
-             "dark_since": dark_since, "blur_since": blur_since,
-             "dark": dark_since is not None and now - dark_since >= CAMERA_DARK_CONFIRM_S,
-             "blurred": blur_since is not None and now - blur_since >= CAMERA_BLUR_CONFIRM_S}
+        v = {
+            "mono": now,
+            "at": time.time(),
+            "brightness": round(level, 1),
+            "sharpness": round(sharpness, 1),
+            "dark_since": dark_since,
+            "blur_since": blur_since,
+            "dark": dark_since is not None
+            and now - dark_since >= CAMERA_DARK_CONFIRM_S,
+            "blurred": blur_since is not None
+            and now - blur_since >= CAMERA_BLUR_CONFIRM_S,
+        }
         _views[sector] = v
         return dict(v)
 
@@ -504,18 +603,29 @@ def _view_check(sector, quad) -> dict:
 def camera_views() -> dict:
     """What each camera's picture looked like at its last check (see _view_check)."""
     with _view_lock:
-        return {s: {k: v[k] for k in ("at", "brightness", "sharpness", "dark", "blurred")}
-                for s, v in _views.items()}
+        return {
+            s: {k: v[k] for k in ("at", "brightness", "sharpness", "dark", "blurred")}
+            for s, v in _views.items()
+        }
 
 
 def corruption() -> dict:
     """Each camera's share of corrupted pictures over the last CAMERA_CORRUPT_WINDOW_S."""
     now = time.monotonic()
     with _corrupt_lock:
-        return {s: {"share": round(sum(b for t, b in h if now - t <= CAMERA_CORRUPT_WINDOW_S)
-                                   / max(1, sum(1 for t, _ in h if now - t <= CAMERA_CORRUPT_WINDOW_S)), 2),
-                    "pictures": sum(1 for t, _ in h if now - t <= CAMERA_CORRUPT_WINDOW_S)}
-                for s, h in _corrupt_hist.items()}
+        return {
+            s: {
+                "share": round(
+                    sum(b for t, b in h if now - t <= CAMERA_CORRUPT_WINDOW_S)
+                    / max(
+                        1, sum(1 for t, _ in h if now - t <= CAMERA_CORRUPT_WINDOW_S)
+                    ),
+                    2,
+                ),
+                "pictures": sum(1 for t, _ in h if now - t <= CAMERA_CORRUPT_WINDOW_S),
+            }
+            for s, h in _corrupt_hist.items()
+        }
 
 
 def _open_camera():
@@ -524,13 +634,31 @@ def _open_camera():
     from picamera2 import Picamera2
 
     if _cycle and not _single and _cycle_present is None:
-        try:
-            _cycle_present = _find_cameras(Picamera2)
-            _cycle_order = _schedule(_cycle_present)
-        except Exception as e:
-            print(f"[WARN] Could not tell which cameras the board has ({type(e).__name__}: "
-                  f"{e}) — using the 2x2 picture")
-            _cycle_order = []
+        tries = 0
+        while running:
+            try:
+                _cycle_present = _find_cameras(Picamera2)
+                _cycle_order = _schedule(_cycle_present)
+                break
+            except _NoPicture as e:
+                # A stalled camera is not a board without cameras: search again, as a
+                # camera that will not open is retried, rather than give up on cycling.
+                delay = CAMERA_RETRY_BACKOFF_S[min(tries, len(CAMERA_RETRY_BACKOFF_S) - 1)]
+                tries += 1
+                print(f"[WARN] Camera search: {e} — the camera is not delivering; "
+                      f"searching again in {delay:g}s")
+                deadline = time.monotonic() + delay
+                while running and time.monotonic() < deadline:
+                    time.sleep(0.25)
+            except Exception as e:
+                print(
+                    f"[WARN] Could not tell which cameras the board has ({type(e).__name__}: "
+                    f"{e}) — using the 2x2 picture"
+                )
+                _cycle_order = []
+                break
+        if not running:
+            return False
         if not _cycle_order:
             _cycle = False
     _set_board_mode()
@@ -541,21 +669,27 @@ def _open_camera():
         cam = None
         try:
             cam = Picamera2()
-            cam.configure(cam.create_video_configuration(
-                main={"size": main_size, "format": "RGB888"},
-                raw={"size": (CAMERA_WIDTH, CAMERA_HEIGHT)},
-                buffer_count=4,          # small buffer -> low latency, always-newest
-                controls={"FrameRate": float(CAMERA_CAPTURE_FPS)},
-            ))
+            cam.configure(
+                cam.create_video_configuration(
+                    main={"size": main_size, "format": "RGB888"},
+                    raw={"size": (CAMERA_WIDTH, CAMERA_HEIGHT)},
+                    buffer_count=4,  # small buffer -> low latency, always-newest
+                    controls={"FrameRate": float(CAMERA_CAPTURE_FPS)},
+                )
+            )
             # Let the sensor run as fast as the mode allows; capture loop paces us.
             cam.start()
         except Exception as e:
             if cam is not None:
-                _close_camera(cam)          # half-opened: release the nodes
-            delay = CAMERA_RETRY_BACKOFF_S[min(failures, len(CAMERA_RETRY_BACKOFF_S) - 1)]
+                _close_camera(cam)  # half-opened: release the nodes
+            delay = CAMERA_RETRY_BACKOFF_S[
+                min(failures, len(CAMERA_RETRY_BACKOFF_S) - 1)
+            ]
             failures += 1
-            print(f"[WARN] Camera would not open ({type(e).__name__}: {e}) — no frames "
-                  f"(health reports the camera lost); retrying in {delay:g}s")
+            print(
+                f"[WARN] Camera would not open ({type(e).__name__}: {e}) — no frames "
+                f"(health reports the camera lost); retrying in {delay:g}s"
+            )
             deadline = time.monotonic() + delay
             while running and time.monotonic() < deadline:
                 time.sleep(0.25)
@@ -563,12 +697,19 @@ def _open_camera():
         with _camera_lock:
             if running:
                 picam2 = cam
-                print(f"✅ Camera (Picamera2): {CAMERA_WIDTH}x{CAMERA_HEIGHT}, "
-                      f"raw numpy capture"
-                      + (f" — {_single} camera only" if _single else
-                         " — cycling the cameras" if _cycle else ""))
+                print(
+                    f"✅ Camera (Picamera2): {CAMERA_WIDTH}x{CAMERA_HEIGHT}, "
+                    f"raw numpy capture"
+                    + (
+                        f" — {_single} camera only"
+                        if _single
+                        else " — cycling the cameras"
+                        if _cycle
+                        else ""
+                    )
+                )
                 return True
-        _close_camera(cam)                  # stopped while it opened
+        _close_camera(cam)  # stopped while it opened
         return False
     return False
 
@@ -584,14 +725,18 @@ def _capture_supervised():
         began = time.monotonic()
         try:
             _capture_thread()
-            return                          # it returns only when stopped
+            return  # it returns only when stopped
         except Exception as e:
             if time.monotonic() - began > 60.0:
-                failures = 0                # it had been running well: no long backoff
-            delay = CAMERA_RETRY_BACKOFF_S[min(failures, len(CAMERA_RETRY_BACKOFF_S) - 1)]
+                failures = 0  # it had been running well: no long backoff
+            delay = CAMERA_RETRY_BACKOFF_S[
+                min(failures, len(CAMERA_RETRY_BACKOFF_S) - 1)
+            ]
             failures += 1
-            print(f"[WARN] Camera capture thread failed ({type(e).__name__}: {e}) — "
-                  f"restarting it in {delay:g}s (restart {failures})")
+            print(
+                f"[WARN] Camera capture thread failed ({type(e).__name__}: {e}) — "
+                f"restarting it in {delay:g}s (restart {failures})"
+            )
             # Opened afresh, as at start: the board and the cycle start on the same camera,
             # so no side camera's picture is filed as the front's.
             with _camera_lock:
@@ -614,8 +759,8 @@ def _capture_thread():
     job = None
     asked_at = 0.0
     last_error_at = None
-    unreadable_since = None                 # cycling pictures unreadable since, in a row
-    stall_wait = CAMERA_STALL_REOPEN_S      # no frame this long: reopen (doubles each time)
+    unreadable_since = None  # cycling pictures unreadable since, in a row
+    stall_wait = CAMERA_STALL_REOPEN_S  # no frame this long: reopen (doubles each time)
 
     def cycle_start():
         """(slot, camera, frames still wanted from it, when it was switched to)."""
@@ -623,7 +768,7 @@ def _capture_thread():
 
     slot, sector, wanted, switched = cycle_start() if _cycle else (0, None, 0, 0)
     while running:
-        if _reopen.is_set():                # its pictures kept arriving corrupted
+        if _reopen.is_set():  # its pictures kept arriving corrupted
             _reopen.clear()
             job = None
             with _corrupt_lock:
@@ -645,31 +790,40 @@ def _capture_thread():
         cycling = _cycle and not _single
         try:
             if job is None:
-                job = (picam2.capture_request(wait=False) if cycling
-                       else picam2.capture_array("main", wait=False))
+                job = (
+                    picam2.capture_request(wait=False)
+                    if cycling
+                    else picam2.capture_array("main", wait=False)
+                )
                 asked_at = time.monotonic()
             arr = picam2.wait(job, timeout=0.25)
         except TimeoutError:
             waited = time.monotonic() - asked_at
             if not capture_stalled and waited > CAMERA_FRAME_TIMEOUT_S:
                 capture_stalled = True
-                print(f"[WARN] Camera: no frame for {waited:.0f}s — the camera is not "
-                      f"delivering (still waiting on it; health reports it lost)")
+                print(
+                    f"[WARN] Camera: no frame for {waited:.0f}s — the camera is not "
+                    f"delivering (still waiting on it; health reports it lost)"
+                )
             if waited > stall_wait:
                 # A stuck stream does not come back by itself (2026-10-09): start it again.
                 _stall_reopens += 1
-                print(f"[CAMERA] no frame for {waited:.0f}s — closing and reopening the "
-                      f"camera (reopen {_stall_reopens}; next after "
-                      f"{min(stall_wait * 2.0, CAMERA_STALL_REOPEN_MAX_S):.0f}s)")
+                print(
+                    f"[CAMERA] no frame for {waited:.0f}s — closing and reopening the "
+                    f"camera (reopen {_stall_reopens}; next after "
+                    f"{min(stall_wait * 2.0, CAMERA_STALL_REOPEN_MAX_S):.0f}s)"
+                )
                 stall_wait = min(stall_wait * 2.0, CAMERA_STALL_REOPEN_MAX_S)
                 if _cycle and not _single:
-                    _cycle_present = None       # look again for which cameras answer
+                    _cycle_present = None  # look again for which cameras answer
                 _reopen.set()
             continue
         except Exception as e:
             job = None
-            if running and (last_error_at is None
-                            or time.monotonic() - last_error_at > CAMERA_FRAME_TIMEOUT_S):
+            if running and (
+                last_error_at is None
+                or time.monotonic() - last_error_at > CAMERA_FRAME_TIMEOUT_S
+            ):
                 last_error_at = time.monotonic()
                 print(f"[WARN] Capture error: {e}")
             time.sleep(0.05)
@@ -679,7 +833,9 @@ def _capture_thread():
         stall_wait = CAMERA_STALL_REOPEN_S
         if capture_stalled:
             capture_stalled = False
-            print(f"[OK] Camera delivering again after {time.monotonic() - asked_at:.1f}s")
+            print(
+                f"[OK] Camera delivering again after {time.monotonic() - asked_at:.1f}s"
+            )
         if cycling:
             request, arr = arr, None
             try:
@@ -687,9 +843,14 @@ def _capture_thread():
                 arr = request.make_array("main")
             except Exception as e:
                 # One bad request is one lost picture, not the end of capture (2026-10-21).
-                if last_error_at is None or time.monotonic() - last_error_at > CAMERA_FRAME_TIMEOUT_S:
+                if (
+                    last_error_at is None
+                    or time.monotonic() - last_error_at > CAMERA_FRAME_TIMEOUT_S
+                ):
                     last_error_at = time.monotonic()
-                    print(f"[WARN] Camera picture unreadable ({type(e).__name__}: {e}) — skipped")
+                    print(
+                        f"[WARN] Camera picture unreadable ({type(e).__name__}: {e}) — skipped"
+                    )
             finally:
                 request.release()
             if arr is None:
@@ -699,9 +860,11 @@ def _capture_thread():
                     unreadable_since = time.monotonic()
                 elif time.monotonic() - unreadable_since > stall_wait:
                     _stall_reopens += 1
-                    print(f"[CAMERA] pictures unreadable for "
-                          f"{time.monotonic() - unreadable_since:.0f}s — closing and "
-                          f"reopening the camera (reopen {_stall_reopens})")
+                    print(
+                        f"[CAMERA] pictures unreadable for "
+                        f"{time.monotonic() - unreadable_since:.0f}s — closing and "
+                        f"reopening the camera (reopen {_stall_reopens})"
+                    )
                     unreadable_since = None
                     _cycle_present = None
                     _reopen.set()
@@ -709,7 +872,7 @@ def _capture_thread():
             else:
                 unreadable_since = None
                 if stamp <= switched:
-                    continue                  # exposed before the switch: the last camera's
+                    continue  # exposed before the switch: the last camera's
                 _store_quad(sector, arr)
             wanted -= 1
             if wanted <= 0:
@@ -719,8 +882,10 @@ def _capture_thread():
                     try:
                         _write_board(_board_value(nxt))
                     except Exception as e:
-                        print(f"[WARN] Camera switch failed ({type(e).__name__}: {e}) — "
-                              f"using the 2x2 picture instead")
+                        print(
+                            f"[WARN] Camera switch failed ({type(e).__name__}: {e}) — "
+                            f"using the 2x2 picture instead"
+                        )
                         _cycle = False
                         with frame_lock:
                             current_quad_meta = {}
@@ -739,7 +904,7 @@ def _capture_thread():
             current_frame = arr
             current_frame_id += 1
             current_frame_t = time.time()
-            current_frame_simulated = False       # a real frame, in the same write
+            current_frame_simulated = False  # a real frame, in the same write
 
         fps_stats["capture_times"].append(time.monotonic())
         if len(fps_stats["capture_times"]) >= 2:
@@ -754,10 +919,10 @@ def _simulate_thread():
 
     base = np.zeros((CAMERA_HEIGHT, CAMERA_WIDTH, 3), dtype=np.uint8)
     hh, hw = CAMERA_HEIGHT // 2, CAMERA_WIDTH // 2
-    base[:hh, :hw] = (40, 40, 40)      # top-left
-    base[:hh, hw:] = (80, 80, 80)      # top-right
-    base[hh:, :hw] = (120, 120, 120)   # bottom-left
-    base[hh:, hw:] = (160, 160, 160)   # bottom-right
+    base[:hh, :hw] = (40, 40, 40)  # top-left
+    base[:hh, hw:] = (80, 80, 80)  # top-right
+    base[hh:, :hw] = (120, 120, 120)  # bottom-left
+    base[hh:, hw:] = (160, 160, 160)  # bottom-right
 
     while running:
         with frame_lock:
@@ -775,15 +940,15 @@ def _simulate_thread():
 
 
 _generation = 0
-_gen_lock = threading.RLock()     # guards _generation and every NPU publish
+_gen_lock = threading.RLock()  # guards _generation and every NPU publish
 
 _WARN_REPEAT_S = 5.0
 
 # detection_coverage() reasons
 _COVERAGE_FULL = ""
 _COVERAGE_SEG_VIEW = "seg_view_priority"
-_COVERAGE_SINGLE = "single_camera"              # CAMERA_SINGLE_CHANNEL set
-_COVERAGE_MISSING = "cameras_missing"           # cycling, some channels empty
+_COVERAGE_SINGLE = "single_camera"  # CAMERA_SINGLE_CHANNEL set
+_COVERAGE_MISSING = "cameras_missing"  # cycling, some channels empty
 _COVERAGE_NOT_READY = "detector_not_ready"
 _coverage = {"reason": _COVERAGE_NOT_READY, "sectors": (), "since": time.time()}
 
@@ -807,7 +972,7 @@ def _new_generation(reset_status=False):
         _generation += 1
         hailo_ready = False
         seg_engine = None
-        _streaks.update(detector=None, seg=None)     # those engines are retired too
+        _streaks.update(detector=None, seg=None)  # those engines are retired too
         if reset_status:
             hailo_error, hailo_init_attempts = None, 0
             seg_error, seg_init_attempts = None, 0
@@ -820,8 +985,14 @@ def _all_coverage():
     if _single:
         return ("camera_fallback" if _fell_back else _COVERAGE_SINGLE, (_single,))
     if _cycle and _cycle_present is not None:
-        return ((_COVERAGE_FULL if set(_cycle_present) == set(_VALID) else _COVERAGE_MISSING),
-                tuple(_cycle_present))
+        return (
+            (
+                _COVERAGE_FULL
+                if set(_cycle_present) == set(_VALID)
+                else _COVERAGE_MISSING
+            ),
+            tuple(_cycle_present),
+        )
     return (_COVERAGE_FULL, _VALID)
 
 
@@ -837,8 +1008,12 @@ def detection_coverage() -> dict:
     """Which cameras object detection is covering right now."""
     with _gen_lock:
         c = dict(_coverage)
-    return {"reduced": c["reason"] != _COVERAGE_FULL, "reason": c["reason"],
-            "sectors_detected": list(c["sectors"]), "since": c["since"]}
+    return {
+        "reduced": c["reason"] != _COVERAGE_FULL,
+        "reason": c["reason"],
+        "sectors_detected": list(c["sectors"]),
+        "since": c["since"],
+    }
 
 
 def _backoff(failures: int) -> float:
@@ -861,13 +1036,20 @@ def _npu_answers() -> bool:
     """Does the NPU answer a separate process (`hailortcli fw-control identify`)? A dead chip can block an in-process HailoRT call with the GIL held, freezing every thread (HAILO_PROBE_TIMEOUT_S); a probe that hangs costs only its own process."""
     import shutil
     import subprocess
+
     cli = shutil.which("hailortcli")
     if cli is None:
-        return True                 # nothing to ask with: rebuild as before
+        return True  # nothing to ask with: rebuild as before
     try:
-        return subprocess.run([cli, "fw-control", "identify"], capture_output=True,
-                              timeout=HAILO_PROBE_TIMEOUT_S).returncode == 0
-    except Exception:               # timed out (the child is killed), or could not run
+        return (
+            subprocess.run(
+                [cli, "fw-control", "identify"],
+                capture_output=True,
+                timeout=HAILO_PROBE_TIMEOUT_S,
+            ).returncode
+            == 0
+        )
+    except Exception:  # timed out (the child is killed), or could not run
         return False
 
 
@@ -881,9 +1063,11 @@ def _wait_npu_answers(gen, what: str) -> bool:
             return True
         delay = _backoff(tries)
         tries += 1
-        print(f"[ERROR] {what}: the NPU does not answer (hailortcli fw-control identify, "
-              f"try {tries}) — not rebuilding the engine on it, which can freeze the whole "
-              f"app; detection off, guidance goes on; asking again in {delay:g}s")
+        print(
+            f"[ERROR] {what}: the NPU does not answer (hailortcli fw-control identify, "
+            f"try {tries}) — not rebuilding the engine on it, which can freeze the whole "
+            f"app; detection off, guidance goes on; asking again in {delay:g}s"
+        )
         if not _retry_wait(gen, delay):
             return False
     return False
@@ -917,8 +1101,10 @@ def _attempt_init(gen, what, make, on_up, on_fail):
         if live:
             on_up(engine)
     if not live:
-        print(f"[{what}] came up after its worker was stopped or replaced — "
-              f"closing it unused")
+        print(
+            f"[{what}] came up after its worker was stopped or replaced — "
+            f"closing it unused"
+        )
         _close_engine(engine, what)
         return None, None, False
     return engine, None, True
@@ -929,20 +1115,24 @@ class _WarnThrottle:
 
     def __init__(self, interval_s=None):
         self.interval_s = _WARN_REPEAT_S if interval_s is None else interval_s
-        self._seen = {}             # message -> [last printed at, repeats since]
+        self._seen = {}  # message -> [last printed at, repeats since]
 
     def __call__(self, msg: str) -> bool:
-        now = time.monotonic()        # an interval only (F20)
+        now = time.monotonic()  # an interval only (F20)
         seen = self._seen.get(msg)
         if seen is not None and now - seen[0] < self.interval_s:
             seen[1] += 1
             return False
         if seen is None and len(self._seen) >= 16:
             # A message carrying a varying detail must not grow this for ever.
-            self._seen = {m: s for m, s in self._seen.items()
-                          if now - s[0] < self.interval_s}
-        extra = (f" (+{seen[1]} more in the last {now - seen[0]:.0f}s)"
-                 if seen is not None and seen[1] else "")
+            self._seen = {
+                m: s for m, s in self._seen.items() if now - s[0] < self.interval_s
+            }
+        extra = (
+            f" (+{seen[1]} more in the last {now - seen[0]:.0f}s)"
+            if seen is not None and seen[1]
+            else ""
+        )
         print(msg + extra)
         self._seen[msg] = [now, 0]
         return True
@@ -962,9 +1152,9 @@ class _FailStreak:
         """Record a failed call."""
         now = time.monotonic()
         started = now if started is None else started
-        if (self.since is None
-                or (self._last_end is not None
-                    and started - self._last_end > self.limit_s)):
+        if self.since is None or (
+            self._last_end is not None and started - self._last_end > self.limit_s
+        ):
             self.since, self.count = started, 0
         self.count += 1
         self.last = error
@@ -972,15 +1162,17 @@ class _FailStreak:
 
     def failing_s(self):
         """Seconds since the first failing call of this streak began, or None."""
-        since = self.since            # once: get_camera_stats reads from another thread
+        since = self.since  # once: get_camera_stats reads from another thread
         return None if since is None else time.monotonic() - since
 
     def broken(self) -> bool:
         return self.count >= 1 and self.failing_s() >= self.limit_s
 
     def describe(self) -> str:
-        return (f"every inference failed for {self.failing_s():.1f}s "
-                f"({self.count} call{'' if self.count == 1 else 's'}): {self.last}")
+        return (
+            f"every inference failed for {self.failing_s():.1f}s "
+            f"({self.count} call{'' if self.count == 1 else 's'}): {self.last}"
+        )
 
 
 _streaks = {"detector": None, "seg": None}
@@ -995,9 +1187,11 @@ def _track_streak(gen, key, streak):
 
 # ============== LOCAL HAILO INFERENCE THREAD ==============
 
+
 def _make_detector():
     from utils.hailo_inference import HailoInferenceEngine
     from utils.hailo_device import get_shared_vdevice
+
     return HailoInferenceEngine(
         hef_path=HEF_PATH,
         conf_thresh=DETECTION_CONF,
@@ -1006,7 +1200,7 @@ def _make_detector():
     )
 
 
-def _detector_up(engine):             # under _gen_lock, generation current
+def _detector_up(engine):  # under _gen_lock, generation current
     global hailo_ready, hailo_error, hailo_init_attempts
     hailo_init_attempts += 1
     hailo_error = None
@@ -1014,7 +1208,7 @@ def _detector_up(engine):             # under _gen_lock, generation current
     _note_coverage(*_all_coverage())
 
 
-def _detector_failed(error):          # under _gen_lock, generation current
+def _detector_failed(error):  # under _gen_lock, generation current
     global hailo_ready, hailo_error, hailo_init_attempts
     hailo_init_attempts += 1
     hailo_error = error
@@ -1026,52 +1220,66 @@ def _inference_thread():
     global hailo_ready
 
     gen = _my_generation()
-    failures = 0                  # consecutive failures: the backoff index
-    was_up = False                # came up at least once in this generation
-    rebuild_fails = 0             # init failures in a row since it last broke
-    broke = False                 # broke mid-run and not up again since
+    failures = 0  # consecutive failures: the backoff index
+    was_up = False  # came up at least once in this generation
+    rebuild_fails = 0  # init failures in a row since it last broke
+    broke = False  # broke mid-run and not up again since
     try:
         while True:
             if broke and not _wait_npu_answers(gen, "Hailo"):
                 return
-            engine, error, live = _attempt_init(gen, "Hailo", _make_detector,
-                                                _detector_up, _detector_failed)
+            engine, error, live = _attempt_init(
+                gen, "Hailo", _make_detector, _detector_up, _detector_failed
+            )
             if not live:
                 return
             if engine is None:
                 rebuild_fails += 1
-                if (HAILO_VDEVICE_RESET and was_up
-                        and rebuild_fails >= HAILO_VDEVICE_RESET_AFTER):
+                if (
+                    HAILO_VDEVICE_RESET
+                    and was_up
+                    and rebuild_fails >= HAILO_VDEVICE_RESET_AFTER
+                ):
                     # It worked, broke, and cannot be rebuilt: the device under it is gone.
-                    print(f"[ERROR] Hailo detector would not come back ({rebuild_fails} tries: "
-                          f"{error}) — restarting the NPU on a fresh device")
-                    threading.Thread(target=_restart_npu, args=(gen, error),
-                                     name="npu-restart", daemon=True).start()
+                    print(
+                        f"[ERROR] Hailo detector would not come back ({rebuild_fails} tries: "
+                        f"{error}) — restarting the NPU on a fresh device"
+                    )
+                    threading.Thread(
+                        target=_restart_npu,
+                        args=(gen, error),
+                        name="npu-restart",
+                        daemon=True,
+                    ).start()
                     return
                 delay = _backoff(failures)
                 failures += 1
-                print(f"[ERROR] Hailo engine init failed (attempt {hailo_init_attempts}): {error} "
-                      f"— detection off, hailo_ready False; retrying in {delay:g}s")
+                print(
+                    f"[ERROR] Hailo engine init failed (attempt {hailo_init_attempts}): {error} "
+                    f"— detection off, hailo_ready False; retrying in {delay:g}s"
+                )
                 if not _retry_wait(gen, delay):
                     return
                 continue
 
-            failures = 0          # it came up: a later failure retries quickly
+            failures = 0  # it came up: a later failure retries quickly
             was_up, rebuild_fails, broke = True, 0, False
-            reason = _detect(engine, gen)          # closes the engine on exit
+            reason = _detect(engine, gen)  # closes the engine on exit
             engine = None
             if reason is None:
-                return            # stopped, or superseded by a newer start
+                return  # stopped, or superseded by a newer start
             broke = True
             delay = _backoff(failures)
             failures += 1
-            print(f"[ERROR] Hailo detector reset — {reason}; detection off, "
-                  f"re-initialising in {delay:g}s")
+            print(
+                f"[ERROR] Hailo detector reset — {reason}; detection off, "
+                f"re-initialising in {delay:g}s"
+            )
             if not _retry_wait(gen, delay):
                 return
     finally:
         with _gen_lock:
-            if gen == _generation:      # a newer worker's flag is not ours
+            if gen == _generation:  # a newer worker's flag is not ours
                 hailo_ready = False
                 _note_coverage(_COVERAGE_NOT_READY, ())
 
@@ -1082,30 +1290,39 @@ _npu_restart_lock = threading.Lock()
 def _restart_npu(gen, why):
     """Stop every NPU worker of generation `gen`, release the shared VDevice once none of them can still be inside it, and start fresh workers, which open a new one (HAILO_VDEVICE_RESET, 2026-10-21). Capture carries on throughout."""
     from utils.hailo_device import release_shared_vdevice
+
     with _npu_restart_lock:
         with _gen_lock:
             if not _live(gen):
-                return                       # stopped, or already restarted
-            fresh = _new_generation()        # the old detector and segmenter wind down
+                return  # stopped, or already restarted
+            fresh = _new_generation()  # the old detector and segmenter wind down
         # Every NPU worker still alive, of any generation: one left stuck by an earlier
         # restart is inside the same device too.
-        old = [t for t in list(_threads)
-               if t.name in ("inference_thread", "seg_thread") and t.is_alive()
-               and t is not threading.current_thread()]
+        old = [
+            t
+            for t in list(_threads)
+            if t.name in ("inference_thread", "seg_thread")
+            and t.is_alive()
+            and t is not threading.current_thread()
+        ]
         deadline = time.monotonic() + HAILO_VDEVICE_RESET_WAIT_S
         for t in old:
             t.join(timeout=max(0.0, deadline - time.monotonic()))
         stuck = [t.name for t in old if t.is_alive()]
         if stuck:
-            print(f"[ERROR] NPU restart: {', '.join(stuck)} still inside a call after "
-                  f"{HAILO_VDEVICE_RESET_WAIT_S:g}s — NOT releasing the device (that could "
-                  f"crash the app); starting the workers on it again")
+            print(
+                f"[ERROR] NPU restart: {', '.join(stuck)} still inside a call after "
+                f"{HAILO_VDEVICE_RESET_WAIT_S:g}s — NOT releasing the device (that could "
+                f"crash the app); starting the workers on it again"
+            )
         else:
             # A segmentation run that outlived close() releases its model when it returns.
             time.sleep(HAILO_SEG_RUN_TIMEOUT_MS / 1000.0)
             ok = release_shared_vdevice()
-            print(f"[Hailo] NPU restart ({why}): device "
-                  f"{'released' if ok else 'release FAILED'} — opening a new one")
+            print(
+                f"[Hailo] NPU restart ({why}): device "
+                f"{'released' if ok else 'release FAILED'} — opening a new one"
+            )
         with _gen_lock:
             if not running or _generation != fresh:
                 return
@@ -1120,7 +1337,7 @@ def _detect(engine, gen):
 
     last_id = -1
     pass_no = 0
-    detected_id = {}                  # cycling: the quad_meta id each camera was last detected at
+    detected_id = {}  # cycling: the quad_meta id each camera was last detected at
     streak = _FailStreak(HAILO_INFER_FAIL_RESET_S)
     warn = _WarnThrottle()
     _track_streak(gen, "detector", streak)
@@ -1145,16 +1362,20 @@ def _detect(engine, gen):
 
             seg_viewing = SEG_VIEW_PRIORITY and _seg_view_active()
 
-            npu_ok = False            # an inference succeeded this pass
-            npu_error = None          # ...or the one that raised
-            npu_started = None        # time.monotonic() that call began
+            npu_ok = False  # an inference succeeded this pass
+            npu_error = None  # ...or the one that raised
+            npu_started = None  # time.monotonic() that call began
             try:
                 total_inference_ms = 0.0
                 sectors = ("front",) if seg_viewing else _pass_sectors(pass_no)
-                if quad_meta:                 # cycling: each camera's new frame, once
-                    sectors = [s for s in _VALID
-                               if s in quad_meta and quad_meta[s]["id"] != detected_id.get(s)
-                               and (s == "front" or not seg_viewing)][:2]
+                if quad_meta:  # cycling: each camera's new frame, once
+                    sectors = [
+                        s
+                        for s in _VALID
+                        if s in quad_meta
+                        and quad_meta[s]["id"] != detected_id.get(s)
+                        and (s == "front" or not seg_viewing)
+                    ][:2]
                 pass_no += 1
                 with _gen_lock:
                     if not _live(gen):
@@ -1165,10 +1386,16 @@ def _detect(engine, gen):
                         _note_coverage(*_all_coverage())
 
                 for sector in sectors:
-                    quad = _sector_slice(mosaic, sector)      # view, free
+                    quad = _sector_slice(mosaic, sector)  # view, free
                     # Scrambled board data (2026-10-08) never reaches the detector; this
                     # camera's last detections just age out.
                     if not simulated and _is_corrupt(sector, quad):
+                        # Handled too (2026-10-23): left unmarked, the same flagged picture
+                        # was judged again every pass — counted many times toward the
+                        # restart share (16% read as 63%), and re-chosen by the [:2] pick
+                        # ahead of the other cameras' new pictures, which starved them.
+                        if quad_meta:
+                            detected_id[sector] = quad_meta[sector]["id"]
                         continue
                     view = _view_check(sector, quad)
                     npu_started = time.monotonic()
@@ -1183,21 +1410,25 @@ def _detect(engine, gen):
                         detected_id[sector] = quad_meta[sector]["id"]
                     shot_t = quad_meta[sector]["t"] if quad_meta else frame_t
                     if TOF_ENABLED and sector == "front" and not simulated:
-                        try:              # each box's measured distance (utils/depth_fusion.py)
+                        try:  # each box's measured distance (utils/depth_fusion.py)
                             from utils.depth_fusion import annotate
+
                             annotate(detections, shot_t)
                         except Exception as e:
                             warn(f"[WARN] ToF depth: {type(e).__name__}: {e}")
                     entry = {
-                        "detections":  detections,
+                        "detections": detections,
                         "num_objects": len(detections),
-                        "frame_time":  shot_t,
-                        "simulated":   simulated,
+                        "frame_time": shot_t,
+                        "simulated": simulated,
                         # Can this camera see at all (a black or blurred picture still
                         # gets a detection pass — it just names nothing)?
-                        "view": {"brightness": view["brightness"],
-                                 "sharpness": view["sharpness"],
-                                 "dark": view["dark"], "blurred": view["blurred"]},
+                        "view": {
+                            "brightness": view["brightness"],
+                            "sharpness": view["sharpness"],
+                            "dark": view["dark"],
+                            "blurred": view["blurred"],
+                        },
                     }
                     total_inference_ms += inference_ms
                     with _gen_lock:
@@ -1205,16 +1436,19 @@ def _detect(engine, gen):
                             return None
                         detection_stats[sector] = entry
                         detection_stats["total_objects"] = sum(
-                            detection_stats[s]["num_objects"] for s in _VALID)
-                        update_camera_state({
-                            sector: detection_stats[sector],
-                            "total_objects": detection_stats["total_objects"],
-                        })
+                            detection_stats[s]["num_objects"] for s in _VALID
+                        )
+                        update_camera_state(
+                            {
+                                sector: detection_stats[sector],
+                                "total_objects": detection_stats["total_objects"],
+                            }
+                        )
 
                 with _gen_lock:
                     if not _live(gen):
                         return None
-                    if npu_ok:                    # every picture corrupted: not a pass
+                    if npu_ok:  # every picture corrupted: not a pass
                         detection_stats["inference_time"] = total_inference_ms
 
                         fps_stats["detection_times"].append(time.monotonic())
@@ -1265,6 +1499,7 @@ def _refresh_environment(mosaic):
     _last_env_analysis = now
     try:
         from utils.environment_detection import detect_environment_conditions
+
         detect_environment_conditions(image=_to_bgr(mosaic))
     except Exception as e:
         print(f"[WARN] environment analysis failed: {e}")
@@ -1273,17 +1508,18 @@ def _refresh_environment(mosaic):
 def _make_segmenter():
     from utils.seg_inference import SegmentationEngine
     from utils.hailo_device import get_shared_vdevice
+
     return SegmentationEngine(SEG_HEF_PATH, vdevice=get_shared_vdevice())
 
 
-def _segmenter_up(engine):            # under _gen_lock, generation current
+def _segmenter_up(engine):  # under _gen_lock, generation current
     global seg_engine, seg_error, seg_init_attempts
     seg_init_attempts += 1
     seg_error = None
     seg_engine = engine
 
 
-def _segmenter_failed(error):         # under _gen_lock, generation current
+def _segmenter_failed(error):  # under _gen_lock, generation current
     global seg_error, seg_init_attempts
     seg_init_attempts += 1
     seg_error = error
@@ -1315,9 +1551,12 @@ def _wait_seg_released(gen, eng) -> bool:
         if gen == _generation:
             seg_error = ((seg_error + "; ") if seg_error else "") + (
                 "waiting for the previous segmenter to be released (a debug "
-                "view's inference is still running on it)")
-    print("[WARN] Seg engine: the old engine is still inside an inference — "
-          "not re-initialising until it is released")
+                "view's inference is still running on it)"
+            )
+    print(
+        "[WARN] Seg engine: the old engine is still inside an inference — "
+        "not re-initialising until it is released"
+    )
     while _live(gen):
         if _seg_released(eng):
             return True
@@ -1332,19 +1571,22 @@ def _seg_thread():
 
     gen = _my_generation()
     failures = 0
-    broke = False                 # broke mid-run and not up again since
+    broke = False  # broke mid-run and not up again since
     while True:
         if broke and not _wait_npu_answers(gen, "Seg"):
             return
-        eng, error, live = _attempt_init(gen, "Seg", _make_segmenter,
-                                         _segmenter_up, _segmenter_failed)
+        eng, error, live = _attempt_init(
+            gen, "Seg", _make_segmenter, _segmenter_up, _segmenter_failed
+        )
         if not live:
             return
         if eng is None:
             delay = _backoff(failures)
             failures += 1
-            print(f"[WARN] Seg engine init failed (attempt {seg_init_attempts}; walking "
-                  f"guide off): {error} — retrying in {delay:g}s")
+            print(
+                f"[WARN] Seg engine init failed (attempt {seg_init_attempts}; walking "
+                f"guide off): {error} — retrying in {delay:g}s"
+            )
             if not _retry_wait(gen, delay):
                 return
             continue
@@ -1361,11 +1603,13 @@ def _seg_thread():
         broke = True
         if not _wait_seg_released(gen, eng):
             return
-        eng = None                # closed and released: not kept through the backoff
+        eng = None  # closed and released: not kept through the backoff
         delay = _backoff(failures)
         failures += 1
-        print(f"[WARN] Seg engine reset — {reason}; walking guide off, "
-              f"re-initialising in {delay:g}s")
+        print(
+            f"[WARN] Seg engine reset — {reason}; walking guide off, "
+            f"re-initialising in {delay:g}s"
+        )
         if not _retry_wait(gen, delay):
             return
 
@@ -1378,7 +1622,7 @@ def _segment(eng, gen):
     last_id = -1
     streak = _FailStreak(HAILO_INFER_FAIL_RESET_S)
     warn = _WarnThrottle()
-    _track_streak(gen, "seg", streak)            # withdrawn by _seg_thread
+    _track_streak(gen, "seg", streak)  # withdrawn by _seg_thread
 
     while _live(gen):
         # Monotonic pacing, as in _detect (F20).
@@ -1419,8 +1663,11 @@ def _segment(eng, gen):
                 if not _live(gen):
                     return None
                 with seg_latest_lock:
-                    seg_latest = {"class_map": class_map, "frame_id": fid,
-                                  "infer_ms": infer_ms}
+                    seg_latest = {
+                        "class_map": class_map,
+                        "frame_id": fid,
+                        "infer_ms": infer_ms,
+                    }
                 fps_stats["seg_times"].append(time.monotonic())
                 if len(fps_stats["seg_times"]) >= 2:
                     t = list(fps_stats["seg_times"])
@@ -1450,13 +1697,14 @@ def _segment(eng, gen):
 
 # ============== FRAME / STATS ACCESSORS ==============
 
+
 def gen_frames(sector: str = "front"):
     """MJPEG generator for one sector."""
     if sector not in _VALID:
         sector = "front"
 
     last_id = -1
-    last_frame_at = time.monotonic()      # an interval only (F20)
+    last_frame_at = time.monotonic()  # an interval only (F20)
     while _streams_live():
         with frame_lock:
             mosaic = current_frame
@@ -1469,13 +1717,14 @@ def gen_frames(sector: str = "front"):
                 quad = _sector_slice(mosaic, sector)
                 # The quadrant as captured: BGR when SWAP_RB, with no copy.
                 jpeg = _encode_jpeg_stream(quad, "BGR" if SWAP_RB else "RGB")
-                yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n'
-                       + jpeg + b'\r\n')
+                yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n")
             except Exception as e:
                 print(f"[WARN] Stream encode error: {e}")
         elif time.monotonic() - last_frame_at > STREAM_STALL_TIMEOUT_S:
-            print(f"[WARN] Camera stream ({sector}) had no new frame for "
-                  f"{STREAM_STALL_TIMEOUT_S:g}s — ending the stream")
+            print(
+                f"[WARN] Camera stream ({sector}) had no new frame for "
+                f"{STREAM_STALL_TIMEOUT_S:g}s — ending the stream"
+            )
             return
 
         # Pace to the (lower) display framerate — saves encode CPU and WiFi.
@@ -1492,7 +1741,7 @@ def _seg_front_view_active():
     return is_fresh(seg_front_view_ts, 1.5)
 
 
-_seg_view_cache = {}                  # sector -> {"engine", "frame_id", "class_map", "t"}
+_seg_view_cache = {}  # sector -> {"engine", "frame_id", "class_map", "t"}
 _seg_view_sector_locks = {s: threading.Lock() for s in _VALID}
 
 
@@ -1505,13 +1754,20 @@ def _seg_view_map(eng, sector, mosaic, fid):
             return None, None
     try:
         c = _seg_view_cache.get(sector)
-        if (c is not None and c["engine"]() is eng
-                and (c["frame_id"] >= fid or time.monotonic() - c["t"] < period)):
+        if (
+            c is not None
+            and c["engine"]() is eng
+            and (c["frame_id"] >= fid or time.monotonic() - c["t"] < period)
+        ):
             return c["class_map"], c["frame_id"]
         pil = Image.fromarray(_to_seg_input(_sector_slice(mosaic, sector)))
         class_map, _ = eng.infer_class_map(pil)
-        _seg_view_cache[sector] = {"engine": weakref.ref(eng), "frame_id": fid,
-                                   "class_map": class_map, "t": time.monotonic()}
+        _seg_view_cache[sector] = {
+            "engine": weakref.ref(eng),
+            "frame_id": fid,
+            "class_map": class_map,
+            "t": time.monotonic(),
+        }
         return class_map, fid
     finally:
         lock.release()
@@ -1526,7 +1782,7 @@ def gen_seg_frames(sector: str = "front"):
         sector = "front"
 
     last_id = -1
-    last_yield_at = time.monotonic()      # an interval only (F20)
+    last_yield_at = time.monotonic()  # an interval only (F20)
     while _streams_live():
         eng = seg_engine  # snapshot the shared engine
 
@@ -1547,26 +1803,28 @@ def gen_seg_frames(sector: str = "front"):
                 try:
                     class_map, map_id = _seg_view_map(eng, sector, mosaic, fid)
                     if map_id is None or map_id == last_id:
-                        class_map = None        # nothing this stream has not shown
+                        class_map = None  # nothing this stream has not shown
                     else:
                         last_id = map_id
                 except Exception as e:
-                    last_id = fid               # not retried until a new frame
+                    last_id = fid  # not retried until a new frame
                     print(f"[WARN] Seg-view error ({sector}): {e}")
 
         if class_map is not None and eng is not None:
             try:
                 jpeg = _encode_jpeg_stream(
-                    colorize_class_map(class_map, eng.walkable_ids))
-                yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n'
-                       + jpeg + b'\r\n')
+                    colorize_class_map(class_map, eng.walkable_ids)
+                )
+                yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n")
                 last_yield_at = time.monotonic()
             except Exception as e:
                 print(f"[WARN] Seg-view encode error ({sector}): {e}")
 
         if time.monotonic() - last_yield_at > STREAM_STALL_TIMEOUT_S:
-            print(f"[WARN] Seg stream ({sector}) produced nothing for "
-                  f"{STREAM_STALL_TIMEOUT_S:g}s — ending the stream")
+            print(
+                f"[WARN] Seg stream ({sector}) produced nothing for "
+                f"{STREAM_STALL_TIMEOUT_S:g}s — ending the stream"
+            )
             return
 
         time.sleep(0.01 if sector == "front" else max(0.05, 1.0 / SEG_VIEW_FPS))
@@ -1581,7 +1839,7 @@ def gen_seg_grid(cell=(240, 135)):
 
     cw, ch = cell
     last_id = -1
-    last_yield_at = time.monotonic()      # an interval only (F20)
+    last_yield_at = time.monotonic()  # an interval only (F20)
     while _streams_live():
         eng = seg_engine
         if eng is not None:
@@ -1607,8 +1865,11 @@ def gen_seg_grid(cell=(240, 135)):
                         tile = Image.new("RGB", (cw, ch))
                     else:
                         tile = Image.fromarray(
-                            colorize_class_map(class_map, eng.walkable_ids)).resize((cw, ch))
-                    ImageDraw.Draw(tile).text((5, 4), sector.upper(), fill=(255, 255, 255))
+                            colorize_class_map(class_map, eng.walkable_ids)
+                        ).resize((cw, ch))
+                    ImageDraw.Draw(tile).text(
+                        (5, 4), sector.upper(), fill=(255, 255, 255)
+                    )
                     cells[sector] = np.asarray(tile)
 
                 top = np.hstack([cells["front"], cells["right"]])
@@ -1617,16 +1878,21 @@ def gen_seg_grid(cell=(240, 135)):
 
                 buf = io.BytesIO()
                 Image.fromarray(grid).save(buf, format="JPEG", quality=STREAM_QUALITY)
-                yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n'
-                       + buf.getvalue() + b'\r\n')
+                yield (
+                    b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
+                    + buf.getvalue()
+                    + b"\r\n"
+                )
                 last_yield_at = time.monotonic()
             except Exception as e:
                 print(f"[WARN] Seg-grid error: {e}")
 
         # Same rule as the other two streams — see STREAM_STALL_TIMEOUT_S.
         if time.monotonic() - last_yield_at > STREAM_STALL_TIMEOUT_S:
-            print(f"[WARN] Seg-grid stream produced nothing for "
-                  f"{STREAM_STALL_TIMEOUT_S:g}s — ending the stream")
+            print(
+                f"[WARN] Seg-grid stream produced nothing for "
+                f"{STREAM_STALL_TIMEOUT_S:g}s — ending the stream"
+            )
             return
 
         time.sleep(max(0.05, 1.0 / SEG_VIEW_FPS))
@@ -1636,26 +1902,26 @@ def get_camera_stats():
     """Get current camera and detection statistics."""
     with _gen_lock:
         npu = {
-            "hailo_ready":         hailo_ready,
-            "hailo_error":         hailo_error,
+            "hailo_ready": hailo_ready,
+            "hailo_error": hailo_error,
             "hailo_init_attempts": hailo_init_attempts,
-            "hailo_failing_s":     _streak_seconds(_streaks["detector"]),
-            "seg_ready":           seg_engine is not None,
-            "seg_error":           seg_error,
-            "seg_init_attempts":   seg_init_attempts,
-            "seg_failing_s":       _streak_seconds(_streaks["seg"]),
+            "hailo_failing_s": _streak_seconds(_streaks["detector"]),
+            "seg_ready": seg_engine is not None,
+            "seg_error": seg_error,
+            "seg_init_attempts": seg_init_attempts,
+            "seg_failing_s": _streak_seconds(_streaks["seg"]),
         }
     with frame_lock:
         simulated = current_frame_simulated
     return {
-        "capture_fps":    fps_stats["capture_fps"],
-        "detection_fps":  fps_stats["detection_fps"],
-        "seg_fps":        fps_stats["seg_fps"],
-        "total_objects":  detection_stats["total_objects"],
+        "capture_fps": fps_stats["capture_fps"],
+        "detection_fps": fps_stats["detection_fps"],
+        "seg_fps": fps_stats["seg_fps"],
+        "total_objects": detection_stats["total_objects"],
         "inference_time": detection_stats["inference_time"],
         **npu,
         "camera_simulated": simulated,
-        "camera_source":  _camera_source,
+        "camera_source": _camera_source,
         "capture_stalled": capture_stalled,
         "detection_coverage": detection_coverage(),
         "corrupt": corruption(),
@@ -1663,13 +1929,18 @@ def get_camera_stats():
         "stall_reopens": _stall_reopens,
         "camera_mode": ("single" if _single else "cycle" if _cycle else "2x2"),
         "cycle_cameras": list(_cycle_present or []) if _cycle else [],
-        "camera_fps": {s: (round((len(t) - 1) / (t[-1] - t[0]), 1)
-                           if len(t) >= 2 and t[-1] > t[0] else 0.0)
-                       for s, t in ((k, list(v)) for k, v in _quad_times.items())},
-        "front":          detection_stats["front"],
-        "right":          detection_stats["right"],
-        "left":           detection_stats["left"],
-        "back":           detection_stats["back"],
+        "camera_fps": {
+            s: (
+                round((len(t) - 1) / (t[-1] - t[0]), 1)
+                if len(t) >= 2 and t[-1] > t[0]
+                else 0.0
+            )
+            for s, t in ((k, list(v)) for k, v in _quad_times.items())
+        },
+        "front": detection_stats["front"],
+        "right": detection_stats["right"],
+        "left": detection_stats["left"],
+        "back": detection_stats["back"],
     }
 
 
@@ -1702,8 +1973,7 @@ def get_frame_payload(sector: str) -> dict:
     try:
         quad = _sector_slice(mosaic, sector)
         jpeg = _encode_jpeg(_to_seg_input(quad))
-        return {"frame": base64.b64encode(jpeg).decode("utf-8"),
-                "simulated": simulated}
+        return {"frame": base64.b64encode(jpeg).decode("utf-8"), "simulated": simulated}
     except Exception as e:
         print(f"[WARN] Frame encode error: {e}")
         return {"frame": None, "simulated": simulated}

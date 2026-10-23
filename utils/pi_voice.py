@@ -8,8 +8,13 @@ from collections import deque
 from typing import Any, Dict, Optional
 
 from config import (
-    AUDIO_ENABLED, PI_VOICE_ALLOW_HDMI, PI_VOICE_CMD, PI_VOICE_ENABLED, PI_VOICE_REAP_WAIT_S,
-    PI_VOICE_REPORT_QUEUE_MAX, PI_VOICE_TICK_HZ,
+    AUDIO_ENABLED,
+    PI_VOICE_ALLOW_HDMI,
+    PI_VOICE_CMD,
+    PI_VOICE_ENABLED,
+    PI_VOICE_REAP_WAIT_S,
+    PI_VOICE_REPORT_QUEUE_MAX,
+    PI_VOICE_TICK_HZ,
 )
 
 
@@ -33,7 +38,7 @@ def audio_output() -> Dict[str, Any]:
         cached = {"name": _output["name"], "usable": _output["usable"]}
         age = now - _output["checked"]
     if _prober_running() or _running:
-        if not (-1.0 <= age <= _OUTPUT_STALE_S):       # stale, or a clock step
+        if not (-1.0 <= age <= _OUTPUT_STALE_S):  # stale, or a clock step
             return {"name": cached["name"], "usable": False, "stale": True}
         return cached
     if 0.0 <= age < _OUTPUT_CACHE_S:
@@ -45,8 +50,12 @@ def probe_audio_output() -> Dict[str, Any]:
     """Ask WirePlumber (`wpctl inspect @DEFAULT_AUDIO_SINK@`) now, and cache it."""
     name = None
     try:
-        out = subprocess.run(["wpctl", "inspect", "@DEFAULT_AUDIO_SINK@"],
-                             capture_output=True, text=True, timeout=2).stdout
+        out = subprocess.run(
+            ["wpctl", "inspect", "@DEFAULT_AUDIO_SINK@"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        ).stdout
         for key in ("node.description", "node.nick", "node.name"):
             for line in out.splitlines():
                 if key in line and "=" in line:
@@ -64,8 +73,9 @@ def probe_audio_output() -> Dict[str, Any]:
 
 def _wearable(name: str) -> bool:
     low = name.lower()
-    return not any(k in low for k in _UNHEARD_SINKS
-                   if not (k == "hdmi" and PI_VOICE_ALLOW_HDMI))
+    return not any(
+        k in low for k in _UNHEARD_SINKS if not (k == "hdmi" and PI_VOICE_ALLOW_HDMI)
+    )
 
 
 def _probe_loop() -> None:
@@ -110,8 +120,9 @@ def _report(seq: Optional[int], event: str, text: str, detail: str = "") -> None
             _reports.append((seq, event, text, detail))
             _reports_idle.clear()
             if not (_reporter and _reporter.is_alive()):
-                _reporter = threading.Thread(target=_drain_reports,
-                                             name="pi-voice-log", daemon=True)
+                _reporter = threading.Thread(
+                    target=_drain_reports, name="pi-voice-log", daemon=True
+                )
                 _reporter.start()
         _reports_wake.set()
     except Exception:
@@ -120,6 +131,7 @@ def _report(seq: Optional[int], event: str, text: str, detail: str = "") -> None
 
 def _drain_reports() -> None:
     from utils import speech_log
+
     while True:
         _reports_wake.wait(timeout=5.0)
         _reports_wake.clear()
@@ -155,7 +167,7 @@ class _Voice:
         self._last_seq: Optional[int] = None
         self._playing_seq: Optional[int] = None
         self._proc: Optional[subprocess.Popen] = None
-        self._killed: Optional[subprocess.Popen] = None   # stopped by us, not failed
+        self._killed: Optional[subprocess.Popen] = None  # stopped by us, not failed
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
         self.last: str = ""
@@ -174,8 +186,7 @@ class _Voice:
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
-        self._thread = threading.Thread(target=self._run, name="pi-voice",
-                                        daemon=True)
+        self._thread = threading.Thread(target=self._run, name="pi-voice", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
@@ -191,13 +202,27 @@ class _Voice:
         events = []
         with self._lock:
             if seq is not None and self._last_seq is not None and seq <= self._last_seq:
-                events.append((seq, "dropped", text,
-                               f"older than cue {self._last_seq}, already accepted"))
+                events.append(
+                    (
+                        seq,
+                        "dropped",
+                        text,
+                        f"older than cue {self._last_seq}, already accepted",
+                    )
+                )
                 accepted = False
             else:
                 if self._next is not None:
-                    events.append((self._next_seq, "replaced", self._next,
-                                   f"by cue {seq}" if seq is not None else "by a newer sentence"))
+                    events.append(
+                        (
+                            self._next_seq,
+                            "replaced",
+                            self._next,
+                            f"by cue {seq}"
+                            if seq is not None
+                            else "by a newer sentence",
+                        )
+                    )
                 self._next, self._next_seq = text, seq
                 if seq is not None:
                     self._last_seq = seq
@@ -206,7 +231,7 @@ class _Voice:
                     self._kill()
                 accepted = True
         if accepted:
-            self._wake.set()            # the voice first; the log after (NEW-032)
+            self._wake.set()  # the voice first; the log after (NEW-032)
         for ev in events:
             _report(*ev)
         return accepted
@@ -233,9 +258,11 @@ class _Voice:
                 if not text or self._stop.is_set():
                     continue
                 try:
-                    proc = subprocess.Popen(list(PI_VOICE_CMD) + [text],
-                                            stdout=subprocess.DEVNULL,
-                                            stderr=subprocess.DEVNULL)
+                    proc = subprocess.Popen(
+                        list(PI_VOICE_CMD) + [text],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
                 except Exception as exc:
                     self._fail(f"{type(exc).__name__}: {exc}")
                     started = None
@@ -262,10 +289,14 @@ class _Voice:
                     continue
                 took = f"{time.monotonic() - started:.1f}s"
                 if self._killed is proc:
-                    if (self._unfinished_since is not None and
-                            time.monotonic() - self._unfinished_since > _SAY_TIMEOUT_S):
-                        self._fail(f"no sentence has finished for "
-                                   f"{time.monotonic() - self._unfinished_since:.0f} s")
+                    if (
+                        self._unfinished_since is not None
+                        and time.monotonic() - self._unfinished_since > _SAY_TIMEOUT_S
+                    ):
+                        self._fail(
+                            f"no sentence has finished for "
+                            f"{time.monotonic() - self._unfinished_since:.0f} s"
+                        )
                     _report(seq, "interrupted", text, f"after {took}")
                     continue
                 if rc != 0:
@@ -298,6 +329,7 @@ def _loop() -> None:
     global _tick_ok_at, _tick_error
     from utils import service
     from utils.unified_guidance import get_unified_guidance, guidance_fault
+
     period = 1.0 / max(PI_VOICE_TICK_HZ, 0.5)
     while not _loop_stop.is_set():
         started = time.monotonic()
@@ -306,7 +338,7 @@ def _loop() -> None:
             fault = guidance_fault()
             if fault:
                 raise RuntimeError(f"guidance step failing: {fault}")
-            _tick_ok_at, _tick_error = time.monotonic(), ""   # local: F20
+            _tick_ok_at, _tick_error = time.monotonic(), ""  # local: F20
             # Only a tick that guided feeds the watchdog (2026-10-21): a loop that keeps
             # failing is restarted by systemd, not left running silent.
             service.beat("guidance")
@@ -320,9 +352,11 @@ def _loop() -> None:
 def loop_status() -> Dict[str, Any]:
     """The guidance loop's own health, for /health."""
     age = (time.monotonic() - _tick_ok_at) if _tick_ok_at else None
-    return {"running": bool(_loop_thread and _loop_thread.is_alive()),
-            "last_ok_age_s": None if age is None else round(age, 2),
-            "error": _tick_error}
+    return {
+        "running": bool(_loop_thread and _loop_thread.is_alive()),
+        "last_ok_age_s": None if age is None else round(age, 2),
+        "error": _tick_error,
+    }
 
 
 def start() -> None:
@@ -333,18 +367,21 @@ def start() -> None:
     # The voice before the loop, with a fresh sink answer, so the first tick's "Starting,
     # please wait" is heard rather than marked unavailable (2026-10-21).
     if AUDIO_ENABLED and PI_VOICE_ENABLED and shutil.which(str(PI_VOICE_CMD[0])):
-        probe_audio_output()               # bounded by wpctl's 2 s timeout
+        probe_audio_output()  # bounded by wpctl's 2 s timeout
         _start_prober()
         _voice.start()
         _running = True
     else:
         _running = False
-        _voice.error = ("audio switched off in config (AUDIO_ENABLED)" if not AUDIO_ENABLED else
-                        "disabled in config" if not PI_VOICE_ENABLED else
-                        f"{PI_VOICE_CMD[0]} not found")
+        _voice.error = (
+            "audio switched off in config (AUDIO_ENABLED)"
+            if not AUDIO_ENABLED
+            else "disabled in config"
+            if not PI_VOICE_ENABLED
+            else f"{PI_VOICE_CMD[0]} not found"
+        )
     _loop_stop.clear()
-    _loop_thread = threading.Thread(target=_loop, name="guidance-loop",
-                                    daemon=True)
+    _loop_thread = threading.Thread(target=_loop, name="guidance-loop", daemon=True)
     _loop_thread.start()
 
 
@@ -357,8 +394,12 @@ def stop() -> None:
     flush_reports(timeout=1.0)
 
 
-def speak(text: str, urgent: bool = False, seq: Optional[int] = None,
-          sink_usable: Optional[bool] = None) -> str:
+def speak(
+    text: str,
+    urgent: bool = False,
+    seq: Optional[int] = None,
+    sink_usable: Optional[bool] = None,
+) -> str:
     """Called at the one commit point in unified_guidance."""
     if not AUDIO_ENABLED:
         _report(seq, "muted", text, "audio switched off in config (AUDIO_ENABLED)")
@@ -366,8 +407,11 @@ def speak(text: str, urgent: bool = False, seq: Optional[int] = None,
     if sink_usable is None:
         sink_usable = bool(_running and audio_output()["usable"])
     if not (_running and sink_usable):
-        why = ("Pi voice not running" if not _running else
-               "no wearable audio sink — the phone is expected to speak")
+        why = (
+            "Pi voice not running"
+            if not _running
+            else "no wearable audio sink — the phone is expected to speak"
+        )
         _report(seq, "unavailable", text, why)
         return "unavailable"
     return "queued" if _voice.say(text, urgent, seq) else "dropped"
@@ -382,7 +426,9 @@ def status() -> Dict[str, Any]:
     out = audio_output() if _running else {"name": None, "usable": False}
     return {
         "enabled": bool(PI_VOICE_ENABLED),
-        "audio_enabled": bool(AUDIO_ENABLED),  # False: no device, Pi or phone, may speak
+        "audio_enabled": bool(
+            AUDIO_ENABLED
+        ),  # False: no device, Pi or phone, may speak
         "running": _running,
         "output": out["name"],
         "sink_usable": bool(_running and out["usable"]),

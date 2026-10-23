@@ -26,6 +26,7 @@ _PROTO = re.compile(r"^/model\.(\d+)/proto/cv3/act/Mul$")
 def find_end_nodes(onnx_path) -> dict:
     """{"end_nodes": [...], "head": layer index} found in the ONNX graph, or exit."""
     import onnx
+
     graph = onnx.load(str(onnx_path)).graph
     names = [n.name for n in graph.node]
     branches = {}
@@ -38,14 +39,20 @@ def find_end_nodes(onnx_path) -> dict:
             proto = n
     heads = {k[0] for k in branches}
     if len(heads) != 1 or len(branches) != 9 or proto is None:
-        sys.exit(f"could not find the segmentation head's 9 branch outputs + prototypes "
-                 f"(found {len(branches)} branches, prototypes: {proto}). Open the .onnx in "
-                 f"https://netron.app and look for the last Conv of each cv2/cv3/cv4 branch "
-                 f"and proto/cv3's activation; or run `hailo parser onnx` in WSL and use "
-                 f"the end nodes it suggests.")
+        sys.exit(
+            f"could not find the segmentation head's 9 branch outputs + prototypes "
+            f"(found {len(branches)} branches, prototypes: {proto}). Open the .onnx in "
+            f"https://netron.app and look for the last Conv of each cv2/cv3/cv4 branch "
+            f"and proto/cv3's activation; or run `hailo parser onnx` in WSL and use "
+            f"the end nodes it suggests."
+        )
     head = heads.pop()
     order = [branches[(head, kind, scale)] for scale in range(3) for kind in (2, 3, 4)]
-    return {"end_nodes": order + [proto], "head": head, "start_node": graph.input[0].name}
+    return {
+        "end_nodes": order + [proto],
+        "head": head,
+        "start_node": graph.input[0].name,
+    }
 
 
 def main():
@@ -53,15 +60,24 @@ def main():
         sys.exit(__doc__)
     pt = Path(sys.argv[1])
     from ultralytics import YOLO
+
     model = YOLO(str(pt))
     if model.task != "segment":
         sys.exit(f"{pt} is a {model.task} model, not segmentation")
     nc = len(model.names)
-    onnx_path = Path(model.export(format="onnx", imgsz=640, opset=11, simplify=True,
-                                  dynamic=False, batch=1))
+    onnx_path = Path(
+        model.export(
+            format="onnx", imgsz=640, opset=11, simplify=True, dynamic=False, batch=1
+        )
+    )
     found = find_end_nodes(onnx_path)
-    found.update({"classes": nc, "names": [model.names[i] for i in range(nc)],
-                  "input_shape": [1, 3, 640, 640]})
+    found.update(
+        {
+            "classes": nc,
+            "names": [model.names[i] for i in range(nc)],
+            "input_shape": [1, 3, 640, 640],
+        }
+    )
     out = pt.parent / "end_nodes.json"
     out.write_text(json.dumps(found, indent=2))
     print(f"\nONNX: {onnx_path}")
@@ -69,7 +85,9 @@ def main():
     for n in found["end_nodes"]:
         print(f"  {n}")
     print("\nnext, in WSL Ubuntu with Hailo's Dataflow Compiler installed:")
-    print(f"  python3 training/compile_hef.py {onnx_path.name} --calib dataset/images/train")
+    print(
+        f"  python3 training/compile_hef.py {onnx_path.name} --calib dataset/images/train"
+    )
 
 
 if __name__ == "__main__":

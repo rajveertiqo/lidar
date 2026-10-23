@@ -14,16 +14,29 @@ from typing import Any, Dict, List, Optional
 
 from config import (
     RADAR_MIN_RATE_FRACTION,
-    RADAR_BAUDRATE, RADAR_CALIBRATE_STALL_S, RADAR_END_MM, RADAR_ENABLED,
-    RADAR_LATE_JOIN_S, RADAR_MAX_LAG_S, RADAR_PORT_EXCLUDE,
-    RADAR_PROFILE, RADAR_READY_TIMEOUT_S, RADAR_RESTART_WAIT_S, RADAR_SECTORS,
+    RADAR_BAUDRATE,
+    RADAR_CALIBRATE_STALL_S,
+    RADAR_END_MM,
+    RADAR_ENABLED,
+    RADAR_LATE_JOIN_S,
+    RADAR_MAX_LAG_S,
+    RADAR_PORT_EXCLUDE,
+    RADAR_PROFILE,
+    RADAR_READY_TIMEOUT_S,
+    RADAR_RESTART_WAIT_S,
+    RADAR_SECTORS,
     RADAR_STALL_S,
-    RADAR_REFLECTOR_SHAPE, RADAR_SIGNAL_QUALITY, RADAR_THRESHOLD_SENSITIVITY,
+    RADAR_REFLECTOR_SHAPE,
+    RADAR_SIGNAL_QUALITY,
+    RADAR_THRESHOLD_SENSITIVITY,
     RADAR_START_MM,
-    RADAR_UPDATE_RATE, radar_board_key,
+    RADAR_UPDATE_RATE,
+    radar_board_key,
 )
 from utils.radar_calibration import (
-    cardinal_sources, get_bearings, is_board_serial,
+    cardinal_sources,
+    get_bearings,
+    is_board_serial,
 )
 from utils.shared_state import get_radar_state, update_radar_sector, set_radar_boards
 
@@ -37,23 +50,29 @@ warnings.filterwarnings("ignore", message=r"Server timestamp was from .*")
 
 _threads: List[threading.Thread] = []
 _stop = threading.Event()
-_JOIN_TIMEOUT_S = 3.0       # per thread, in stop_radar()
+_JOIN_TIMEOUT_S = 3.0  # per thread, in stop_radar()
 
 _discovery: Dict[str, Any] = {"ran": False, "found": [], "error": None}
 
 _key_lock = threading.RLock()
 
-_live: Dict[str, Any] = {"entries": [], "complete": False, "stop": None,
-                         "allow_provisional": True}
+_live: Dict[str, Any] = {
+    "entries": [],
+    "complete": False,
+    "stop": None,
+    "allow_provisional": True,
+}
 
 _restart_state: Dict[str, Any] = {"since": None, "reason": None}
 
 
 def discovery_info() -> Dict[str, Any]:
     """What the last discovery pass saw, for the diagnostics view."""
-    return {"ran": _discovery["ran"],
-            "found": [dict(e) for e in _discovery["found"]],
-            "error": _discovery["error"]}
+    return {
+        "ran": _discovery["ran"],
+        "found": [dict(e) for e in _discovery["found"]],
+        "error": _discovery["error"],
+    }
 
 
 def read_system_info(port: str, timeout: float = 1.0) -> Optional[Dict[str, Any]]:
@@ -103,8 +122,11 @@ def _parse_system_info(raw: bytes) -> Optional[Dict[str, Any]]:
             continue
         # A line that is JSON but not an object, or an info that is not one, is not a reply:
         # skip it rather than raise and lose the real reply on the next line (2026-10-22).
-        if (isinstance(msg, dict) and msg.get("status") == "ok"
-                and isinstance(msg.get("system_info"), dict)):
+        if (
+            isinstance(msg, dict)
+            and msg.get("status") == "ok"
+            and isinstance(msg.get("system_info"), dict)
+        ):
             return msg["system_info"]
     return None
 
@@ -167,8 +189,11 @@ def _usb_info(dev: str) -> Dict[str, str]:
 def _interface_number(dev: str) -> Optional[int]:
     """The USB interface a tty node sits on (0 for -if00), or None if unknown."""
     try:
-        with open(os.path.join(_SYSFS_TTY, os.path.basename(dev), "device",
-                               "bInterfaceNumber")) as fh:
+        with open(
+            os.path.join(
+                _SYSFS_TTY, os.path.basename(dev), "device", "bInterfaceNumber"
+            )
+        ) as fh:
             return int(fh.read().strip(), 16)
     except (OSError, ValueError):
         return None
@@ -199,8 +224,9 @@ def discover(verbose: bool = False) -> List[Dict[str, Any]]:
     candidates = [c for c in candidates if os.path.realpath(c) not in excluded]
     lidar_serials = _lidar_serials()
     if lidar_serials:
-        candidates = [c for c in candidates
-                      if _usb_info(c).get("serial") not in lidar_serials]
+        candidates = [
+            c for c in candidates if _usb_info(c).get("serial") not in lidar_serials
+        ]
     if not candidates:
         return []
 
@@ -218,7 +244,9 @@ def discover(verbose: bool = False) -> List[Dict[str, Any]]:
         entry = {"device": dev, **_usb_info(dev), "rss": info.get("rss_version")}
         found.append(entry)
         if verbose:
-            print(f"  {dev}: A121 serial={entry['serial']} hub_port={entry['hub_port']}")
+            print(
+                f"  {dev}: A121 serial={entry['serial']} hub_port={entry['hub_port']}"
+            )
     return found
 
 
@@ -232,8 +260,10 @@ def _dedupe_serials(found: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for serial, group in groups.items():
         if not is_board_serial(serial):
             for e in group:
-                e["refused"] = (f"board reports no usable USB serial ({serial!r}) — it "
-                                f"cannot be told apart from another board, so it is not used")
+                e["refused"] = (
+                    f"board reports no usable USB serial ({serial!r}) — it "
+                    f"cannot be told apart from another board, so it is not used"
+                )
                 print(f"[RADAR] {e.get('device')}: {e['refused']}")
             out.extend(group)
             continue
@@ -242,20 +272,26 @@ def _dedupe_serials(found: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             continue
         paths = {e.get("usb_path") for e in group}
         if len(paths) == 1 and not paths & {None, "", "?"}:
+
             def order(e):
                 iface = _interface_number(e.get("device") or "")
                 name = os.path.basename(e.get("device") or "")
                 return (iface is None, iface or 0, len(name), name)
+
             keep = min(group, key=order)
             dropped = [e.get("device") for e in group if e is not keep]
-            print(f"[RADAR] {serial}: answered on {len(group)} interfaces of one USB "
-                  f"device ({next(iter(paths))}) — using {keep.get('device')}, "
-                  f"ignoring {', '.join(map(str, dropped))}")
+            print(
+                f"[RADAR] {serial}: answered on {len(group)} interfaces of one USB "
+                f"device ({next(iter(paths))}) — using {keep.get('device')}, "
+                f"ignoring {', '.join(map(str, dropped))}"
+            )
             out.append(keep)
             continue
-        reason = (f"serial {serial} answered on {len(group)} different USB devices "
-                  f"({', '.join(sorted(str(p) for p in paths))}) — they cannot be told "
-                  f"apart, so neither is used")
+        reason = (
+            f"serial {serial} answered on {len(group)} different USB devices "
+            f"({', '.join(sorted(str(p) for p in paths))}) — they cannot be told "
+            f"apart, so neither is used"
+        )
         for e in group:
             e["refused"] = reason
         print(f"[RADAR] WARNING: {reason}")
@@ -263,8 +299,9 @@ def _dedupe_serials(found: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
-def assign_boards(found: List[Dict[str, Any]],
-                  allow_provisional: bool = False) -> List[Dict[str, Any]]:
+def assign_boards(
+    found: List[Dict[str, Any]], allow_provisional: bool = False
+) -> List[Dict[str, Any]]:
     """Attach a measured bearing, and its state key, to each discovered board."""
     found = _dedupe_serials(found)
     bearings = get_bearings()
@@ -283,7 +320,7 @@ def assign_boards(found: List[Dict[str, Any]],
         else:
             entry["position"] = None
             entry["provisional"] = False
-        entry["assumed"] = False            # retained for /radar/boards' shape
+        entry["assumed"] = False  # retained for /radar/boards' shape
 
     # Bearing order, so logs read round the compass rather than by USB socket.
     found.sort(key=lambda e: (e["bearing"] is None, e["bearing"] or 0.0))
@@ -306,8 +343,11 @@ def _derive_cardinal(sources, secs: Dict[str, Any]) -> Dict[str, Any]:
     """One cardinal's row from its source boards' rows (see _publish)."""
     rows = [secs.get(k) or {} for k in sources]
     live = [r for r in rows if r.get("online")]
-    dists = [r["min_dist"] for r in live
-             if isinstance(r.get("min_dist"), (int, float)) and r["min_dist"]]
+    dists = [
+        r["min_dist"]
+        for r in live
+        if isinstance(r.get("min_dist"), (int, float)) and r["min_dist"]
+    ]
     return {
         "min_dist": round(min(dists), 1) if dists else None,
         "peaks_mm": sorted(d for r in live for d in (r.get("peaks_mm") or [])),
@@ -317,7 +357,9 @@ def _derive_cardinal(sources, secs: Dict[str, Any]) -> Dict[str, Any]:
         "sources": list(sources),
         "sources_live": [k for k, r in zip(sources, rows) if r.get("online")],
         "error": None if live else "no source board online",
-        "last_update": min((r.get("last_update") or 0.0) for r in live) if live else None,
+        "last_update": min((r.get("last_update") or 0.0) for r in live)
+        if live
+        else None,
     }
 
 
@@ -329,8 +371,9 @@ def _recompute_cardinals() -> None:
             update_radar_sector(cardinal, _derive_cardinal(sources, secs))
 
 
-def _publish_for(entry: Dict[str, Any], stop: Optional[threading.Event],
-                 payload: Dict[str, Any]) -> bool:
+def _publish_for(
+    entry: Dict[str, Any], stop: Optional[threading.Event], payload: Dict[str, Any]
+) -> bool:
     """Publish for one board thread, under the key its entry holds NOW."""
     with _key_lock:
         if stop is not None and stop.is_set():
@@ -344,8 +387,16 @@ def _publish_for(entry: Dict[str, Any], stop: Optional[threading.Event],
 
 def _tombstone(phase: str, error: str) -> Dict[str, Any]:
     """An offline row: what a key reads once no board is streaming it."""
-    return {"min_dist": None, "peaks_mm": [], "online": False, "degraded": False,
-            "lag_s": None, "measured_hz": None, "phase": phase, "error": error}
+    return {
+        "min_dist": None,
+        "peaks_mm": [],
+        "online": False,
+        "degraded": False,
+        "lag_s": None,
+        "measured_hz": None,
+        "phase": phase,
+        "error": error,
+    }
 
 
 def _preload_exptool() -> None:
@@ -359,7 +410,10 @@ def _preload_exptool() -> None:
 def _detector_config():
     from acconeer.exptool import a121
     from acconeer.exptool.a121.algo.distance import (
-        DetectorConfig, PeakSortingMethod, ReflectorShape, ThresholdMethod,
+        DetectorConfig,
+        PeakSortingMethod,
+        ReflectorShape,
+        ThresholdMethod,
     )
 
     return DetectorConfig(
@@ -367,7 +421,7 @@ def _detector_config():
         end_m=RADAR_END_MM / 1000.0,
         max_profile=getattr(a121.Profile, f"PROFILE_{RADAR_PROFILE}"),
         threshold_method=ThresholdMethod.CFAR,
-        peaksorting_method=PeakSortingMethod.CLOSEST,   # see note below
+        peaksorting_method=PeakSortingMethod.CLOSEST,  # see note below
         reflector_shape=getattr(ReflectorShape, RADAR_REFLECTOR_SHAPE),
         signal_quality=RADAR_SIGNAL_QUALITY,
         threshold_sensitivity=RADAR_THRESHOLD_SENSITIVITY,
@@ -387,7 +441,7 @@ def _reset_link(device: str) -> None:
         with ser:
             _quiesce(ser)
     except Exception:
-        pass                    # best effort; the open below reports real faults
+        pass  # best effort; the open below reports real faults
 
 
 class BoardIdentityError(RuntimeError):
@@ -401,7 +455,8 @@ def _node_for(entry: Dict[str, Any], stop: Optional[threading.Event] = None) -> 
     if not is_board_serial(serial):
         raise BoardIdentityError(
             f"board has no usable USB serial ({serial!r}), so no node can be proven "
-            f"to be it — nothing opened")
+            f"to be it — nothing opened"
+        )
     owner = _usb_info(node)["serial"] if node else "?"
     if owner == serial and _interface_number(node) in (0, None):
         return node
@@ -409,23 +464,34 @@ def _node_for(entry: Dict[str, Any], stop: Optional[threading.Event] = None) -> 
     if owner == serial:
         lost = f"{node} is this board's second interface, not its server"
     elif owner != "?":
-        lost = f"device node now belongs to another board ({node} reports serial {owner})"
+        lost = (
+            f"device node now belongs to another board ({node} reports serial {owner})"
+        )
     elif node and os.path.exists(os.path.join(_SYSFS_TTY, os.path.basename(node))):
-        lost = f"device node now belongs to another board ({node} reports no USB serial)"
+        lost = (
+            f"device node now belongs to another board ({node} reports no USB serial)"
+        )
     else:
         lost = f"its device node {node or '?'} is gone"
-    links = sorted(glob.glob(os.path.join(_BY_ID_DIR, f"*_{glob.escape(serial)}-if00*")))
+    links = sorted(
+        glob.glob(os.path.join(_BY_ID_DIR, f"*_{glob.escape(serial)}-if00*"))
+    )
     if len(links) != 1:
-        why = ("no /dev/serial/by-id link names it" if not links else
-               f"{len(links)} /dev/serial/by-id links name it, so which is it cannot be told")
+        why = (
+            "no /dev/serial/by-id link names it"
+            if not links
+            else f"{len(links)} /dev/serial/by-id links name it, so which is it cannot be told"
+        )
         raise BoardIdentityError(
-            f"{lost}; board not found by serial {serial} ({why}) — nothing opened")
+            f"{lost}; board not found by serial {serial} ({why}) — nothing opened"
+        )
     resolved = os.path.realpath(links[0])
     got = _usb_info(resolved)["serial"]
     if got != serial:
         raise BoardIdentityError(
             f"{lost}; board not found by serial {serial} (its by-id link leads to "
-            f"{resolved}, which reports serial {got}) — nothing opened")
+            f"{resolved}, which reports serial {got}) — nothing opened"
+        )
 
     with _key_lock:
         current = stop is None or not stop.is_set()
@@ -433,46 +499,63 @@ def _node_for(entry: Dict[str, Any], stop: Optional[threading.Event] = None) -> 
             entry["device"] = resolved
             _record_node(serial, resolved)
     if current:
-        print(f"[RADAR] {entry.get('position')}: board {serial} re-enumerated — now on "
-              f"{resolved} (was {node or '?'}); followed by serial")
+        print(
+            f"[RADAR] {entry.get('position')}: board {serial} re-enumerated — now on "
+            f"{resolved} (was {node or '?'}); followed by serial"
+        )
     return resolved
 
 
 def _record_node(serial: str, node: str) -> None:
     """Point the board lists the pages read at a board's new node, so the diagnostics name the node actually being streamed."""
     snap = get_radar_state()
-    set_radar_boards([dict(b, device=node) if b.get("serial") == serial else b
-                      for b in snap.get("boards") or []])
-    _discovery["found"] = [dict(e, device=node) if e.get("serial") == serial else e
-                           for e in _discovery.get("found") or []]
+    set_radar_boards(
+        [
+            dict(b, device=node) if b.get("serial") == serial else b
+            for b in snap.get("boards") or []
+        ]
+    )
+    _discovery["found"] = [
+        dict(e, device=node) if e.get("serial") == serial else e
+        for e in _discovery.get("found") or []
+    ]
 
 
 def _run_board(entry: Dict[str, Any], stop: threading.Event) -> None:
     """Supervise one board, reconnecting for as long as the app runs."""
     attempt = 0
-    failures = 0            # in a row, without a session that streamed — the backoff
+    failures = 0  # in a row, without a session that streamed — the backoff
     while not stop.is_set():
-        entry["streamed"] = False           # set by _stream_board on its first frame
+        entry["streamed"] = False  # set by _stream_board on its first frame
         try:
             _stream_board(entry, stop)
-            return                          # clean stop
+            return  # clean stop
         except Exception as exc:
             if stop.is_set():
                 return
             attempt += 1
             failures = 1 if entry.get("streamed") else failures + 1
             entry["reconnects"] = attempt
-            _publish_for(entry, stop, {
-                "min_dist": None, "peaks_mm": [], "online": False,
-                "phase": "reconnecting", "measured_hz": None,
-                "reconnects": attempt,
-                "error": f"{type(exc).__name__}: {exc}",
-            })
+            _publish_for(
+                entry,
+                stop,
+                {
+                    "min_dist": None,
+                    "peaks_mm": [],
+                    "online": False,
+                    "phase": "reconnecting",
+                    "measured_hz": None,
+                    "reconnects": attempt,
+                    "error": f"{type(exc).__name__}: {exc}",
+                },
+            )
             backoff = min(2.0 * failures, 15.0)
             detail = str(exc) if isinstance(exc, BoardIdentityError) else str(exc)[:60]
-            print(f"[RADAR] {entry.get('position')}: lost the link ({type(exc).__name__}: "
-                  f"{detail}) — reconnecting in {backoff:.0f}s "
-                  f"(attempt {attempt})")
+            print(
+                f"[RADAR] {entry.get('position')}: lost the link ({type(exc).__name__}: "
+                f"{detail}) — reconnecting in {backoff:.0f}s "
+                f"(attempt {attempt})"
+            )
             if stop.wait(backoff):
                 return
 
@@ -483,15 +566,16 @@ class _StallGuard:
     def __init__(self, entry: Dict[str, Any], client: Any, limit_s: float):
         self._entry, self._client = entry, client
         self._done = threading.Event()
-        self.fired = ""                 # why the session was ended, once it was
+        self.fired = ""  # why the session was ended, once it was
         self.progress(limit_s)
-        threading.Thread(target=self._watch, daemon=True,
-                         name=f"radar-{entry.get('position')}-guard").start()
+        threading.Thread(
+            target=self._watch, daemon=True, name=f"radar-{entry.get('position')}-guard"
+        ).start()
 
     def progress(self, limit_s: Optional[float] = None) -> None:
         """The session moved on; the next step may take `limit_s` (default: as the last)."""
         limit = self._window[0] if limit_s is None else limit_s
-        self._window = (limit, time.monotonic() + limit)    # one assignment: read whole
+        self._window = (limit, time.monotonic() + limit)  # one assignment: read whole
 
     def close(self) -> None:
         self._done.set()
@@ -510,8 +594,10 @@ class _StallGuard:
                 continue
             if not self.fired:
                 self.fired = f"no progress for {limit:.0f} s"
-                print(f"[RADAR] {self._entry.get('position')}: {self.fired} — "
-                      f"ending the session")
+                print(
+                    f"[RADAR] {self._entry.get('position')}: {self.fired} — "
+                    f"ending the session"
+                )
 
 
 def _stream_board(entry: Dict[str, Any], stop: threading.Event) -> None:
@@ -523,7 +609,7 @@ def _stream_board(entry: Dict[str, Any], stop: threading.Event) -> None:
     recent = deque(maxlen=60)
     try:
         device = _node_for(entry, stop)
-        if stop.is_set():       # retired meanwhile: the port may be the next generation's
+        if stop.is_set():  # retired meanwhile: the port may be the next generation's
             return
         _reset_link(device)
         info = read_system_info(device)
@@ -537,10 +623,20 @@ def _stream_board(entry: Dict[str, Any], stop: threading.Event) -> None:
 
         client = a121.Client.open(serial_port=device, override_baudrate=baud)
         guard = _StallGuard(entry, client, RADAR_CALIBRATE_STALL_S)
-        detector = Detector(client=client, sensor_ids=[1], detector_config=_detector_config())
+        detector = Detector(
+            client=client, sensor_ids=[1], detector_config=_detector_config()
+        )
 
-        _publish_for(entry, stop, {"phase": "calibrating", "online": False, "error": None,
-                                   "reconnects": entry.get("reconnects", 0)})
+        _publish_for(
+            entry,
+            stop,
+            {
+                "phase": "calibrating",
+                "online": False,
+                "error": None,
+                "reconnects": entry.get("reconnects", 0),
+            },
+        )
         detector.calibrate_detector()
         if stop.is_set():
             return
@@ -579,27 +675,38 @@ def _stream_board(entry: Dict[str, Any], stop: threading.Event) -> None:
                 if drained:
                     if lag > RADAR_MAX_LAG_S and time.monotonic() - last_lag_log > 10.0:
                         last_lag_log = time.monotonic()
-                        print(f"[RADAR] {entry.get('position')}: was {lag:.2f}s behind, "
-                              f"queue now empty — baseline reset, readings are current")
+                        print(
+                            f"[RADAR] {entry.get('position')}: was {lag:.2f}s behind, "
+                            f"queue now empty — baseline reset, readings are current"
+                        )
                     started, frames, lag = time.monotonic(), 0, 0.0
                 elif time.monotonic() - last_lag_log > 10.0:
                     last_lag_log = time.monotonic()
-                    print(f"[RADAR] {entry.get('position')}: running {lag:.2f}s behind — "
-                          f"host cannot keep up at {RADAR_UPDATE_RATE:g} Hz")
+                    print(
+                        f"[RADAR] {entry.get('position')}: running {lag:.2f}s behind — "
+                        f"host cannot keep up at {RADAR_UPDATE_RATE:g} Hz"
+                    )
 
             # Temperature drift eventually invalidates the recorded threshold.
             if result.calibration_needed:
                 guard.progress(RADAR_CALIBRATE_STALL_S)
                 detector.stop()
-                _publish_for(entry, stop, {"phase": "recalibrating", "online": False,
-                                           "reconnects": entry.get("reconnects", 0)})
+                _publish_for(
+                    entry,
+                    stop,
+                    {
+                        "phase": "recalibrating",
+                        "online": False,
+                        "reconnects": entry.get("reconnects", 0),
+                    },
+                )
                 detector.calibrate_detector()
-                if stop.is_set():                    # retired meanwhile: see above
+                if stop.is_set():  # retired meanwhile: see above
                     return
                 detector.start()
                 guard.progress(RADAR_STALL_S)
-                started, frames = time.monotonic(), 0    # restart the lag baseline
-                recent.clear()                           # and the rate window
+                started, frames = time.monotonic(), 0  # restart the lag baseline
+                recent.clear()  # and the rate window
                 continue
 
             distances = [float(d) * 1000.0 for d in result.distances]
@@ -610,29 +717,43 @@ def _stream_board(entry: Dict[str, Any], stop: threading.Event) -> None:
                 span = recent[-1] - recent[0]
                 hz = round((len(recent) - 1) / span, 2) if span > 0 else None
 
-            _publish_for(entry, stop, {
-                "min_dist": round(min(distances), 1) if distances else None,
-                "strength_db": round(strengths[distances.index(min(distances))], 2)
-                               if distances else None,
-                "peaks_mm": [round(d, 1) for d in distances],
-                "temperature": int(result.temperature),
-                "near_edge": bool(result.near_edge_status),
-                "lag_s": round(max(lag, 0.0), 3),
-                "degraded": (lag > RADAR_MAX_LAG_S
-                             or (hz is not None
-                                 and hz < RADAR_UPDATE_RATE * RADAR_MIN_RATE_FRACTION)),
-                "degraded_reason": ("backlog" if lag > RADAR_MAX_LAG_S else
-                                    "slow" if (hz is not None
-                                               and hz < RADAR_UPDATE_RATE
-                                               * RADAR_MIN_RATE_FRACTION)
-                                    else None),
-                "measured_hz": hz,
-                "frames": frames,
-                "reconnects": entry.get("reconnects", 0),
-                "phase": "streaming",
-                "online": True,
-                "error": None,
-            })
+            _publish_for(
+                entry,
+                stop,
+                {
+                    "min_dist": round(min(distances), 1) if distances else None,
+                    "strength_db": round(strengths[distances.index(min(distances))], 2)
+                    if distances
+                    else None,
+                    "peaks_mm": [round(d, 1) for d in distances],
+                    "temperature": int(result.temperature),
+                    "near_edge": bool(result.near_edge_status),
+                    "lag_s": round(max(lag, 0.0), 3),
+                    "degraded": (
+                        lag > RADAR_MAX_LAG_S
+                        or (
+                            hz is not None
+                            and hz < RADAR_UPDATE_RATE * RADAR_MIN_RATE_FRACTION
+                        )
+                    ),
+                    "degraded_reason": (
+                        "backlog"
+                        if lag > RADAR_MAX_LAG_S
+                        else "slow"
+                        if (
+                            hz is not None
+                            and hz < RADAR_UPDATE_RATE * RADAR_MIN_RATE_FRACTION
+                        )
+                        else None
+                    ),
+                    "measured_hz": hz,
+                    "frames": frames,
+                    "reconnects": entry.get("reconnects", 0),
+                    "phase": "streaming",
+                    "online": True,
+                    "error": None,
+                },
+            )
     except Exception as exc:
         if guard is not None and guard.fired:
             raise RuntimeError(f"{guard.fired} — session ended, reconnecting") from exc
@@ -646,51 +767,77 @@ def _stream_board(entry: Dict[str, Any], stop: threading.Event) -> None:
             except Exception:
                 pass
         if guard is not None:
-            guard.close()           # after the closers, so they are bounded too
+            guard.close()  # after the closers, so they are bounded too
 
 
 def _log_inventory(found: List[Dict[str, Any]]) -> List[Dict[str, str]]:
     """Print exactly which radars answered and which did not."""
-    expected = get_bearings()                   # serial -> bearing (or None)
+    expected = get_bearings()  # serial -> bearing (or None)
     seen = {e["serial"] for e in found}
 
-    print(f"[RADAR] {len(found)}/{len(expected)} boards answered "
-          f"(LiDAR port {', '.join(RADAR_PORT_EXCLUDE)} excluded from the scan)")
+    print(
+        f"[RADAR] {len(found)}/{len(expected)} boards answered "
+        f"(LiDAR port {', '.join(RADAR_PORT_EXCLUDE)} excluded from the scan)"
+    )
     for e in found:
-        bearing = ("UNMEASURED" if e["bearing"] is None
-                   else f"{e['bearing']:>5.1f} deg")
-        print(f"[RADAR]   {str(e['position'] or '------'):<7} {bearing:<11} "
-              f"{e['device']:<14} serial {e['serial']}  hub port {e['hub_port']}")
+        bearing = "UNMEASURED" if e["bearing"] is None else f"{e['bearing']:>5.1f} deg"
+        print(
+            f"[RADAR]   {str(e['position'] or '------'):<7} {bearing:<11} "
+            f"{e['device']:<14} serial {e['serial']}  hub port {e['hub_port']}"
+        )
 
-    missing = [{"serial": s, "bearing": b,
-                "position": radar_board_key(b) if b is not None else None}
-               for s, b in expected.items() if s not in seen]
+    missing = [
+        {
+            "serial": s,
+            "bearing": b,
+            "position": radar_board_key(b) if b is not None else None,
+        }
+        for s, b in expected.items()
+        if s not in seen
+    ]
     for m in missing:
-        where = ("bearing unmeasured" if m["bearing"] is None
-                 else f"bearing {m['bearing']:.1f} deg")
-        print(f"[RADAR]   MISSING — configured board {m['serial']} ({where}) "
-              f"did not answer on any USB port")
+        where = (
+            "bearing unmeasured"
+            if m["bearing"] is None
+            else f"bearing {m['bearing']:.1f} deg"
+        )
+        print(
+            f"[RADAR]   MISSING — configured board {m['serial']} ({where}) "
+            f"did not answer on any USB port"
+        )
 
-    unexpected = [e for e in found if e["serial"] not in expected and not e.get("refused")]
+    unexpected = [
+        e for e in found if e["serial"] not in expected and not e.get("refused")
+    ]
     for e in unexpected:
-        print(f"[RADAR]   note: board {e['serial']} is on no roster — calibrate it "
-              f"from /radar/test or it stays unused")
+        print(
+            f"[RADAR]   note: board {e['serial']} is on no roster — calibrate it "
+            f"from /radar/test or it stays unused"
+        )
 
     if missing:
-        print(f"[RADAR] WARNING: {len(missing)} configured board(s) absent — "
-              f"check the USB cable and hub socket for those serials")
+        print(
+            f"[RADAR] WARNING: {len(missing)} configured board(s) absent — "
+            f"check the USB cable and hub socket for those serials"
+        )
 
     unmeasured = [e for e in found if e["bearing"] is None and not e.get("refused")]
     if unmeasured:
-        print(f"[RADAR] WARNING: {len(unmeasured)} board(s) have NO MEASURED BEARING "
-              f"and will not be used: {', '.join(e['serial'] for e in unmeasured)}")
-        print(f"[RADAR]   fix: open /radar/test and use the CALIBRATE panel — put a "
-              f"hand in front of one board at a time and set its bearing")
+        print(
+            f"[RADAR] WARNING: {len(unmeasured)} board(s) have NO MEASURED BEARING "
+            f"and will not be used: {', '.join(e['serial'] for e in unmeasured)}"
+        )
+        print(
+            f"[RADAR]   fix: open /radar/test and use the CALIBRATE panel — put a "
+            f"hand in front of one board at a time and set its bearing"
+        )
 
     starved = [c for c, srcs in cardinal_sources().items() if not srcs]
     if starved:
-        print(f"[RADAR] WARNING: no board covers {', '.join(sorted(starved))} — "
-              f"GLASS WILL NOT BE DETECTED there")
+        print(
+            f"[RADAR] WARNING: no board covers {', '.join(sorted(starved))} — "
+            f"GLASS WILL NOT BE DETECTED there"
+        )
     return missing
 
 
@@ -700,14 +847,16 @@ def _new_generation() -> threading.Event:
     with _key_lock:
         _stop.set()
         _live.update(entries=[], complete=False, stop=None)
-    deadline = time.monotonic() + RADAR_RESTART_WAIT_S      # an interval: monotonic
+    deadline = time.monotonic() + RADAR_RESTART_WAIT_S  # an interval: monotonic
     for t in list(_threads):
         t.join(timeout=max(0.0, deadline - time.monotonic()))
     stuck = [t.name for t in _threads if t.is_alive()]
     if stuck:
-        print(f"[RADAR] WARNING: {', '.join(stuck)} still inside a blocking call "
-              f"after {RADAR_RESTART_WAIT_S:.0f}s — restarting anyway; they are "
-              f"stopped and will exit when it returns")
+        print(
+            f"[RADAR] WARNING: {', '.join(stuck)} still inside a blocking call "
+            f"after {RADAR_RESTART_WAIT_S:.0f}s — restarting anyway; they are "
+            f"stopped and will exit when it returns"
+        )
     _threads.clear()
     fresh = threading.Event()
     with _key_lock:
@@ -730,20 +879,30 @@ def _startup(allow_provisional: bool = False) -> Dict[str, Any]:
         print("[RADAR] discovering boards ...")
         found = assign_boards(discover(), allow_provisional=allow_provisional)
     except Exception as exc:
-        _discovery.update({"ran": True, "found": [], "error": f"{type(exc).__name__}: {exc}"})
+        _discovery.update(
+            {"ran": True, "found": [], "error": f"{type(exc).__name__}: {exc}"}
+        )
         print(f"[RADAR] discovery failed: {type(exc).__name__}: {exc}")
         return {"enabled": True, "boards": [], "error": str(exc)}
 
     _discovery.update({"ran": True, "found": [dict(e) for e in found], "error": None})
 
     if not found:
-        print("[RADAR] no A121 boards answered — running LiDAR-ONLY. "
-              "Glass will NOT be detected in any direction.")
-        set_radar_boards([], [
-            {"serial": s, "bearing": b,
-             "position": radar_board_key(b) if b is not None else None}
-            for s, b in get_bearings().items()
-        ])
+        print(
+            "[RADAR] no A121 boards answered — running LiDAR-ONLY. "
+            "Glass will NOT be detected in any direction."
+        )
+        set_radar_boards(
+            [],
+            [
+                {
+                    "serial": s,
+                    "bearing": b,
+                    "position": radar_board_key(b) if b is not None else None,
+                }
+                for s, b in get_bearings().items()
+            ],
+        )
         return {"enabled": True, "boards": []}
 
     missing = _log_inventory(found)
@@ -752,30 +911,60 @@ def _startup(allow_provisional: bool = False) -> Dict[str, Any]:
     for entry in found:
         if entry["position"] is None:
             if entry.get("refused"):
-                print(f"[RADAR] {entry['serial']} on {entry['device']}: REFUSING to use "
-                      f"this board — {entry['refused']}")
+                print(
+                    f"[RADAR] {entry['serial']} on {entry['device']}: REFUSING to use "
+                    f"this board — {entry['refused']}"
+                )
             else:
-                print(f"[RADAR] {entry['serial']}: bearing not measured — REFUSING to use "
-                      f"this board (a guessed direction is worse than none)")
+                print(
+                    f"[RADAR] {entry['serial']}: bearing not measured — REFUSING to use "
+                    f"this board (a guessed direction is worse than none)"
+                )
             continue
         if entry.get("provisional"):
-            print(f"[RADAR] {entry['serial']}: bearing not measured — streaming for "
-                  f"CALIBRATION ONLY (feeds no direction; open /radar/test to set it)")
-        boards.append({k: entry.get(k) for k in
-                       ("device", "serial", "hub_port", "usb_path", "rss",
-                        "position", "bearing", "provisional", "assumed")})
-        _publish(entry["position"], {
-            "phase": "starting", "online": False, "min_dist": None,
-            "peaks_mm": [], "reconnects": 0, "error": None,
-        })
-        t = threading.Thread(target=_run_board, args=(entry, stop),
-                             name=f"radar-{entry['position']}", daemon=True)
+            print(
+                f"[RADAR] {entry['serial']}: bearing not measured — streaming for "
+                f"CALIBRATION ONLY (feeds no direction; open /radar/test to set it)"
+            )
+        boards.append(
+            {
+                k: entry.get(k)
+                for k in (
+                    "device",
+                    "serial",
+                    "hub_port",
+                    "usb_path",
+                    "rss",
+                    "position",
+                    "bearing",
+                    "provisional",
+                    "assumed",
+                )
+            }
+        )
+        _publish(
+            entry["position"],
+            {
+                "phase": "starting",
+                "online": False,
+                "min_dist": None,
+                "peaks_mm": [],
+                "reconnects": 0,
+                "error": None,
+            },
+        )
+        t = threading.Thread(
+            target=_run_board,
+            args=(entry, stop),
+            name=f"radar-{entry['position']}",
+            daemon=True,
+        )
         with _key_lock:
             if _live["stop"] is stop:
                 _live["entries"].append((entry, t))
         t.start()
         _threads.append(t)
-        time.sleep(0.4)     # stagger so failures stay attributable to a board
+        time.sleep(0.4)  # stagger so failures stay attributable to a board
 
     set_radar_boards(boards, missing)
 
@@ -784,13 +973,15 @@ def _startup(allow_provisional: bool = False) -> Dict[str, Any]:
             _live["complete"] = True
 
     if not boards:
-        print("[RADAR] no usable board — running LiDAR-ONLY. Glass will NOT be "
-              "detected in any direction.")
+        print(
+            "[RADAR] no usable board — running LiDAR-ONLY. Glass will NOT be "
+            "detected in any direction."
+        )
         set_radar_boards([], missing)
         return {"enabled": True, "boards": [], "missing": missing}
 
     expected = _live_positions(stop) or {b["position"] for b in boards}
-    deadline = time.monotonic() + RADAR_READY_TIMEOUT_S     # an interval: monotonic
+    deadline = time.monotonic() + RADAR_READY_TIMEOUT_S  # an interval: monotonic
     while time.monotonic() < deadline and not stop.is_set():
         expected = _live_positions(stop) or expected
         live = {p for p, s in get_radar_state()["sectors"].items() if s.get("online")}
@@ -805,35 +996,50 @@ def _startup(allow_provisional: bool = False) -> Dict[str, Any]:
     live_cards = sorted(c for c in RADAR_SECTORS if (secs.get(c) or {}).get("online"))
     dead_cards = sorted(set(RADAR_SECTORS) - set(live_cards))
 
-    print(f"[RADAR] READY {len(live_boards)}/{len(expected)} boards live: "
-          f"{', '.join(live_boards) or 'none'}"
-          + (f"; NO DATA from: {', '.join(dead_boards)}" if dead_boards else ""))
+    print(
+        f"[RADAR] READY {len(live_boards)}/{len(expected)} boards live: "
+        f"{', '.join(live_boards) or 'none'}"
+        + (f"; NO DATA from: {', '.join(dead_boards)}" if dead_boards else "")
+    )
 
     if not live_cards:
-        print(f"[RADAR] *** NO GLASS DETECTION IN ANY DIRECTION *** "
-              f"0/{len(RADAR_SECTORS)} cardinals have a live board")
+        print(
+            f"[RADAR] *** NO GLASS DETECTION IN ANY DIRECTION *** "
+            f"0/{len(RADAR_SECTORS)} cardinals have a live board"
+        )
         if live_boards:
-            print(f"[RADAR]     {len(live_boards)} board(s) ARE streaming — this is a "
-                  f"CALIBRATION gap, not a hardware fault. Boards with no measured "
-                  f"bearing feed no direction.")
-            print(f"[RADAR]     fix: open /radar/test and set each board's bearing "
-                  f"(hold a hand in front of one board at a time)")
+            print(
+                f"[RADAR]     {len(live_boards)} board(s) ARE streaming — this is a "
+                f"CALIBRATION gap, not a hardware fault. Boards with no measured "
+                f"bearing feed no direction."
+            )
+            print(
+                f"[RADAR]     fix: open /radar/test and set each board's bearing "
+                f"(hold a hand in front of one board at a time)"
+            )
     elif dead_cards:
-        print(f"[RADAR] READY {len(live_cards)}/{len(RADAR_SECTORS)} cardinals: "
-              f"{', '.join(live_cards)} — NO GLASS DETECTION for "
-              f"{', '.join(dead_cards)}")
+        print(
+            f"[RADAR] READY {len(live_cards)}/{len(RADAR_SECTORS)} cardinals: "
+            f"{', '.join(live_cards)} — NO GLASS DETECTION for "
+            f"{', '.join(dead_cards)}"
+        )
     else:
-        print(f"[RADAR] READY all {len(RADAR_SECTORS)} cardinals live: "
-              f"{', '.join(live_cards)}")
+        print(
+            f"[RADAR] READY all {len(RADAR_SECTORS)} cardinals live: "
+            f"{', '.join(live_cards)}"
+        )
     return {"enabled": True, "boards": boards, "missing": missing}
 
 
-def start_radar(background: bool = True,
-                allow_provisional: bool = True) -> Dict[str, Any]:
+def start_radar(
+    background: bool = True, allow_provisional: bool = True
+) -> Dict[str, Any]:
     """Discover the boards and start one acquisition thread each."""
     if not RADAR_ENABLED:
-        print("[RADAR] disabled in config (RADAR_ENABLED=False) — LiDAR-only, "
-              "glass will not be detected")
+        print(
+            "[RADAR] disabled in config (RADAR_ENABLED=False) — LiDAR-only, "
+            "glass will not be detected"
+        )
         return {"enabled": False, "boards": []}
 
     if not background:
@@ -848,8 +1054,9 @@ _cycle_running = False
 _cycle_again = False
 
 
-def _request_cycle(restart: bool, allow_provisional: bool,
-                   reason: Optional[str] = None) -> None:
+def _request_cycle(
+    restart: bool, allow_provisional: bool, reason: Optional[str] = None
+) -> None:
     global _cycle_running, _cycle_again
     with _cycle_lock:
         if not _cycle_running or _restart_state["since"] is None:
@@ -860,9 +1067,12 @@ def _request_cycle(restart: bool, allow_provisional: bool,
             _stop.set()
             return
         _cycle_running = True
-    threading.Thread(target=_run_cycles, args=(restart, allow_provisional),
-                     name="radar-restart" if restart else "radar-startup",
-                     daemon=True).start()
+    threading.Thread(
+        target=_run_cycles,
+        args=(restart, allow_provisional),
+        name="radar-restart" if restart else "radar-startup",
+        daemon=True,
+    ).start()
 
 
 def _run_cycles(restart: bool, allow_provisional: bool) -> None:
@@ -873,8 +1083,10 @@ def _run_cycles(restart: bool, allow_provisional: bool) -> None:
                 stop_radar()
             _startup(allow_provisional=allow_provisional)
         except Exception as exc:
-            print(f"[RADAR] {'restart' if restart else 'startup'} failed: "
-                  f"{type(exc).__name__}: {exc}")
+            print(
+                f"[RADAR] {'restart' if restart else 'startup'} failed: "
+                f"{type(exc).__name__}: {exc}"
+            )
         with _cycle_lock:
             if not _cycle_again:
                 _cycle_running = False
@@ -882,10 +1094,14 @@ def _run_cycles(restart: bool, allow_provisional: bool) -> None:
                 with _key_lock:
                     stop = _live["stop"]
                 if stop is not None and not stop.is_set() and RADAR_LATE_JOIN_S > 0:
-                    t = threading.Thread(target=_late_join_loop, args=(stop,),
-                                         name="radar-late-join", daemon=True)
+                    t = threading.Thread(
+                        target=_late_join_loop,
+                        args=(stop,),
+                        name="radar-late-join",
+                        daemon=True,
+                    )
                     t.start()
-                    _threads.append(t)      # joined like a board's on restart or stop
+                    _threads.append(t)  # joined like a board's on restart or stop
                 return
             _cycle_again = False
         restart = True
@@ -911,8 +1127,11 @@ def _late_join_once(stop: threading.Event) -> List[str]:
     if not wanted:
         return []
     busy = {os.path.realpath(e.get("device") or "") for e in entries}
-    candidates = [c for c in sorted(glob.glob("/dev/ttyACM*")) + sorted(glob.glob("/dev/ttyUSB*"))
-                  if os.path.realpath(c) not in busy and _usb_info(c).get("serial") in wanted]
+    candidates = [
+        c
+        for c in sorted(glob.glob("/dev/ttyACM*")) + sorted(glob.glob("/dev/ttyUSB*"))
+        if os.path.realpath(c) not in busy and _usb_info(c).get("serial") in wanted
+    ]
     if not candidates:
         return []
     found = []
@@ -921,25 +1140,40 @@ def _late_join_once(stop: threading.Event) -> List[str]:
             return []
         info = read_system_info(dev, timeout=1.0)
         if info is not None:
-            found.append({"device": dev, **_usb_info(dev), "rss": info.get("rss_version")})
+            found.append(
+                {"device": dev, **_usb_info(dev), "rss": info.get("rss_version")}
+            )
     started = []
     for entry in assign_boards(found, allow_provisional=False):
         if entry.get("position") is None or entry.get("serial") in have:
             continue
-        print(f"[RADAR] {entry['serial']} ({entry['position']}, bearing "
-              f"{entry['bearing']:.1f} deg) answered on {entry['device']} — it was missing; "
-              f"starting it")
-        t = threading.Thread(target=_run_board, args=(entry, stop),
-                             name=f"radar-{entry['position']}", daemon=True)
+        print(
+            f"[RADAR] {entry['serial']} ({entry['position']}, bearing "
+            f"{entry['bearing']:.1f} deg) answered on {entry['device']} — it was missing; "
+            f"starting it"
+        )
+        t = threading.Thread(
+            target=_run_board,
+            args=(entry, stop),
+            name=f"radar-{entry['position']}",
+            daemon=True,
+        )
         with _key_lock:
             if _live["stop"] is not stop or stop.is_set():
                 return started
-            _publish(entry["position"], {
-                "phase": "starting", "online": False, "min_dist": None,
-                "peaks_mm": [], "reconnects": 0, "error": None,
-            })
+            _publish(
+                entry["position"],
+                {
+                    "phase": "starting",
+                    "online": False,
+                    "min_dist": None,
+                    "peaks_mm": [],
+                    "reconnects": 0,
+                    "error": None,
+                },
+            )
             _live["entries"].append((entry, t))
-            _live["complete"] = True           # start-up has finished; every board is in
+            _live["complete"] = True  # start-up has finished; every board is in
             _discovery["found"] = list(_discovery.get("found") or []) + [dict(entry)]
         t.start()
         _threads.append(t)
@@ -949,20 +1183,38 @@ def _late_join_once(stop: threading.Event) -> List[str]:
         snap = get_radar_state()
         joined = {e["serial"] for e in found if e.get("position") in started}
         boards = list(snap.get("boards") or []) + [
-            {k: e.get(k) for k in ("device", "serial", "hub_port", "usb_path", "rss",
-                                   "position", "bearing", "provisional", "assumed")}
-            for e in found if e.get("position") in started]
-        set_radar_boards(boards, [m for m in snap.get("missing") or []
-                                  if m.get("serial") not in joined])
+            {
+                k: e.get(k)
+                for k in (
+                    "device",
+                    "serial",
+                    "hub_port",
+                    "usb_path",
+                    "rss",
+                    "position",
+                    "bearing",
+                    "provisional",
+                    "assumed",
+                )
+            }
+            for e in found
+            if e.get("position") in started
+        ]
+        set_radar_boards(
+            boards,
+            [m for m in snap.get("missing") or [] if m.get("serial") not in joined],
+        )
     return started
 
 
 def restart_status() -> Dict[str, Any]:
     """Whether a discovery pass is running now, since when, and why."""
     with _cycle_lock:
-        return {"in_progress": bool(_cycle_running),
-                "since": _restart_state["since"],
-                "reason": _restart_state["reason"]}
+        return {
+            "in_progress": bool(_cycle_running),
+            "since": _restart_state["since"],
+            "reason": _restart_state["reason"],
+        }
 
 
 def restart_radar(reason: str = "restart") -> None:
@@ -1000,7 +1252,10 @@ def _plan_rekey(table: Dict[str, Optional[float]], requested: set):
     discovered = {e.get("serial") for e in _discovery.get("found") or []}
     idle = sorted((requested & discovered) - running)
     if idle:
-        return None, f"board(s) {', '.join(idle)} answered discovery but are not running"
+        return (
+            None,
+            f"board(s) {', '.join(idle)} answered discovery but are not running",
+        )
 
     changes, final = [], {}
     for entry, thread in entries:
@@ -1016,8 +1271,10 @@ def _plan_rekey(table: Dict[str, Optional[float]], requested: set):
         if key == entry.get("position") and bearing == entry.get("bearing"):
             continue
         if serial not in requested:
-            return None, (f"running board {serial} disagrees with the saved table "
-                          f"although it was not in this request")
+            return None, (
+                f"running board {serial} disagrees with the saved table "
+                f"although it was not in this request"
+            )
         changes.append((entry, thread, key, bearing, provisional))
     shared = sorted(k for k, owners in final.items() if len(owners) > 1)
     if shared:
@@ -1028,20 +1285,39 @@ def _plan_rekey(table: Dict[str, Optional[float]], requested: set):
 def _apply_rekey(changes) -> List[Dict[str, Any]]:
     """Move running boards to their new keys."""
     moved = [(e, t, k, b, p) for e, t, k, b, p in changes if k != e.get("position")]
-    dirty = ({e.get("position") for e, *_ in moved} | {k for _, _, k, _, _ in moved}) - {None}
+    dirty = (
+        {e.get("position") for e, *_ in moved} | {k for _, _, k, _, _ in moved}
+    ) - {None}
 
     for cardinal in cardinal_sources():
-        update_radar_sector(cardinal, {
-            **_tombstone("rekeying", "board mapping changed by calibration"),
-            "sources": [], "sources_live": []})
+        update_radar_sector(
+            cardinal,
+            {
+                **_tombstone("rekeying", "board mapping changed by calibration"),
+                "sources": [],
+                "sources_live": [],
+            },
+        )
     for key in sorted(dirty):
-        update_radar_sector(key, _tombstone("rekeyed", "board re-mapped by calibration"))
+        update_radar_sector(
+            key, _tombstone("rekeyed", "board re-mapped by calibration")
+        )
 
     done, by_serial = [], {}
     for entry, thread, key, bearing, provisional in changes:
-        done.append({"serial": entry.get("serial"), "from": entry.get("position"),
-                     "to": key, "bearing": bearing})
-        entry["position"], entry["bearing"], entry["provisional"] = key, bearing, provisional
+        done.append(
+            {
+                "serial": entry.get("serial"),
+                "from": entry.get("position"),
+                "to": key,
+                "bearing": bearing,
+            }
+        )
+        entry["position"], entry["bearing"], entry["provisional"] = (
+            key,
+            bearing,
+            provisional,
+        )
         by_serial[entry.get("serial")] = (key, bearing, provisional)
         try:
             thread.name = f"radar-{key}"
@@ -1053,16 +1329,26 @@ def _apply_rekey(changes) -> List[Dict[str, Any]]:
         for row in rows:
             row = dict(row)
             if row.get("serial") in by_serial:
-                row["position"], row["bearing"], row["provisional"] = by_serial[row["serial"]]
+                row["position"], row["bearing"], row["provisional"] = by_serial[
+                    row["serial"]
+                ]
             out.append(row)
         return out
 
     snap = get_radar_state()
     table = get_bearings()
-    missing = [{**m, "bearing": table.get(m.get("serial")),
-                "position": (radar_board_key(table[m["serial"]])
-                             if table.get(m.get("serial")) is not None else None)}
-               for m in snap.get("missing") or []]
+    missing = [
+        {
+            **m,
+            "bearing": table.get(m.get("serial")),
+            "position": (
+                radar_board_key(table[m["serial"]])
+                if table.get(m.get("serial")) is not None
+                else None
+            ),
+        }
+        for m in snap.get("missing") or []
+    ]
     set_radar_boards(rewrite(snap.get("boards") or []), missing)
     _discovery["found"] = rewrite(_discovery.get("found") or [])
 
@@ -1073,38 +1359,59 @@ def _apply_rekey(changes) -> List[Dict[str, Any]]:
 def apply_calibration(mapping: Dict[str, Optional[float]]) -> Dict[str, Any]:
     """Record measured bearings and make them take effect."""
     from utils import radar_calibration as rc
+
     requested = {str(s) for s in mapping}
     with rc._save_lock:
-        staged, text = rc.prepare_bearings(mapping)      # ValueError: nothing changed
-        rc.persist_bearings(text)                       # CalibrationSaveError: ditto
+        staged, text = rc.prepare_bearings(mapping)  # ValueError: nothing changed
+        rc.persist_bearings(text)  # CalibrationSaveError: ditto
         with _key_lock:
             table = rc.commit_bearings(staged)
             result = _apply_committed(table, requested)
     if result["applied"] == "live" and result["rekeyed"]:
-        print("[RADAR] calibration applied LIVE (no restart): "
-              + ", ".join(f"{d['serial']} {d['from']} -> {d['to']}"
-                          for d in result["rekeyed"]))
+        print(
+            "[RADAR] calibration applied LIVE (no restart): "
+            + ", ".join(
+                f"{d['serial']} {d['from']} -> {d['to']}" for d in result["rekeyed"]
+            )
+        )
     elif result["applied"] == "restart":
-        print(f"[RADAR] calibration saved; restarting the array to apply it "
-              f"({result['reason']})")
+        print(
+            f"[RADAR] calibration saved; restarting the array to apply it "
+            f"({result['reason']})"
+        )
     return result
 
 
 def _apply_committed(table, requested) -> Dict[str, Any]:
     """The re-key-or-restart half of apply_calibration."""
     if not RADAR_ENABLED:
-        return {"bearings": table, "applied": "recorded", "restarting": False,
-                "rekeyed": [], "reason": "radar disabled in config"}
+        return {
+            "bearings": table,
+            "applied": "recorded",
+            "restarting": False,
+            "rekeyed": [],
+            "reason": "radar disabled in config",
+        }
     changes, why = _plan_rekey(table, requested)
     if changes is not None:
         done = _apply_rekey(changes)
-        return {"bearings": table, "applied": "live", "restarting": False,
-                "rekeyed": done, "reason": None}
+        return {
+            "bearings": table,
+            "applied": "live",
+            "restarting": False,
+            "rekeyed": done,
+            "reason": None,
+        }
     _retire_generation("restarting", "restarting to apply a calibration")
     _recompute_cardinals()
     restart_radar(reason="calibration")
-    return {"bearings": table, "applied": "restart", "restarting": True,
-            "rekeyed": [], "reason": why}
+    return {
+        "bearings": table,
+        "applied": "restart",
+        "restarting": True,
+        "rekeyed": [],
+        "reason": why,
+    }
 
 
 def stop_radar() -> None:
@@ -1123,6 +1430,7 @@ def _run_check() -> int:
         return _check()
     except Exception:
         import traceback
+
         traceback.print_exc()
         return CHECK_SOFTWARE_ERROR
 
@@ -1133,38 +1441,61 @@ def _check() -> int:
     found = assign_boards(discover())
     seen = {e["serial"] for e in found}
 
-    rows = [((e["bearing"] is None, e["bearing"] or 0.0),
-             str(e["position"] or "------"),
-             ("UNMEASURED" if e["bearing"] is None else f"{e['bearing']:.0f} deg"),
-             e["device"], e["serial"], str(e["hub_port"])) for e in found]
+    rows = [
+        (
+            (e["bearing"] is None, e["bearing"] or 0.0),
+            str(e["position"] or "------"),
+            ("UNMEASURED" if e["bearing"] is None else f"{e['bearing']:.0f} deg"),
+            e["device"],
+            e["serial"],
+            str(e["hub_port"]),
+        )
+        for e in found
+    ]
     missing = [(s, b) for s, b in expected.items() if s not in seen]
-    rows += [((b is None, b or 0.0),
-              str(radar_board_key(b) if b is not None else "------"),
-              ("UNMEASURED" if b is None else f"{b:.0f} deg"),
-              "MISSING", s, "-") for s, b in missing]
+    rows += [
+        (
+            (b is None, b or 0.0),
+            str(radar_board_key(b) if b is not None else "------"),
+            ("UNMEASURED" if b is None else f"{b:.0f} deg"),
+            "MISSING",
+            s,
+            "-",
+        )
+        for s, b in missing
+    ]
 
     for _, key, bearing, device, serial, hub in sorted(rows):
-        tail = ("— no glass detection on that arc" if device == "MISSING"
-                else f"hub port {hub}")
+        tail = (
+            "— no glass detection on that arc"
+            if device == "MISSING"
+            else f"hub port {hub}"
+        )
         print(f"  {key:<7} {bearing:<11} {device:<14} serial {serial}  {tail}")
 
     unmeasured = [e for e in found if e["bearing"] is None]
     if unmeasured:
-        print(f"  {len(unmeasured)} board(s) have no measured bearing and will "
-              f"NOT steer — calibrate them at /radar/test")
+        print(
+            f"  {len(unmeasured)} board(s) have no measured bearing and will "
+            f"NOT steer — calibrate them at /radar/test"
+        )
     for e in found:
-        if e.get("refused"):                # identity, see _dedupe_serials
+        if e.get("refused"):  # identity, see _dedupe_serials
             print(f"  REFUSED {e['device']}: {e['refused']}")
     for cardinal in RADAR_SECTORS:
         srcs = cardinal_sources().get(cardinal) or ()
-        live = [k for k in srcs
-                if k in {e["position"] for e in found if e["position"]}]
-        state = ("NO SOURCE" if not srcs else
-                 f"{len(live)}/{len(srcs)} boards present ({', '.join(srcs)})")
+        live = [k for k in srcs if k in {e["position"] for e in found if e["position"]}]
+        state = (
+            "NO SOURCE"
+            if not srcs
+            else f"{len(live)}/{len(srcs)} boards present ({', '.join(srcs)})"
+        )
         print(f"  cardinal {cardinal:<6} {state}")
 
-    print(f"  {len(found)}/{len(expected)} radars detected, "
-          f"{sum(1 for e in found if e['position'])} usable")
+    print(
+        f"  {len(found)}/{len(expected)} radars detected, "
+        f"{sum(1 for e in found if e['position'])} usable"
+    )
 
     return (1 if missing else 0) | (2 if unmeasured else 0)
 
@@ -1180,16 +1511,25 @@ if __name__ == "__main__":
         if not entries:
             print("\nnothing found.")
             sys.exit(1)
-        print(f"\n{'key':<9}{'bearing':<12}{'device':<15}{'serial':<13}{'hub port':<10}source")
+        print(
+            f"\n{'key':<9}{'bearing':<12}{'device':<15}{'serial':<13}{'hub port':<10}source"
+        )
         for e in entries:
-            origin = ("NOT MEASURED — calibrate at /radar/test" if e["bearing"] is None
-                      else "measured")
-            bearing = ("-" if e["bearing"] is None else f"{e['bearing']:.0f} deg")
-            print(f"{str(e['position'] or '------'):<9}{bearing:<12}{e['device']:<15}"
-                  f"{e['serial']:<13}{e['hub_port']:<10}{origin}")
-        print("\nThis only reports what is already recorded. To MEASURE which board "
-              "faces which way, open /radar/test and use the CALIBRATE panel (or run "
-              "--watch for the terminal equivalent).")
+            origin = (
+                "NOT MEASURED — calibrate at /radar/test"
+                if e["bearing"] is None
+                else "measured"
+            )
+            bearing = "-" if e["bearing"] is None else f"{e['bearing']:.0f} deg"
+            print(
+                f"{str(e['position'] or '------'):<9}{bearing:<12}{e['device']:<15}"
+                f"{e['serial']:<13}{e['hub_port']:<10}{origin}"
+            )
+        print(
+            "\nThis only reports what is already recorded. To MEASURE which board "
+            "faces which way, open /radar/test and use the CALIBRATE panel (or run "
+            "--watch for the terminal equivalent)."
+        )
         sys.exit(0)
 
     if "--watch" in sys.argv:
@@ -1205,14 +1545,23 @@ if __name__ == "__main__":
         order = sorted(boards, key=lambda b: b["hub_port"])
         print(f"\nPut your hand ~1.5 ft in front of ONE sensor at a time.")
         print("The column whose distance drops is that sensor.")
-        print(f"Closer than {RADAR_START_MM / 304.8:.1f} ft the board is blind, "
-              f"and it reaches {RADAR_END_MM / 304.8:.1f} ft — '---' means "
-              f"nothing in that range.\n")
+        print(
+            f"Closer than {RADAR_START_MM / 304.8:.1f} ft the board is blind, "
+            f"and it reaches {RADAR_END_MM / 304.8:.1f} ft — '---' means "
+            f"nothing in that range.\n"
+        )
         print("  " + "".join(f"port {b['hub_port']}: {b['serial']:<14}" for b in order))
-        print("  " + "".join(
-            (f"(cfg {b['position']}@{b['bearing']:.0f}deg){'':<4}"
-             if b.get("bearing") is not None
-             else f"(UNMEASURED {b['position']}){'':<3}") for b in order))
+        print(
+            "  "
+            + "".join(
+                (
+                    f"(cfg {b['position']}@{b['bearing']:.0f}deg){'':<4}"
+                    if b.get("bearing") is not None
+                    else f"(UNMEASURED {b['position']}){'':<3}"
+                )
+                for b in order
+            )
+        )
         print("  " + "-" * (28 * len(order)))
         try:
             while True:
@@ -1233,8 +1582,11 @@ if __name__ == "__main__":
         while True:
             time.sleep(0.5)
             secs = get_radar_state().get("sectors", {})
-            print("  ".join(
-                f"{s}={(secs.get(s) or {}).get('min_dist') or '---'}" for s in RADAR_SECTORS
-            ))
+            print(
+                "  ".join(
+                    f"{s}={(secs.get(s) or {}).get('min_dist') or '---'}"
+                    for s in RADAR_SECTORS
+                )
+            )
     except KeyboardInterrupt:
         stop_radar()

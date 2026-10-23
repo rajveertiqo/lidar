@@ -49,11 +49,13 @@ def replay(path, recompute_policy=True, show_all=False):
     walk_policy._remember_turn(None, 0.0)
 
     clock = {"t": 0.0, "mono": 0.0}
-    rows = []                          # (t, before, now, why now) — announcements only
+    rows = []  # (t, before, now, why now) — announcements only
     ticks = same_ticks = 0
     t0 = None
-    with mock.patch("time.time", lambda: clock["t"]), \
-         mock.patch("time.monotonic", lambda: clock["mono"]):
+    with (
+        mock.patch("time.time", lambda: clock["t"]),
+        mock.patch("time.monotonic", lambda: clock["mono"]),
+    ):
         for rec in _ticks(path):
             clock["t"], clock["mono"] = float(rec["t"]), float(rec["mono"])
             t0 = clock["t"] if t0 is None else t0
@@ -61,13 +63,23 @@ def replay(path, recompute_policy=True, show_all=False):
                 rows.append((clock["t"] - t0, "mark", rec["mark"], rec.get("text", "")))
                 continue
             inp, out = rec["in"], rec["out"]
-            wd = (walk_policy.decide(inp["lidar"], inp["radar"])
-                  if recompute_policy and inp.get("lidar") else inp["walk_decision"])
-            got = sg.guidance(wd, inp["lidar"], now=clock["t"], hold=inp.get("hold"),
-                              hold_lidar_absent=bool(inp.get("hold_lidar_absent")),
-                              at_crossing=bool(inp.get("at_crossing")),
-                              radar_state=inp.get("radar"), camera_state=inp.get("camera"),
-                              motion=inp.get("motion"), movers=inp.get("movers"))
+            wd = (
+                walk_policy.decide(inp["lidar"], inp["radar"])
+                if recompute_policy and inp.get("lidar")
+                else inp["walk_decision"]
+            )
+            got = sg.guidance(
+                wd,
+                inp["lidar"],
+                now=clock["t"],
+                hold=inp.get("hold"),
+                hold_lidar_absent=bool(inp.get("hold_lidar_absent")),
+                at_crossing=bool(inp.get("at_crossing")),
+                radar_state=inp.get("radar"),
+                camera_state=inp.get("camera"),
+                motion=inp.get("motion"),
+                movers=inp.get("movers"),
+            )
             ticks += 1
             before = out["instruction"] if out.get("speak") else ""
             now = got["instruction"] if got.get("speak") else ""
@@ -87,29 +99,49 @@ def replay(path, recompute_policy=True, show_all=False):
         diffs += differs
         if not (differs or show_all):
             continue
-        tag = ("same   " if not differs else "NEW    " if not before
-               else "GONE   " if not now else "CHANGED")
-        print(f"  {t:7.1f}s  {tag}  before: {before or '—':<38}  now: {now or '—':<38}"
-              + (f"  ({why})" if now and differs else ""))
+        tag = (
+            "same   "
+            if not differs
+            else "NEW    "
+            if not before
+            else "GONE   "
+            if not now
+            else "CHANGED"
+        )
+        print(
+            f"  {t:7.1f}s  {tag}  before: {before or '—':<38}  now: {now or '—':<38}"
+            + (f"  ({why})" if now and differs else "")
+        )
     fidelity = 100.0 * same_ticks / ticks if ticks else 0.0
-    print(f"  {ticks} ticks · said before {said_before} · said now {said_now} · "
-          f"{diffs} different · fidelity {fidelity:.1f}% of ticks identical")
+    print(
+        f"  {ticks} ticks · said before {said_before} · said now {said_now} · "
+        f"{diffs} different · fidelity {fidelity:.1f}% of ticks identical"
+    )
     return ticks, said_before, said_now, diffs
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("recordings", nargs="+", help="logs/walks/*.jsonl.gz")
-    ap.add_argument("--all", action="store_true", help="list every announcement, not "
-                    "only the ones that changed")
-    ap.add_argument("--recorded-policy", action="store_true", help="use the recorded "
-                    "walk_policy decision instead of running the current walk_policy")
+    ap.add_argument(
+        "--all",
+        action="store_true",
+        help="list every announcement, not only the ones that changed",
+    )
+    ap.add_argument(
+        "--recorded-policy",
+        action="store_true",
+        help="use the recorded "
+        "walk_policy decision instead of running the current walk_policy",
+    )
     args = ap.parse_args()
     total = 0
     for path in args.recordings:
-        total += replay(path, recompute_policy=not args.recorded_policy,
-                        show_all=args.all)[3]
+        total += replay(
+            path, recompute_policy=not args.recorded_policy, show_all=args.all
+        )[3]
     return 0 if total == 0 else 1
 
 

@@ -198,7 +198,10 @@ def _blind_fill(
             notes.append(f"{key}: {echo:.1f} m")
         for i, ok in enumerate(covered):
             if not ok:  # no board hears it: nothing known
-                x, y = _xy(arc[0] + i * _ARC_STEP_DEG, 0.3)
+                # Just outside the user's own lane: at 0.3 m the arc's edge by 290 deg lay
+                # inside it and blocked walking straight on (scan 2026-10-23); turning
+                # into the arc is still blocked.
+                x, y = _xy(arc[0] + i * _ARC_STEP_DEG, ROUTE_LANE_HALF_M + 0.05)
                 points.add(x, y, "blind arc (unknown)")
     return notes
 

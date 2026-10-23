@@ -99,6 +99,7 @@ class RadarMoverTracker:
         turning = mono < self._quiet_until
         with self._lock:
             live = 0
+            fresh = set()  # boards with a NEW frame this call
             for key, row in ((radar_state or {}).get("sectors") or {}).items():
                 m = _BOARD_KEY.match(str(key))
                 if not m:
@@ -116,6 +117,7 @@ class RadarMoverTracker:
                 ):
                     self._tracks.pop(key, None)  # a gap, or the clock went backwards
                 self._frame[key] = t
+                fresh.add(key)
                 peaks = [
                     p / 1000.0
                     for p in row.get("peaks_mm") or []
@@ -126,10 +128,14 @@ class RadarMoverTracker:
             out = []
             for key, tracks in self._tracks.items():
                 for tr in tracks:
-                    if tr["hist"][-1][0] == self._frame.get(key):
+                    if tr["hist"][-1][0] != self._frame.get(key):
+                        continue
+                    # Judged once per frame: a frame read again counted twice toward
+                    # RADAR_MOVERS_CONFIRM_FRAMES, confirming on one (scan 2026-10-23).
+                    if key in fresh:
                         self._judge(tr, walk, lidar_blobs, turning)
-                        if tr["closing_frames"]:
-                            out.append(tr)
+                    if tr["closing_frames"]:
+                        out.append(tr)
             self._snap = self._snapshot(out, live, turning)
 
     def _follow(self, key: str, bearing: float, peaks: List[float], t: float) -> None:

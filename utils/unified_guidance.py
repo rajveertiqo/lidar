@@ -131,7 +131,7 @@ def latest_guidance() -> Dict[str, Any]:
     error = pi_voice.loop_status().get("error")
     if error:
         why += f": {error}"
-    seq = simple_guidance.state()["cue_seq"]  # unchanged: nothing to announce
+    seq = simple_guidance.cue_seq()  # unchanged: nothing to announce; never waits
     return {
         "notify": {
             "speak": False,
@@ -211,12 +211,13 @@ def get_unified_guidance() -> Dict[str, Any]:
         get_camera_state,
     )
 
-    lidar, camera, seen = {}, {}, {}
+    lidar, camera, seen, radar = {}, {}, {}, {}
     try:
         lidar = get_lidar_state()
         camera = get_camera_state()
+        radar = get_radar_state()  # once a tick: every step below sees the same frame
         sectors, cones = merge_navigation_inputs(
-            lidar.get("sectors", {}), lidar.get("cones", {}), get_radar_state()
+            lidar.get("sectors", {}), lidar.get("cones", {}), radar
         )
         seen = fresh_camera_state(camera)
         sample = {
@@ -264,7 +265,7 @@ def get_unified_guidance() -> Dict[str, Any]:
     try:
         from utils import walk_policy
 
-        walk_decision = walk_policy.decide(lidar, get_radar_state())
+        walk_decision = walk_policy.decide(lidar, radar)
     except Exception as e:
         walk_decision = {"action": "unknown", "instruction": "—", "units": "ft"}
         _warn("walk policy", e)
@@ -346,7 +347,7 @@ def get_unified_guidance() -> Dict[str, Any]:
 
                 radar_movers = get_radar_movers()
                 radar_movers.update(
-                    get_radar_state(),
+                    radar,
                     (movers or {}).get("blobs"),
                     (movers or {}).get("ego"),
                     turn_dps=(motion or {}).get("yaw_rate_dps"),
@@ -354,7 +355,7 @@ def get_unified_guidance() -> Dict[str, Any]:
                 movers = {**(movers or {}), "radar": radar_movers.snapshot()}
         except Exception as e:
             _warn("radar movers", e)
-        radar_now = get_radar_state()
+        radar_now = radar
         system = None
         try:
             from utils import pi_health
@@ -499,12 +500,11 @@ def get_unified_guidance() -> Dict[str, Any]:
     }
 
     global _last_turn
-    turning = str(walk_decision.get("action", "")).startswith(("turn_", "stop"))
-    key = (
-        (walk_decision.get("action"), walk_decision.get("direction"))
-        if turning
-        else None
-    )
+    # Keyed on the SMOOTHED instruction the user is given, not the raw walk policy, whose
+    # tick-to-tick flicker re-zeroed the heading and drift on every change (scan 2026-10-23).
+    action = str(simple.get("action", ""))
+    turning = action.startswith(("turn_", "stop"))
+    key = (action, simple.get("side")) if turning else None
     with _turn_lock:
         new_turn = key is not None and key != _last_turn
         _last_turn = key

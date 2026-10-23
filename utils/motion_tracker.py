@@ -224,7 +224,8 @@ class MotionTracker:
                 self._predict(tr, dt)
                 self._carry(tr, fwd, right, sd, yaw)
             self._join([self._blob_det(b) for b in blobs], t)
-            self._join(self._camera_dets(camera_state, t), t)
+            yaw_rate = yaw / dt if dt > 0 else 0.0  # rad/s, right: this scan's turn
+            self._join(self._camera_dets(camera_state, t, yaw_rate), t)
             self._tracks = [
                 tr for tr in self._tracks if t - tr["seen"] <= MOTION_LOST_S
             ]
@@ -334,9 +335,12 @@ class MotionTracker:
         }
 
     def _camera_dets(
-        self, camera_state: Optional[Dict[str, Any]], t: float
+        self, camera_state: Optional[Dict[str, Any]], t: float, yaw_rate: float = 0.0
     ) -> List[Dict[str, Any]]:
-        """The people and vehicles in each camera's newest detector frame, placed on the ground."""
+        """The people and vehicles in each camera's newest detector frame, placed on the ground
+        in THIS scan's frame: turned back by what the user turned (`yaw_rate`, rad/s right)
+        since the picture — a side camera's is up to ~0.25 s old, 15 deg at 60 deg/s (scan
+        2026-10-23)."""
         if not camera_state:
             return []
         from utils import simple_guidance as sg
@@ -364,6 +368,7 @@ class MotionTracker:
                 continue
             self._cam_seen[sector] = stamp
             offset = math.radians(_SECTOR_BEARING.get(sector, 0.0))
+            offset -= yaw_rate * max(0.0, t - stamp)
             for det in view.get("detections") or []:
                 cls = str(det.get("class_name", "")).lower()
                 word = (
@@ -684,6 +689,9 @@ class MotionTracker:
         views = [self._view(tr) for tr in self._tracks]
         moving = [v for v in views if v["moving"]]
         by_id = {tr["id"]: tr for tr in self._tracks}
+        for v in views:
+            if not v["moving"]:  # a stop ends the run: moving again holds afresh
+                by_id[v["id"]]["alert_scans"] = 0
         for v in moving:
             # Said only once it has held for ALERT_SCANS scans: a young track's heading is rough.
             a = self._alert(v)

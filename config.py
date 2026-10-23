@@ -907,6 +907,10 @@ SIMPLE_CROSSING_HOLD_S = 5.0
 SIMPLE_CROSSING_WALKED_S = 4.0
 # With no motion reading at all, the hold ends this long after the light was last seen.
 SIMPLE_CROSSING_MAX_HOLD_S = 60.0
+# A NEW crossing needs the light seen this long (gaps up to CONFIRM_GAP_S allowed): one
+# frame of a lamp taken for a light held "Walk straight" back for up to a minute.
+SIMPLE_CROSSING_CONFIRM_S = 0.8
+SIMPLE_CROSSING_CONFIRM_GAP_S = 0.5
 
 SIMPLE_DRIFT_NEAR_FT = 5.0  # drift said only inside 5 ft, ahead of the 4 ft near-wall band (was 2.5, decided 2026-10-01)
 SIMPLE_DRIFT_MIN_DEG = 4.0

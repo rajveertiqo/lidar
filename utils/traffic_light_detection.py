@@ -7,7 +7,7 @@ from enum import Enum
 from collections import deque
 from dataclasses import dataclass, field
 
-from config import TRAFFIC_SIGN_STALE_S
+from config import SIMPLE_VEHICLE_CLASSES, TRAFFIC_SIGN_STALE_S
 
 
 # ============== CONFIGURATION ==============
@@ -55,6 +55,7 @@ class DirectionStatus:
     last_update: float = 0.0
     vehicle_detected: bool = False
     vehicle_distance: Optional[float] = None
+    vehicle_seen: bool = False  # the camera's last frame this way showed a vehicle
     history: deque = field(
         default_factory=lambda: deque(maxlen=TrafficConfig.HISTORY_SIZE)
     )
@@ -121,6 +122,7 @@ class TrafficLightDetector:
                 detections = []
 
             traffic_detections = []
+            vehicle_seen = False
             for det in detections:
                 if not isinstance(det, dict):
                     continue
@@ -130,6 +132,11 @@ class TrafficLightDetector:
 
                 is_traffic = False
                 is_pedestrian = False
+                if (
+                    class_name in SIMPLE_VEHICLE_CLASSES
+                    and confidence >= TrafficConfig.MIN_CONFIDENCE
+                ):
+                    vehicle_seen = True
 
                 if class_name == "traffic light":
                     is_traffic = True
@@ -155,6 +162,7 @@ class TrafficLightDetector:
                         }
                     )
 
+            self.directions[direction].vehicle_seen = vehicle_seen
             if traffic_detections:
                 best_det = max(traffic_detections, key=lambda x: x["confidence"])
                 traffic_state, ped_state = self.parse_traffic_light_class(
@@ -204,12 +212,17 @@ class TrafficLightDetector:
         return PedestrianSignalState.UNKNOWN
 
     def process_lidar_for_vehicles(self, lidar_sectors: Dict[str, Any]):
-        """Process LiDAR data to detect approaching vehicles"""
+        """How far a vehicle the camera sees is (process_camera_detections first): the LiDAR
+        ranges anything, so a wall within 5 m alone was a "vehicle" (scan 2026-10-23)."""
         for direction in ["front", "right", "left", "back"]:
             sector_data = lidar_sectors.get(direction, {})
             min_dist = sector_data.get("min_dist") or sector_data.get("distance_mm")
 
-            if min_dist is not None and min_dist > 0:
+            if (
+                self.directions[direction].vehicle_seen
+                and isinstance(min_dist, (int, float))
+                and min_dist > 0
+            ):
                 self.directions[direction].vehicle_distance = min_dist
                 self.directions[direction].vehicle_detected = (
                     min_dist < TrafficConfig.VEHICLE_APPROACH_THRESHOLD

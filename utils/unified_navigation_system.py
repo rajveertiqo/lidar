@@ -40,15 +40,13 @@ TRAFFIC_LIGHT_KEYWORDS = [
 
 def mm_to_ft(mm) -> Optional[float]:
     """Convert mm to feet"""
-    if mm is None or mm <= 0:
-        return None
     try:
-        f = float(mm)
-        if math.isinf(f) or math.isnan(f):
-            return None
-        return round(f / 304.8, 1)
-    except:
+        f = float(mm)  # None or text raise here, not in a comparison
+    except (TypeError, ValueError):
         return None
+    if not math.isfinite(f) or f <= 0:
+        return None
+    return round(f / 304.8, 1)
 
 
 def safe_json(obj):
@@ -338,8 +336,10 @@ def decisionMaker(sample: Dict[str, Any]) -> Dict[str, Any]:
             message = f"CAUTION: Obstacle {front_ft}ft ahead. Move slowly."
             direction = "front"
 
-    # Priority 3: Traffic light / road crossing scenario (only if path is physically clear)
-    elif traffic_lights["detected"]:
+    # Priority 3: Traffic light / road crossing scenario (only if path is physically clear).
+    # The FRONT camera's, as the spoken path uses: one behind or beside you is not the
+    # crossing in front of you (scan 2026-10-23).
+    elif traffic_lights["directions"]["front"]["has_light"]:
         crossing_mode = True
         action = "wait_for_signal"  # the colour cannot be read: never "cross"
         message = crossing_guidance["message"]
@@ -498,9 +498,10 @@ def decisionMaker(sample: Dict[str, Any]) -> Dict[str, Any]:
         },
         "path": {
             "direction": direction,
+            # "stop" is no direction: no clear distance, not a made-up 10 ft
             "clear_distance_ft": mm_to_ft(sectors[direction]["min"])
             if direction in sectors
-            else 10,
+            else None,
             "recommended": message,
         },
         "cues": {

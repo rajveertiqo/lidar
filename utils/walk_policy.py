@@ -203,7 +203,14 @@ def fuse(
     disagree = abs(lidar_ft - radar_ft) >= WALK_GLASS_GAP_FT
     nearer_is_measured = lidar_measured if lidar_ft <= radar_ft else radar_measured
     if disagree and nearer_is_measured and WALK_FUSION_GLASS_OVERRIDE:
-        return min(lidar_ft, radar_ft), "nearer (sensors disagree — glass)"
+        # "glass" only when the radar is the nearer: the laser passing through what the
+        # radar hears. A nearer laser return is not glass, least of all against a radar
+        # that saw nothing (an off-axis echo dismissed included) (scan 2026-10-23).
+        if lidar_ft <= radar_ft:
+            why = "the laser's" if radar_measured else "radar saw nothing there"
+        else:
+            why = "glass"
+        return min(lidar_ft, radar_ft), f"nearer (sensors disagree — {why})"
 
     how = "average"
     if not lidar_measured and not radar_measured:

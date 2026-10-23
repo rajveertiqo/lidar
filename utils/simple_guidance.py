@@ -15,6 +15,7 @@ from config import (
     NOTIFY_AIRTIME_BASE_S,
     NOTIFY_AIRTIME_PER_CHAR_S,
     NOTIFY_AIRTIME_PER_COMMA_S,
+    PI_VOICE_TICK_HZ,
     SIMPLE_GLASS_LOSS_CONFIRM_S,
     SIMPLE_GLASS_RECOVER_CONFIRM_S,
     SIMPLE_GLASS_RECOVER_MAX_S,
@@ -28,6 +29,8 @@ from config import (
     SIMPLE_BAND_MARGIN_FT,
     SIMPLE_BLOCKED_REPEAT_S,
     SIMPLE_CLEAR_CONFIRM_S,
+    SIMPLE_CROSSING_CONFIRM_GAP_S,
+    SIMPLE_CROSSING_CONFIRM_S,
     SIMPLE_CROSSING_HOLD_S,
     SIMPLE_CROSSING_MAX_HOLD_S,
     SIMPLE_CROSSING_WALKED_S,
@@ -2190,6 +2193,11 @@ def decide(
     }
 
 
+# A hold's times are counted in ticks, which arrive a few ms early or late: with no slack
+# the 0.2 s confirm (one tick) took two ticks, 0.4 s, whenever a tick came early.
+_TICK_SLACK_S = 0.25 / PI_VOICE_TICK_HZ
+
+
 class _Hold:
     """A boolean that turns on fast and off slowly, and tolerates dropouts."""
 
@@ -2213,15 +2221,15 @@ class _Hold:
             if self._first is None:
                 self._first = now
             self._miss_since = None
-            if not self.state and now - self._first >= self.attack - 1e-6:
+            if not self.state and now - self._first >= self.attack - _TICK_SLACK_S:
                 self.state = True
             return self.state
         if self._miss_since is None:
             self._miss_since = now
         missed = now - self._miss_since
-        if self.state and missed >= self.release - 1e-6:
+        if self.state and missed >= self.release - _TICK_SLACK_S:
             self.state = False
-        if not self.state and missed >= self.gap - 1e-6:
+        if not self.state and missed >= self.gap - _TICK_SLACK_S:
             self._first = None
         return self.state
 
@@ -2272,6 +2280,8 @@ class _World:
         self.side: Optional[str] = None
         self._blocked_since: Optional[float] = None
         self._crossing_seen: Optional[float] = None  # last traffic light, this crossing
+        self._light_since: Optional[float] = None  # an unconfirmed light, seen since
+        self._light_last: Optional[float] = None  # ... and last seen
         self._walked_since: Optional[float] = None  # measured walking since, after it
         self.crossing_told = False  # "Traffic light ahead" said for it
 
@@ -2281,9 +2291,19 @@ class _World:
         """The crossing detector's verdict, held past its last sighting: SIMPLE_CROSSING_HOLD_S, then until the user has been measured walking SIMPLE_CROSSING_WALKED_S. Until 2026-10-21 it ended on the timer alone, at the kerb if a bus hid the light. Standing still holds it; with no motion reading at all it ends SIMPLE_CROSSING_MAX_HOLD_S after the last sighting."""
         if self._crossing_seen is not None and now < self._crossing_seen:
             self._crossing_seen = now  # clock stepped back
+        if detected and self._crossing_seen is None:
+            # A new crossing only once the light has lasted SIMPLE_CROSSING_CONFIRM_S.
+            if (
+                self._light_since is None
+                or not 0.0 <= now - self._light_last <= SIMPLE_CROSSING_CONFIRM_GAP_S
+            ):
+                self._light_since = now
+            self._light_last = now
+            if now - self._light_since < SIMPLE_CROSSING_CONFIRM_S:
+                return False
+            self._light_since = self._light_last = None
+            self.crossing_told = False
         if detected:
-            if self._crossing_seen is None:
-                self.crossing_told = False  # a new crossing
             self._crossing_seen = now
             self._walked_since = None
             return True
@@ -2452,7 +2472,7 @@ class _World:
             and (
                 self.glass.active or self.wall.active or self.obj.active or side_active
             )
-            and now - self._blocked_since < SIMPLE_ALERT_CONFIRM_S + 1e-6
+            and now - self._blocked_since < SIMPLE_ALERT_CONFIRM_S + _TICK_SLACK_S
         )
         text = _sentence(
             blocked,
@@ -3423,6 +3443,11 @@ def reset() -> None:
         get_planner().reset()
     except Exception:
         pass
+
+
+def cue_seq() -> int:
+    """The newest cue number WITHOUT the lock (one int read): for latest_guidance's "not updating" answer, which must not wait on a guidance step stuck holding it."""
+    return _gate.state()["cue_seq"]
 
 
 def state() -> Dict[str, Any]:

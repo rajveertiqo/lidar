@@ -366,8 +366,8 @@ def _write_board(value) -> None:
         raise
 
 
-def _set_board_mode() -> None:
-    """Put the camera board in the mode the camera opens in (it forgets it on a power cycle)."""
+def _set_board_mode() -> bool:
+    """Put the camera board in the mode the camera opens in (it forgets it on a power cycle). False if the write failed."""
     if _single:
         value, what = _board_value(_single), f"only the {_single} camera"
     elif _cycle:
@@ -379,11 +379,12 @@ def _set_board_mode() -> None:
         _write_board(value)
         time.sleep(0.3)  # let it switch before streaming
         print(f"[CAMERA] board set to {what} (0x{value:02x})")
+        return True
     except Exception as e:
         print(
-            f"[WARN] Camera board mode not set ({type(e).__name__}: {e}) — wanted "
-            f"{what}; the picture may be the wrong layout"
+            f"[WARN] Camera board mode not set ({type(e).__name__}: {e}) — wanted {what}"
         )
+        return False
 
 
 class _NoPicture(RuntimeError):
@@ -661,7 +662,19 @@ def _open_camera():
             return False
         if not _cycle_order:
             _cycle = False
-    _set_board_mode()
+    # In an unknown mode no picture can be said to come from any one camera: filed under
+    # the wrong direction, a person behind is "ahead". So no picture until it is set, as
+    # for a camera that will not open (scan 2026-10-23).
+    tries = 0
+    while not _set_board_mode():
+        delay = CAMERA_RETRY_BACKOFF_S[min(tries, len(CAMERA_RETRY_BACKOFF_S) - 1)]
+        tries += 1
+        print(f"[WARN] No camera pictures until the board mode is set; retrying in {delay:g}s")
+        deadline = time.monotonic() + delay
+        while running and time.monotonic() < deadline:
+            time.sleep(0.25)
+        if not running:
+            return False
     # One camera at a time: the ISP halves it to a quadrant's size, to drop into the mosaic.
     main_size = _QUAD if (_single or _cycle) else (CAMERA_WIDTH, CAMERA_HEIGHT)
     failures = 0
@@ -1565,7 +1578,7 @@ def _wait_seg_released(gen, eng) -> bool:
 
 
 def _seg_thread():
-    """Continuously segment the FRONT quadrant and publish the steering cue."""
+    """Segment the FRONT quadrant into walkable surface while its debug view is open (or always, with SEG_ALWAYS): a display only — nothing spoken uses it."""
     if not SEG_ENABLED:
         return
 

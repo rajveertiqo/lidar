@@ -41,7 +41,6 @@ from config import (
     DRIFT_WALL_ROOM_FT,
     DRIFT_WALL_SIDE_MAX_DEG,
     DRIFT_WALL_SIDE_MIN_DEG,
-    LIDAR_TO_CAMERA,
     GUIDANCE_AWARE_MM,
     RADAR_AGREE_MM,
     RADAR_BEARING_OFFSET_DEG,
@@ -57,6 +56,7 @@ LEVEL_NOTICE = "notice"  # visible on the dashboard, not yet worth speaking
 LEVEL_ADVISORY = "advisory"  # a gentle nudge — the whole point of this module
 LEVEL_URGENT = "urgent"  # correct now, or walk_policy is about to stop you
 _LEVEL_RANK = {LEVEL_CLEAR: 0, LEVEL_NOTICE: 1, LEVEL_ADVISORY: 2, LEVEL_URGENT: 3}
+_LABEL_DEG = 15.0  # a camera detection names a contact point within this bearing
 
 MM_PER_FT = 304.8
 
@@ -276,12 +276,18 @@ def _describe_hazard(
     from utils.lidar_utils import get_sector
 
     sector = get_sector(bearing % 360.0)
-    quadrant = LIDAR_TO_CAMERA.get(sector, "front")
-    detections = (camera_state.get(quadrant) or {}).get("detections", []) or []
+    # Named only by a CURRENT picture's detection at the contact's own bearing: the top
+    # detection of the mapped camera's last frame, however old, named the wrong thing
+    # (scan 2026-10-23).
+    from utils.sensor_fusion import _detections_by_sector, fresh_camera_state
+
+    seen = _detections_by_sector(fresh_camera_state(camera_state), {}, time.time())
     critical = [
         d
-        for d in detections
+        for dets in seen.values()
+        for d in dets
         if str(d.get("class_name", "")).lower() in CRITICAL_OBJECTS
+        and abs((d["bearing_deg"] - bearing + 180.0) % 360.0 - 180.0) <= _LABEL_DEG
     ]
     if critical:
         top = max(critical, key=lambda d: float(d.get("confidence", 0.0)))
@@ -450,7 +456,9 @@ def glass_warning(
         vals = []
         for name in RADAR_CARDINAL_ARC_SECTORS.get(direction, (direction,)):
             v = (lidar_sectors.get(name) or {}).get("min_dist")
-            if isinstance(v, (int, float)) and v and v <= GUIDANCE_AWARE_MM:
+            # At any range: cut at GUIDANCE_AWARE_MM, a wall 3-4 m ahead the radar also
+            # hears was "possible glass" (scan 2026-10-23).
+            if isinstance(v, (int, float)) and v > 0:
                 vals.append(float(v))
         if not vals:
             return False
@@ -852,7 +860,14 @@ def analyze(
 
     glass_leads = glass is not None and effective_ttc == glass["ttc_s"]
 
-    if near_wall is not None and not (glass_leads and level == LEVEL_URGENT):
+    # The near-wall cue gives way to an urgent collision with anything but that wall: it
+    # overrode "Stop. Obstacle ahead" (scan 2026-10-23).
+    wall_is_it = near_wall is not None and hazard is not None and (
+        hazard.get("side") == near_wall["side"]
+    )
+    if near_wall is not None and not (
+        level == LEVEL_URGENT and (glass_leads or not wall_is_it)
+    ):
         if near_wall["narrow"]:
             action = "caution_narrow"
             phrase = (
@@ -978,7 +993,9 @@ def analyze(
         )
         level = LEVEL_ADVISORY
 
-    key = None if action == "hold_course" else f"{action}|{level}"
+    # The action alone: with the level in it, the same action going urgent was a new cue
+    # to confirm, and _CueGate's escalation check could never fire (scan 2026-10-23).
+    key = None if action == "hold_course" else action
     speak, cue_seq = _gate.admit(key, level, now)
 
     return {

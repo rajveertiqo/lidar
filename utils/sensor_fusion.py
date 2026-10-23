@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from config import (
     CAMERA_SECTORS,
     CAMERA_WIDTH,
+    DETECTION_DISTANCE_AGREE,
     DETECTION_DISTANCE_HFOV_DEG,
     FRAME_GRID_COLS,
     GUIDANCE_CONE_CENTRES,
@@ -22,8 +23,8 @@ from config import (
     GUIDANCE_AWARE_MM,
     LIDAR_MIN_VALID_FRACTION,
     LIDAR_SECTOR_ORDER,
+    LIDAR_SECTORS,
     LIDAR_STALE_S,
-    LIDAR_TO_CAMERA,
     SIMPLE_CAMERA_FRESH_S,
     RADAR_AGREE_MM,
     RADAR_CARDINAL_ARC_SECTORS,
@@ -146,7 +147,9 @@ def _lidar_arc_values(cardinal: str, sectors: Dict[str, Any]) -> List[float]:
     vals = []
     for name in RADAR_CARDINAL_ARC_SECTORS.get(cardinal, (cardinal,)):
         v = (sectors.get(name) or {}).get("min_dist")
-        if isinstance(v, (int, float)) and v and v <= AWARE_MM:
+        # At any range: a wall the laser puts at 3.1 m corroborates a 2.95 m echo; cut at
+        # AWARE_MM, the pair read as "glass or clear obstacle" (scan 2026-10-23).
+        if isinstance(v, (int, float)) and v > 0:
             vals.append(float(v))
     return vals
 
@@ -681,6 +684,50 @@ def fresh_camera_state(
     return cam
 
 
+def _sector_of(bearing: float) -> str:
+    """The LiDAR sector a bearing (degrees clockwise from ahead) falls in."""
+    b = bearing % 360.0
+    for name, (lo, hi) in LIDAR_SECTORS.items():
+        if (lo <= b < hi) if lo < hi else (b >= lo or b < hi):  # front wraps 0
+            return name
+    return "front"
+
+
+def _detections_by_sector(
+    camera_state: Dict[str, Any], lidar_state: Dict[str, Any], now: float
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Every camera detection filed under the LiDAR sector its box centre faces, whichever
+    camera saw it, with its bearing and own distance (detection_distance)."""
+    out: Dict[str, List[Dict[str, Any]]] = {s: [] for s in SECTORS}
+    for cam in CAMERA_SECTORS:
+        for det in (camera_state.get(cam) or {}).get("detections") or []:
+            try:
+                x1, _y1, x2, _y2 = (float(v) for v in det.get("bbox") or ())
+            except (TypeError, ValueError):
+                continue
+            span = _box_bearings(cam, x1, x2)
+            if span is None or not x2 > x1:
+                continue
+            bearing = ((span[0] + span[1]) / 2.0) % 360.0
+            ft, source = detection_distance(cam, det, lidar_state, now)
+            out[_sector_of(bearing)].append(
+                {**det, "bearing_deg": bearing, "distance_ft": ft, "distance_source": source}
+            )
+    return out
+
+
+def _same_thing(det: Dict[str, Any], range_mm: float) -> bool:
+    """Is this detection what is ranged at `range_mm`? detection_distance's own rule:
+    within DETECTION_DISTANCE_AGREE of its distance (a cut-off box's is an upper bound)."""
+    ft = det.get("distance_ft")
+    if not isinstance(ft, (int, float)) or not ft > 0:
+        return False
+    est_mm = ft * 304.8
+    lo_k, hi_k = DETECTION_DISTANCE_AGREE
+    cut = det.get("distance_source") == "camera_cut"
+    return (cut or lo_k * est_mm <= range_mm) and range_mm <= hi_k * est_mm
+
+
 def build_hazards(
     lidar_state: Dict[str, Any],
     camera_state: Dict[str, Any],
@@ -703,43 +750,36 @@ def build_hazards(
     ranges: Dict[str, tuple] = {}
     for _s in SECTORS:
         _l = (sectors.get(_s) or {}).get("min_dist")
-        _l = (
-            float(_l)
-            if isinstance(_l, (int, float)) and _l and _l <= AWARE_MM
-            else None
-        )
+        _l = float(_l) if isinstance(_l, (int, float)) and _l > 0 else None
         _r = _radar_distance(_s, radar_state)
         _arc = _lidar_arc_corroborates(_s, sectors, _r) if _r is not None else None
+        # The two compared at their real ranges, THEN cut to what is worth mentioning.
         _d, _src, _glass = fuse_range(_l, _r, _arc)
+        if _d is not None and _d > AWARE_MM:
+            _d, _src, _glass = None, "none", False
         ranges[_s] = (_d, _src, _glass and lidar_live)
 
-    lidar_backed_cams = set()
-    for _s in SECTORS:
-        if ranges[_s][0] is not None:
-            lidar_backed_cams.add(LIDAR_TO_CAMERA.get(_s, _s))
+    seen = _detections_by_sector(camera_state, lidar_state, now)
 
     for sector in SECTORS:
         lidar_sec = sectors.get(sector) or {}
         dist_mm, range_source, glass_suspected = ranges[sector]
         min_angle = lidar_sec.get("min_angle")
+        has_lidar = dist_mm is not None  # "has a fused range", LiDAR and/or radar
 
-        cam_sec = camera_state.get(LIDAR_TO_CAMERA.get(sector, sector)) or {}
-        top = _top_detection(cam_sec.get("detections", []))
+        # Only a detection in THIS sector, and as far away as the thing ranged here, names
+        # it: the top detection of a whole camera called a wall "person, 11 o'clock, 2 ft"
+        # (scan 2026-10-23).
+        candidates = [
+            d for d in seen[sector] if not has_lidar or _same_thing(d, dist_mm)
+        ]
+        top = _top_detection(candidates) if cam_trusted else None
         obj_name = top.get("class_name") if top else None
         obj_conf = float(top.get("confidence", 0.0)) if top else None
-
-        has_lidar = dist_mm is not None  # "has a fused range", LiDAR and/or radar
-        if obj_name is not None and not cam_trusted:
-            obj_name, obj_conf = None, None
         has_camera = obj_name is not None
 
         if not has_lidar and not has_camera:
             continue
-
-        if not has_lidar:
-            cam_name = LIDAR_TO_CAMERA.get(sector, sector)
-            if cam_name != sector or cam_name in lidar_backed_cams:
-                continue
 
         contributors = []
         if has_lidar:
@@ -757,7 +797,12 @@ def build_hazards(
             source = "+".join(contributors)
 
         use_angle = min_angle is not None and range_source in ("lidar", "both")
-        clock = angle_to_clock(min_angle) if use_angle else _SECTOR_CLOCK[sector]
+        if use_angle:
+            clock = angle_to_clock(min_angle)
+        elif not has_lidar:
+            clock = angle_to_clock(top["bearing_deg"])  # where the camera sees it
+        else:
+            clock = _SECTOR_CLOCK[sector]
 
         shape = (
             _shape_for(shapes, min_angle, dist_mm)

@@ -1165,7 +1165,6 @@ SIMPLE_CAMERA_LOSS_CONFIRM_S = 5.0  # longer than a corrupted-picture camera res
 SIMPLE_CAMERA_RECOVER_CONFIRM_S = 10.0
 SIMPLE_CAMERA_RECOVER_MAX_S = 160.0
 SIMPLE_CAMERA_STARTUP_GRACE_S = 45.0  # the detector takes a while to load; assumed
-
 SIMPLE_LIDAR_FRESH_S = 2.0
 
 CONSOLE_ENABLED = True

@@ -1,5 +1,10 @@
 # Blind Assistance System
 
+**Project documentation:** [Complete Project Guide](docs/PROJECT_GUIDE.md) — purpose,
+use cases, current feature status, hardware/software stack, architecture, setup,
+operation, APIs, simulation tools, training, troubleshooting, and limitations.
+Reviewed against the working tree on 2026-10-27.
+
 A wearable navigation aid for blind pedestrians, running on a Raspberry Pi 5.
 
 It watches the world with three sensors that fail in different ways, merges them

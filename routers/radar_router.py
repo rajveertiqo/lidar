@@ -444,7 +444,7 @@ def _board_rows():
             "phase": sec.get("phase"),
             "online": bool(sec.get("online")),
             "degraded": bool(sec.get("degraded")),
-            "stale": bool(sec.get("stale")),  # the row's own verdict: see /map
+            "stale": bool(sec.get("stale")),
             "mm": sec.get("min_dist"),
             "ft": _mm_to_ft(sec.get("min_dist")),
             "peaks_mm": list(sec.get("peaks_mm") or []),

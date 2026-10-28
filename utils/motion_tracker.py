@@ -264,7 +264,9 @@ class MotionTracker:
         if h.get("speed_trusted"):
             return (
                 float(h.get("speed_mps") or 0.0) * dt,
-                0.0,
+                float(h.get("right_mps") or 0.0) * dt
+                if h.get("velocity_trusted")
+                else 0.0,
                 0.2 * dt,
                 0.2,
                 str(h.get("speed_source")),

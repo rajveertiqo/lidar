@@ -609,7 +609,11 @@ def get_unified_guidance() -> Dict[str, Any]:
                 level="urgent" if urgent else "advisory",
                 detail=str(path.get("reason") or path.get("note") or ""),
                 cue_seq=notify_seq,
-                via={"queued": "pi", "unavailable": "phone"}.get(handed, "none"),
+                via=(
+                    "pi" if handed == "queued" else
+                    "phone" if handed == "unavailable" and voice.get("phone_usable") else
+                    "none"
+                ),
             )
         except Exception:
             pass  # a log must never cost the instruction it records

@@ -632,7 +632,7 @@ class HeadingTracker:
         vy_se = float(np.median([h.vy_se for h in recent]))
         fwd_sens = float(np.median([h.fwd_sens for h in recent]))
 
-        speed = max(0.0, vx)
+        speed = vx  # signed: negative means moving backward
 
         sensitive = fwd_sens >= HEADING_MIN_FORWARD_SENS
         observable = (
@@ -640,7 +640,14 @@ class HeadingTracker:
             and vx_se <= HEADING_SPEED_SE_LIMIT_MPS
             and sensitive
         )
-        measured = observable and speed >= HEADING_MIN_MOVING_MPS
+        lateral_observable = (
+            trans_q >= HEADING_MIN_MATCH_QUALITY
+            and vy_se <= HEADING_SPEED_SE_LIMIT_MPS
+        )
+        measured = observable and (
+            abs(speed) >= HEADING_MIN_MOVING_MPS
+            or (lateral_observable and abs(vy) >= HEADING_MIN_MOVING_MPS)
+        )
 
         gyro = self._gyro_brief()
         gyro_walking = bool(gyro and gyro.get("walking"))
@@ -649,7 +656,10 @@ class HeadingTracker:
         stepping = bool(gyro_walking and cadence > 0.0)
 
         learned = None
-        if measured and stepping and learn and gait_trusted:
+        if (
+            measured and speed >= HEADING_MIN_MOVING_MPS
+            and stepping and learn and gait_trusted
+        ):
             implied = speed / (cadence / 60.0)
             if GYRO_STRIDE_MIN_M <= implied <= GYRO_STRIDE_MAX_M:
                 last, self._stride_learn_t = self._stride_learn_t, now
@@ -670,14 +680,31 @@ class HeadingTracker:
             else None
         )
 
+        # Forward pace is clamped above, but stillness must account for signed
+        # forward motion and sideways motion, with both axes constrained.
         confidently_still = (
-            observable and speed < HEADING_MIN_MOVING_MPS and not gyro_walking
+            observable
+            and vy_se <= HEADING_SPEED_SE_LIMIT_MPS
+            and math.hypot(vx, vy) < HEADING_MIN_MOVING_MPS
+            and not gyro_walking
         )
+        direction = "unknown"
+        if confidently_still:
+            direction = "still"
+        elif measured:
+            direction = (
+                ("backward" if vx < 0 else "forward") if abs(vx) >= abs(vy)
+                else ("right" if vy > 0 else "left")
+            )
 
         return self._stamped(
             {
                 "moving": not confidently_still,
                 "moving_confirmed": bool(measured),
+                "forward_mps": round(vx, 3) if observable else None,
+                "right_mps": round(vy, 3) if lateral_observable else None,
+                "velocity_trusted": bool(input_trusted and observable and lateral_observable),
+                "motion_direction": direction,
                 "confidently_still": bool(confidently_still),
                 # Stepping, per the accelerometer. NOT a pace — see gyro_reader.
                 "walking_confirmed": gyro_walking,
@@ -770,6 +797,10 @@ def _idle_state() -> Dict[str, Any]:
     return {
         "moving": False,
         "moving_confirmed": False,
+        "forward_mps": None,
+        "right_mps": None,
+        "velocity_trusted": False,
+        "motion_direction": "unknown",
         "confidently_still": False,
         "walking_confirmed": False,
         "speed_mps": HEADING_NOMINAL_SPEED_MPS,

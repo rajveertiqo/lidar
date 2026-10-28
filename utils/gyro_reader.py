@@ -256,9 +256,13 @@ class GyroReader:
 
     def _is_healthy(self, now: float) -> bool:
         """Caller holds the lock."""
+        from utils.freshness import is_fresh
+
         if not self._connected or not self._buf:
             return False
-        return (now - self._buf[-1].t) <= GYRO_STALE_S
+        last = self._buf[-1]
+        held = time.monotonic() - last.m
+        return is_fresh(last.t, GYRO_STALE_S, now) and 0.0 <= held <= GYRO_STALE_S
 
     def state(self) -> Dict[str, Any]:
         """Everything the dashboard, the walk log and /guidance/gyro need."""

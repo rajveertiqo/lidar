@@ -5,7 +5,11 @@ from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
 
-from utils.unified_navigation_system import decisionMaker, detect_walls_by_sector
+from utils.unified_navigation_system import (
+    decisionMaker,
+    detect_walls_by_sector,
+    valid_scan_points,
+)
 from utils.shared_state import (
     get_fused_sensor_state,
     get_navigation_state,
@@ -48,27 +52,39 @@ async def make_navigation_decision(request: NavigationRequest):
 
     decision = await run_in_threadpool(decisionMaker, sample)
     if not _has_scan(sample):
-        decision = _no_lidar_decision(decision, "no scan in the request")
+        decision = _no_lidar_decision(decision, "no usable scan in the request")
     update_navigation_state(decision)
 
     return decision
 
 
 def _has_scan(sample: Any) -> bool:
-    """A request with no scan in it: decisionMaker found nothing near and said "Path
-    clear" (scan 2026-10-23)."""
-    return isinstance(sample, dict) and bool(
-        sample.get("scan_data") or sample.get("precomputed_sectors")
-    )
+    """A nonempty collection of rejected measurements is still no scan."""
+    if not isinstance(sample, dict):
+        return False
+    if next(valid_scan_points(sample.get("scan_data")), None) is not None:
+        return True
+    sectors = sample.get("precomputed_sectors")
+    if not isinstance(sectors, dict):
+        return False
+    measurements = [
+        {"angle_deg": 0, "distance_mm": sec.get("min_dist")}
+        for sec in sectors.values()
+        if isinstance(sec, dict)
+    ]
+    return next(valid_scan_points(measurements), None) is not None
 
 
 def _lidar_unavailable(lidar: Dict[str, Any]) -> str:
-    """Why this LiDAR state is no evidence of anything, or "" if it is a current, real scan (utils.sensor_fusion.lidar_is_fresh decides)."""
+    """Why this LiDAR state is unusable, or "" for a current, real scan of sufficient quality."""
     from utils.freshness import describe
-    from utils.sensor_fusion import lidar_is_fresh
+    from utils.sensor_fusion import lidar_is_fresh, lidar_sparse
 
     if lidar.get("simulated"):
         return "the scan is simulated"
+    sparse = lidar_sparse(lidar)
+    if sparse:
+        return sparse
     if lidar_is_fresh(lidar):
         return ""
     stamp = lidar.get("last_update")
@@ -120,7 +136,9 @@ def _no_lidar_decision(decision: Dict[str, Any], reason: str) -> Dict[str, Any]:
 async def make_navigation_decision_from_state():
     """Make a navigation decision using current sensor state."""
     lidar = get_lidar_state()
-    camera = get_camera_state()
+    from utils.sensor_fusion import fresh_camera_state
+
+    camera = fresh_camera_state(get_camera_state())
 
     sample = {
         "precomputed_sectors": lidar.get("sectors", {}),
@@ -229,7 +247,7 @@ async def navigation_websocket(websocket: WebSocket):
 
             decision = await run_in_threadpool(decisionMaker, data)
             if not _has_scan(data):
-                decision = _no_lidar_decision(decision, "no scan in the message")
+                decision = _no_lidar_decision(decision, "no usable scan in the message")
             update_navigation_state(decision)
 
             await websocket.send_json(decision)

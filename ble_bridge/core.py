@@ -57,6 +57,7 @@ UNREACHABLE_AFTER_S = 2.0
 # /health unanswered this long while /guidance/walk still answers: the status is no longer
 # known, so it is DOWN rather than the last "ok" kept for ever.
 HEALTH_STALE_S = 5.0
+APP_AUDIO_TTL_S = 5.0
 
 # vcgencmd get_throttled bits
 _UV_NOW, _CAPPED_NOW, _THROTTLED_NOW, _SOFT_TEMP_NOW = 1 << 0, 1 << 1, 1 << 2, 1 << 3
@@ -287,6 +288,7 @@ class Bridge:
         self._flags: Dict[str, bool] = {}
         self._warnings: Tuple[str, ...] = ()
         self._ready_announced = False
+        self._app_audio_at: Optional[float] = None
         self.session: Optional[Dict[str, Any]] = None
         self.att_mtu = P.MIN_ATT_MTU
         self._link_mtu: Optional[int] = (
@@ -658,14 +660,33 @@ class Bridge:
 
     def on_connect(self) -> List[Out]:
         with self._lock:
+            self._app_audio_at = None
             self._link_mtu = self._app_mtu = None
             self.att_mtu = P.MIN_ATT_MTU
             return []
 
     def on_disconnect(self) -> None:
         with self._lock:
+            self._app_audio_at = None
             self._link_mtu = self._app_mtu = None
             self.att_mtu = P.MIN_ATT_MTU
+
+    def phone_audio_ready(self) -> bool:
+        with self._lock:
+            return (
+                self._app_audio_at is not None
+                and 0 <= self.clock() - self._app_audio_at <= APP_AUDIO_TTL_S
+            )
+
+    def report_app_audio(self, args: Dict[str, Any]) -> None:
+        """Only an explicit app heartbeat asserts that its audio is ready."""
+        if "audio_ready" not in args:
+            return
+        ready = args["audio_ready"]
+        if not isinstance(ready, bool):
+            raise CommandError("BAD_ARGS", "audio_ready must be a boolean")
+        with self._lock:
+            self._app_audio_at = self.clock() if ready else None
 
     # --- commands ---
 
@@ -779,6 +800,7 @@ def _cmd_hello(b: Bridge, args: Dict[str, Any]):
         if not isinstance(mtu, int) or not P.MIN_ATT_MTU <= mtu <= 517:
             raise CommandError("BAD_ARGS", "att_mtu must be an integer 23..517")
         b.set_mtu(app=mtu)  # never above what BlueZ negotiated for this link
+    b.report_app_audio(args)
     with b._lock:
         info = b.protocol_info()
         info["model"] = b.identity.get("model", "")
@@ -799,6 +821,7 @@ def _cmd_ping(b: Bridge, args: Dict[str, Any]):
         _num(t) is None or abs(t) > MAX_PING_T
     ):  # echoed: keep it small
         raise CommandError("BAD_ARGS", "t must be a number (the app's clock, ms)")
+    b.report_app_audio(args)
     return {"t": t, "uptime_ms": int((b.clock() - b.started) * 1000)}, []
 
 

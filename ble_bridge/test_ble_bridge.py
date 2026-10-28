@@ -225,6 +225,37 @@ class VocabTests(unittest.TestCase):
 
 
 class BridgeTests(unittest.TestCase):
+    def test_urgent_delivery_across_disconnect_and_reconnect(self):
+        b, clock = make_bridge()
+        b.on_connect()
+        b.on_walk(make_walk(10))
+        first = b.on_walk(make_walk(11, announced="Blocked", speak=True, urgent=True))
+        self.assertTrue(P.unpack_alert(next(p for _, t, p in first if t == P.T_ALERT))["urgent"])
+        b.on_disconnect()
+        clock.t += 0.2
+        # Polling continues off-link. Its old warning must be replay-only on read.
+        b.on_walk(make_walk(12, announced="Blocked by glass", speak=True, urgent=True))
+        b.on_connect()
+        self.assertTrue(P.unpack_alert(b.alert_value())["replay"])
+        repeated = b.on_walk(make_walk(12, announced="Blocked by glass", speak=True, urgent=True))
+        self.assertFalse(any(t == P.T_ALERT for _, t, _ in repeated))
+        new = b.on_walk(make_walk(13, announced="Blocked", speak=True, urgent=True))
+        self.assertEqual(sum(t == P.T_ALERT for _, t, _ in new), 1)
+        self.assertFalse(any(t == P.T_ALERT for _, t, _ in b.on_walk(make_walk(13))))
+
+    def test_restart_does_not_replay_old_warning_and_next_urgent_is_delivered(self):
+        b, clock = make_bridge()
+        b.on_walk(make_walk(100))
+        b.on_walk(make_walk(101, announced="Blocked", speak=True, urgent=True))
+        epoch = b.epoch
+        restarted = b.on_walk(make_walk(0))
+        self.assertNotEqual(b.epoch, epoch)
+        self.assertFalse(any(t == P.T_ALERT for _, t, _ in restarted))
+        new = b.on_walk(make_walk(1, announced="Blocked by glass", speak=True, urgent=True))
+        record = P.unpack_alert(next(p for _, t, p in new if t == P.T_ALERT))
+        self.assertEqual(record["epoch"], b.epoch)
+        self.assertTrue(record["urgent"])
+
     def test_first_snapshot_only_learns(self):
         b, _ = make_bridge()
         outs = b.on_walk(make_walk(5, "Walk straight", "Walk straight", speak=True))
@@ -507,6 +538,23 @@ class BridgeTests(unittest.TestCase):
 
 
 class CommandTests(unittest.TestCase):
+    def test_phone_audio_readiness_requires_explicit_renewed_heartbeat(self):
+        b, clock = make_bridge()
+        b.on_connect()
+        self.cmd(b, {"v": 1, "id": 1, "cmd": "hello"})
+        self.assertFalse(b.phone_audio_ready())
+        self.cmd(b, {"v": 1, "id": 2, "cmd": "ping", "args": {"audio_ready": True}})
+        self.assertTrue(b.phone_audio_ready())
+        clock.t += 6
+        self.assertFalse(b.phone_audio_ready())
+        self.cmd(b, {"v": 1, "id": 3, "cmd": "ping", "args": {"audio_ready": True}})
+        self.assertTrue(b.phone_audio_ready())
+        b.on_disconnect()
+        b.on_connect()
+        self.assertFalse(b.phone_audio_ready())
+        bad = self.cmd(b, {"v": 1, "id": 4, "cmd": "ping", "args": {"audio_ready": "true"}})
+        self.assertEqual(bad[0]["error"]["code"], "BAD_ARGS")
+
     def cmd(self, b, obj):
         raw = obj if isinstance(obj, bytes) else P.json_bytes(obj)
         outs = b.on_command(raw)

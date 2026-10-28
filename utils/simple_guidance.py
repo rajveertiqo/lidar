@@ -959,7 +959,7 @@ def user_motion(motion: Optional[Dict[str, Any]]) -> Tuple[Optional[bool], float
         return None, SIMPLE_VEHICLE_PACE_UNKNOWN_MPS
     walking = bool(motion.get("moving_confirmed") or motion.get("walking_confirmed"))
     if walking:
-        return False, max(0.0, float(motion.get("speed_mps") or 0.0))
+        return False, float(motion.get("speed_mps") or 0.0)
     if motion.get("confidently_still"):
         return True, 0.0
     return None, SIMPLE_VEHICLE_PACE_UNKNOWN_MPS

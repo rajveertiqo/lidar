@@ -83,6 +83,11 @@ class HttpSource:
     def mark(self, kind: str, note: str) -> Dict[str, Any]:
         return self._request("/guidance/mark", {"kind": kind, "note": note})
 
+    def delivery_status(self, connected: bool, audio_ready: bool) -> Dict[str, Any]:
+        return self._request("/guidance/mobile-delivery", {
+            "connected": connected, "audio_ready": audio_ready,
+        })
+
 
 # --- the mock device -------------------------------------------------------
 

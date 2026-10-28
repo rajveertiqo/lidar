@@ -333,11 +333,14 @@ def health_check():
     elif not voice.get("usable"):
         warnings.append(
             f"The Pi voice cannot be heard ({voice.get('error') or 'no wearable audio output'})"
-            " — only the phone can speak"
+            + (
+                " — phone audio is ready" if voice.get("phone_usable")
+                else " — no phone audio readiness confirmed"
+            )
         )
     # "starting": the start-up hold is still holding every warning back (2026-10-21);
-    # "down" with audio off: nothing can tell the wearer anything.
-    if not (guiding and sensors.get("lidar_ok")) or not voice.get("audio_enabled"):
+    # "down" without a confirmed audio route: a live loop alone cannot deliver guidance.
+    if not (guiding and sensors.get("lidar_ok")) or not voice.get("delivery_available"):
         status = "down"
     elif not ready:
         status = "starting"
@@ -361,7 +364,10 @@ def health_check():
         "warnings": warnings,
         "voice": {
             k: voice.get(k)
-            for k in ("audio_enabled", "running", "usable", "output", "error")
+            for k in (
+                "audio_enabled", "running", "usable", "output", "error",
+                "phone_connected", "phone_usable", "delivery_available",
+            )
         },
         "system": {
             k: system.get(k)

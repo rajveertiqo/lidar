@@ -414,10 +414,14 @@ def _find_cameras(Picamera2) -> tuple:
             # Bounded (2026-10-23): a plain capture_array() waits for ever, and a camera
             # that had stalled hung the capture thread here for the rest of the session.
             try:
-                frame = cam.wait(cam.capture_array("main", wait=False),
-                                 timeout=CAMERA_FRAME_TIMEOUT_S)
+                frame = cam.wait(
+                    cam.capture_array("main", wait=False),
+                    timeout=CAMERA_FRAME_TIMEOUT_S,
+                )
             except TimeoutError:
-                raise _NoPicture(f"no picture within {CAMERA_FRAME_TIMEOUT_S:g}s") from None
+                raise _NoPicture(
+                    f"no picture within {CAMERA_FRAME_TIMEOUT_S:g}s"
+                ) from None
             for s in _VALID:
                 quad = _sector_slice(frame, s)
                 level = float(quad[::4, ::4].mean())
@@ -644,10 +648,14 @@ def _open_camera():
             except _NoPicture as e:
                 # A stalled camera is not a board without cameras: search again, as a
                 # camera that will not open is retried, rather than give up on cycling.
-                delay = CAMERA_RETRY_BACKOFF_S[min(tries, len(CAMERA_RETRY_BACKOFF_S) - 1)]
+                delay = CAMERA_RETRY_BACKOFF_S[
+                    min(tries, len(CAMERA_RETRY_BACKOFF_S) - 1)
+                ]
                 tries += 1
-                print(f"[WARN] Camera search: {e} — the camera is not delivering; "
-                      f"searching again in {delay:g}s")
+                print(
+                    f"[WARN] Camera search: {e} — the camera is not delivering; "
+                    f"searching again in {delay:g}s"
+                )
                 deadline = time.monotonic() + delay
                 while running and time.monotonic() < deadline:
                     time.sleep(0.25)
@@ -669,7 +677,9 @@ def _open_camera():
     while not _set_board_mode():
         delay = CAMERA_RETRY_BACKOFF_S[min(tries, len(CAMERA_RETRY_BACKOFF_S) - 1)]
         tries += 1
-        print(f"[WARN] No camera pictures until the board mode is set; retrying in {delay:g}s")
+        print(
+            f"[WARN] No camera pictures until the board mode is set; retrying in {delay:g}s"
+        )
         deadline = time.monotonic() + delay
         while running and time.monotonic() < deadline:
             time.sleep(0.25)

@@ -152,7 +152,9 @@ def _write(stride: float, source: str, **extra) -> Dict[str, Any]:
     data = _payload(stride, source, **extra)
     _write_seq += 1
     with _file_lock:
-        _atomic_write_text(STRIDE_FILE, json.dumps(data, indent=2, sort_keys=True) + "\n")
+        _atomic_write_text(
+            STRIDE_FILE, json.dumps(data, indent=2, sort_keys=True) + "\n"
+        )
     _adopt(data)
     _last_save = time.time()
     return dict(data)

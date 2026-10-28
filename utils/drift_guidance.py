@@ -87,19 +87,21 @@ def project_path(
     heading_deg: float = 0.0,
     lookahead_s: float = DRIFT_LOOKAHEAD_S,
     step_s: float = DRIFT_STEP_S,
+    lateral_mps: float = 0.0,
 ) -> np.ndarray:
     """Where the user will be, in mm, at each future time step."""
     n = max(1, int(round(lookahead_s / step_s)))
     heading = math.radians(heading_deg)
     yaw_step = math.radians(yaw_rate_dps) * step_s
-    dist_step = max(0.0, speed_mps) * step_s * 1000.0  # mm per step
+    dist_step = speed_mps * step_s * 1000.0  # signed forward mm per step
+    side_step = lateral_mps * step_s * 1000.0
 
     positions = np.empty((n, 2), dtype=np.float64)
     x = y = 0.0
     for i in range(n):
         heading += yaw_step
-        x += dist_step * math.cos(heading)
-        y += dist_step * math.sin(heading)
+        x += dist_step * math.cos(heading) - side_step * math.sin(heading)
+        y += dist_step * math.sin(heading) + side_step * math.cos(heading)
         positions[i] = (x, y)
     return positions
 
@@ -136,7 +138,7 @@ def _reachable(
     """Drop everything the user could not reach inside the horizon."""
     if points_xy.size == 0:
         return points_xy
-    reach = max(speed_mps, 0.1) * lookahead_s * 1000.0 + DRIFT_BODY_RADIUS_MM * 2.0
+    reach = max(abs(speed_mps), 0.1) * lookahead_s * 1000.0 + DRIFT_BODY_RADIUS_MM * 2.0
     within = (points_xy**2).sum(axis=1) <= reach**2
     return points_xy[within]
 
@@ -317,7 +319,10 @@ def _closest_on_surface(
 
 
 def wall_proximity(
-    surfaces: List[Dict[str, Any]], speed_mps: float, yaw_rate_dps: float = 0.0
+    surfaces: List[Dict[str, Any]],
+    speed_mps: float,
+    yaw_rate_dps: float = 0.0,
+    lateral_mps: float = 0.0,
 ) -> Dict[str, Optional[Dict[str, Any]]]:
     """Nearest wall on the LEFT and on the RIGHT, and whether it is closing."""
     result: Dict[str, Optional[Dict[str, Any]]] = {"left": None, "right": None}
@@ -330,6 +335,7 @@ def wall_proximity(
         yaw_rate_dps=yaw_rate_dps,
         lookahead_s=DRIFT_WALL_HORIZON_S,
         step_s=DRIFT_WALL_HORIZON_S,
+        lateral_mps=lateral_mps,
     )[-1]
 
     for surface in surfaces:
@@ -626,7 +632,7 @@ def describe_heading(heading: Dict[str, Any]) -> Dict[str, str]:
     quality = float(heading.get("yaw_quality") or 0.0)
     estimated = heading.get("speed_source") != "odometry"
 
-    pace = _band(speed, _PACE_BANDS)
+    pace = _band(abs(speed), _PACE_BANDS)
     if not heading.get("moving", True):
         pace = "standing still"
     elif estimated:
@@ -821,15 +827,22 @@ def analyze(
         return _clear_result(heading, "drift guidance disabled")
 
     speed = float(heading.get("speed_mps") or 0.0)
+    lateral = (
+        float(heading.get("right_mps") or 0.0)
+        if heading.get("velocity_trusted")
+        else 0.0
+    )
     if heading.get("confidently_still"):
-        speed = 0.0
+        speed = lateral = 0.0
     yaw_rate = float(heading.get("yaw_rate_dps") or 0.0)
 
     points = _cartesian(lidar_state)
-    points = _reachable(points, speed)
+    points = _reachable(points, math.hypot(speed, lateral))
 
     # --- A. collision course on the user's ACTUAL arc ----------------------
-    path = project_path(speed, yaw_rate_dps=yaw_rate, heading_deg=0.0)
+    path = project_path(
+        speed, yaw_rate_dps=yaw_rate, heading_deg=0.0, lateral_mps=lateral
+    )
     ttc, hit_index = sweep_collision(path, points, DRIFT_BODY_RADIUS_MM)
 
     surfaces = fit_surfaces(_side_and_forward_points(lidar_state))
@@ -839,12 +852,14 @@ def analyze(
         hazard = _describe_hazard(points[hit_index], surfaces, camera_state)
 
     # How close the walls beside the user are, and whether they are closing.
-    walls = wall_proximity(surfaces, speed, yaw_rate)
+    walls = wall_proximity(surfaces, speed, yaw_rate, lateral_mps=lateral)
     near_wall = wall_alert(walls)
 
     end = path[-1]
     path_bearing = math.degrees(math.atan2(end[1], end[0])) if np.any(end) else 0.0
-    glass = glass_warning(radar_state, lidar_state, path_bearing, speed)
+    glass = glass_warning(
+        radar_state, lidar_state, path_bearing, math.hypot(speed, lateral)
+    )
 
     effective_ttc = ttc
     if glass is not None and (ttc is None or glass["ttc_s"] < ttc):
@@ -862,8 +877,10 @@ def analyze(
 
     # The near-wall cue gives way to an urgent collision with anything but that wall: it
     # overrode "Stop. Obstacle ahead" (scan 2026-10-23).
-    wall_is_it = near_wall is not None and hazard is not None and (
-        hazard.get("side") == near_wall["side"]
+    wall_is_it = (
+        near_wall is not None
+        and hazard is not None
+        and (hazard.get("side") == near_wall["side"])
     )
     if near_wall is not None and not (
         level == LEVEL_URGENT and (glass_leads or not wall_is_it)
@@ -920,12 +937,16 @@ def analyze(
         )
 
     elif level in (LEVEL_ADVISORY, LEVEL_URGENT):
-        correction = find_correction(
-            points,
-            speed,
-            avoid_side=hazard["side"] if hazard else None,
-            current_ttc_s=effective_ttc,
-        )
+        # The steering fan describes forward walking. For other movement,
+        # warn/stop at the collision rather than recommend an untested turn.
+        correction = None
+        if speed > 0 and abs(lateral) < abs(speed):
+            correction = find_correction(
+                points,
+                speed,
+                avoid_side=hazard["side"] if hazard else None,
+                current_ttc_s=effective_ttc,
+            )
         if correction is None:
             what = hazard["object"] if hazard else "obstacle"
             where = _describe_where(hazard)

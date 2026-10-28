@@ -155,6 +155,27 @@ def determine_intersection_type(traffic_lights: Dict) -> str:
     return "unknown"
 
 
+def valid_scan_points(scan_data: Any):
+    """Yield finite (bearing, range) pairs that navigation can actually use."""
+    if not isinstance(scan_data, (list, tuple)):
+        return
+    for pt in scan_data:
+        try:
+            if isinstance(pt, dict):
+                angle, dist = pt["angle_deg"], pt["distance_mm"]
+            elif isinstance(pt, (list, tuple)) and len(pt) >= 2:
+                angle, dist = pt[:2]
+            else:
+                continue
+            if isinstance(angle, bool) or isinstance(dist, bool):
+                continue
+            angle, dist = float(angle), float(dist)
+        except (KeyError, TypeError, ValueError, OverflowError):
+            continue
+        if math.isfinite(angle) and math.isfinite(dist) and 0 < dist <= 50000:
+            yield angle, dist
+
+
 def decisionMaker(sample: Dict[str, Any]) -> Dict[str, Any]:
     """COMPREHENSIVE navigation decision maker Integrates obstacle avoidance with traffic light awareness"""
     scan_data = sample.get("scan_data") or []
@@ -172,28 +193,12 @@ def decisionMaker(sample: Dict[str, Any]) -> Dict[str, Any]:
     else:
         sectors = {sec: {"min": None, "count": 0} for sec in LIDAR_SECTORS_8}
 
-        for pt in scan_data:
-            try:
-                if isinstance(pt, dict):
-                    angle = float(pt.get("angle_deg", 0))
-                    dist = float(pt.get("distance_mm", 0))
-                elif isinstance(pt, (list, tuple)) and len(pt) >= 2:
-                    angle, dist = float(pt[0]), float(pt[1])
-                else:
-                    continue
-
-                if dist <= 0 or dist > 50000:
-                    continue
-
-                sec = get_sector(angle)
-                sectors[sec]["count"] += 1
-
-                if sectors[sec]["min"] is None or dist < sectors[sec]["min"]:
-                    sectors[sec]["min"] = dist
-
-            except:
-                continue
-        lidar_point_count = len(scan_data)
+        for angle, dist in valid_scan_points(scan_data):
+            sec = get_sector(angle)
+            sectors[sec]["count"] += 1
+            if sectors[sec]["min"] is None or dist < sectors[sec]["min"]:
+                sectors[sec]["min"] = dist
+        lidar_point_count = sum(s["count"] for s in sectors.values())
 
     # Build camera data dict - handle both list and dict formats
     camera_data = {}

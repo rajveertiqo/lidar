@@ -2,7 +2,7 @@
 
 > **Status: PROTOTYPE, not production.**
 >
-> - **Tested:** protocol and bridge logic, by `test_ble_bridge.py` (49 desk tests).
+> - **Tested:** protocol and bridge logic, by `test_ble_bridge.py` (desk tests).
 > - **Checked:** BlueZ access, with `--check` (read-only).
 > - **Not yet done:** it has **not** advertised or served a phone.
 >
@@ -15,7 +15,30 @@ The bridge is a **separate process**. It reads the navigation service's loopback
 - show the device's health;
 - send a small set of harmless commands.
 
-It changes **nothing** in the navigation service. The navigation service does not know the bridge exists, and a bridge crash cannot affect guidance.
+The navigation service has **no dependency** on the bridge for its guidance loop.
+The bridge also reports phone audio readiness to the service over loopback HTTP.
+
+## Phone audio readiness
+
+A Bluetooth connection does not establish that the app can speak. After subscribing
+to ALERT notifications and initializing its audio, the app should include the boolean
+`audio_ready: true` in `hello`, then renew it with `ping` at least once every two seconds:
+
+```json
+{"v":1,"id":2,"cmd":"ping","args":{"audio_ready":true}}
+```
+
+Send `audio_ready: false` if audio becomes unavailable. Readiness expires five seconds
+after the last explicit report and resets on connect/disconnect. The bridge reports
+readiness only with exactly one connected phone and an ALERT subscription, once per
+second, to `POST /guidance/mobile-delivery` (loopback clients only). The service's report
+expires after three seconds without an update, including if the bridge exits.
+
+Existing clients can still receive announcements. Without the new readiness heartbeat,
+the service treats phone audio as unconfirmed. `/health` reports `down` if neither the
+Pi speaker nor confirmed phone audio is available. This is readiness, not proof that a
+sentence was heard. Historical ALERT reads remain replay-only; reconnecting does not
+authorize speaking an old instruction. New cue numbers still generate notifications.
 
 | File | What it is |
 |---|---|

@@ -443,11 +443,7 @@ def speak(
     if sink_usable is None:
         sink_usable = bool(_running and audio_output()["usable"])
     if not (_running and sink_usable):
-        why = (
-            "Pi voice not running"
-            if not _running
-            else "no wearable audio sink — the phone is expected to speak"
-        )
+        why = "Pi voice not running" if not _running else "no wearable audio sink"
         _report(seq, "unavailable", text, why)
         return "unavailable"
     return "queued" if _voice.say(text, urgent, seq) else "dropped"
@@ -459,7 +455,11 @@ def accepted_seq() -> Optional[int]:
 
 
 def status() -> Dict[str, Any]:
+    from utils import mobile_delivery
+
     out = audio_output() if _running else {"name": None, "usable": False}
+    phone = mobile_delivery.status()
+    usable = bool(_running and out["usable"] and not _voice.failing)
     return {
         "enabled": bool(PI_VOICE_ENABLED),
         "audio_enabled": bool(
@@ -469,7 +469,10 @@ def status() -> Dict[str, Any]:
         "output": out["name"],
         "sink_usable": bool(_running and out["usable"]),
         "sink_stale": bool(out.get("stale")),
-        "usable": bool(_running and out["usable"] and not _voice.failing),
+        "usable": usable,
+        "phone_connected": phone["connected"],
+        "phone_usable": bool(AUDIO_ENABLED and phone["usable"]),
+        "delivery_available": bool(AUDIO_ENABLED and (usable or phone["usable"])),
         "accepted_seq": _voice.accepted_seq if _running else None,
         "last": _voice.last,
         "error": _voice.error,

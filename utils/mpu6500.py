@@ -219,12 +219,16 @@ class MPU6500:
         # SPI never errors: a chip that is gone reads every byte 0x00 or 0xFF, and one that
         # stopped repeats its last sample. Both passed as live data (2026-10-23).
         if d[0] in SPI_DEAD_BYTES and all(b == d[0] for b in d):
-            raise OSError(f"no chip answering on {self.describe()} (every byte {d[0]:#04x})")
+            raise OSError(
+                f"no chip answering on {self.describe()} (every byte {d[0]:#04x})"
+            )
         block = bytes(d)
         if block == self._last_block:
             self._repeats += 1
             if self._repeats >= FROZEN_READS:
-                raise OSError(f"readings frozen ({self._repeats + 1} identical in a row)")
+                raise OSError(
+                    f"readings frozen ({self._repeats + 1} identical in a row)"
+                )
         else:
             self._last_block, self._repeats = block, 0
 

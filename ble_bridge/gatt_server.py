@@ -5,8 +5,8 @@ with `--check` only. It has NOT yet advertised or served a phone: that needs the
 adapter un-blocked and a supervised first run (docs/04 §8, docs/09 Phase 5).
 
 It is a SEPARATE PROCESS from the navigation service on purpose: it only reads
-the service's loopback HTTP API, so a Bluetooth fault can never stall or crash
-the guidance loop, and the service needs no change to support it.
+the service's loopback HTTP API and reports an expiring phone audio-readiness lease.
+A Bluetooth fault does not block the guidance loop.
 
     venv/bin/python -m ble_bridge.gatt_server --check            # D-Bus + adapter, no radio
     venv/bin/python -m ble_bridge.gatt_server --mock sidewalk    # a fake device, no sensors
@@ -556,6 +556,7 @@ class Server:
                 else:
                     if started >= next_health:
                         next_health = started + HEALTH_S
+                        self.report_delivery()
                         try:
                             outs += self.bridge.on_health(
                                 self.source.health(),
@@ -575,6 +576,17 @@ class Server:
             self.stop.wait(max(0.0, POLL_S - (time.monotonic() - started)))
 
     # --- connections ---
+
+    def report_delivery(self) -> None:
+        """Report independently of sensor health; a missing report expires in the service."""
+        if not hasattr(self.source, "delivery_status"):
+            return  # mock source: no live service to update
+        connected = len(self.connected) == 1
+        ready = connected and self.chars["alert"].notifying and self.bridge.phone_audio_ready()
+        try:
+            self.source.delivery_status(connected, bool(ready))
+        except Exception as exc:
+            self.bridge.log("delivery", f"delivery status: {type(exc).__name__}: {exc}")
 
     def on_device_props(self, interface, changed, invalidated, path=None) -> None:
         if interface == DEVICE_IFACE and "Connected" in changed:

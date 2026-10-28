@@ -3,7 +3,8 @@
 import asyncio
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, StrictBool
 from fastapi.responses import HTMLResponse
 from starlette.concurrency import run_in_threadpool
 
@@ -14,6 +15,22 @@ from utils.unified_guidance import latest_guidance
 router = APIRouter(prefix="/guidance", tags=["Guidance"])
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+
+
+class MobileDeliveryReport(BaseModel):
+    connected: StrictBool
+    audio_ready: StrictBool
+
+
+@router.post("/mobile-delivery")
+def mobile_delivery_report(payload: MobileDeliveryReport, request: Request):
+    """The local BLE bridge's lease; a connection alone does not establish audio readiness."""
+    if request.client is None or request.client.host not in ("127.0.0.1", "::1"):
+        raise HTTPException(status_code=403, detail="local BLE bridge only")
+    from utils import mobile_delivery
+
+    mobile_delivery.report(payload.connected, payload.audio_ready)
+    return {"ok": True}
 
 
 @router.get("/fused")

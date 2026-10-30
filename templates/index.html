@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -7,9 +7,10 @@
     <script>
       (function () {
         var q = new URLSearchParams(location.search).get("theme");
-        var t = q === "night" || q === "sun"
-          ? q
-          : localStorage.getItem("blindTheme") || "sun";
+        var t =
+          q === "night" || q === "sun"
+            ? q
+            : localStorage.getItem("blindTheme") || "sun";
         document.documentElement.setAttribute("data-theme", t);
       })();
     </script>
@@ -94,8 +95,12 @@
         }
       }
       @media (max-width: 540px) {
-        .pill { display: none; }
-        header b { font-size: 0.9rem; }
+        .pill {
+          display: none;
+        }
+        header b {
+          font-size: 0.9rem;
+        }
       }
       @media (max-width: 760px) {
         header {
@@ -104,20 +109,27 @@
           flex-wrap: wrap;
           row-gap: 8px;
         }
-        header b { font-size: 0.95rem; }
+        header b {
+          font-size: 0.95rem;
+        }
         .pill {
           border-radius: 8px;
           padding: 6px 10px;
           font-size: 0.78rem;
           white-space: nowrap;
         }
-        .header-right { gap: 8px; flex-wrap: wrap; }
+        .header-right {
+          gap: 8px;
+          flex-wrap: wrap;
+        }
         .main-grid {
           grid-template-columns: 1fr;
           gap: 10px;
           padding: 10px;
         }
-        .card { padding: 12px; }
+        .card {
+          padding: 12px;
+        }
       }
       .card {
         background: var(--card);
@@ -266,7 +278,8 @@
       }
 
       @keyframes pulse {
-        0%, 100% {
+        0%,
+        100% {
           opacity: 1;
           transform: scale(1);
         }
@@ -594,17 +607,43 @@
         margin: 0 auto;
       }
       @media (max-width: 900px) {
-        #radar-scope { max-width: none; }
+        #radar-scope {
+          max-width: none;
+        }
       }
 
-      .sc-wedge { fill: rgba(102, 126, 234, 0.1); stroke: none; }
-      .sc-wedge.off { fill: rgba(136, 146, 160, 0.04); stroke: none; }
-      .sc-edge { fill: none; stroke: var(--accent); }
-      .sc-edge.off { fill: none; stroke: var(--muted); }
-      .sc-overlap { fill: rgba(102, 126, 234, 0.3); stroke: none; }
-      :root[data-theme="sun"] .sc-overlap { fill: rgba(59, 30, 158, 0.28); }
-      .sc-blind { fill: rgba(229, 62, 62, 0.16); stroke: none; }
-      .sc-ring { fill: none; stroke: var(--border); stroke-width: 1; }
+      .sc-wedge {
+        fill: rgba(102, 126, 234, 0.1);
+        stroke: none;
+      }
+      .sc-wedge.off {
+        fill: rgba(136, 146, 160, 0.04);
+        stroke: none;
+      }
+      .sc-edge {
+        fill: none;
+        stroke: var(--accent);
+      }
+      .sc-edge.off {
+        fill: none;
+        stroke: var(--muted);
+      }
+      .sc-overlap {
+        fill: rgba(102, 126, 234, 0.3);
+        stroke: none;
+      }
+      :root[data-theme="sun"] .sc-overlap {
+        fill: rgba(59, 30, 158, 0.28);
+      }
+      .sc-blind {
+        fill: rgba(229, 62, 62, 0.16);
+        stroke: none;
+      }
+      .sc-ring {
+        fill: none;
+        stroke: var(--border);
+        stroke-width: 1;
+      }
 
       :root[data-theme="sun"] .sc-wedge {
         fill: rgba(59, 30, 158, 0.1);
@@ -647,7 +686,9 @@
         box-shadow: none;
         border-bottom: 3px solid #000;
       }
-      :root[data-theme="sun"] header b { font-size: 1.15rem; }
+      :root[data-theme="sun"] header b {
+        font-size: 1.15rem;
+      }
 
       :root[data-theme="sun"] .pill {
         background: #fff;
@@ -695,22 +736,31 @@
         border: 2px solid #000;
       }
       :root[data-theme="sun"] .light-bulb.red.active {
-        background: #e00000; box-shadow: none;
+        background: #e00000;
+        box-shadow: none;
       }
       :root[data-theme="sun"] .light-bulb.yellow.active {
-        background: #f0b000; box-shadow: none;
+        background: #f0b000;
+        box-shadow: none;
       }
       :root[data-theme="sun"] .light-bulb.green.active {
-        background: #00a000; box-shadow: none;
+        background: #00a000;
+        box-shadow: none;
       }
 
       :root[data-theme="sun"] .crossing-action {
         font-size: 32px;
         font-weight: 900;
       }
-      :root[data-theme="sun"] .crossing-action.cross { color: var(--success); }
-      :root[data-theme="sun"] .crossing-action.stop { color: var(--alert); }
-      :root[data-theme="sun"] .crossing-action.wait { color: var(--warning); }
+      :root[data-theme="sun"] .crossing-action.cross {
+        color: var(--success);
+      }
+      :root[data-theme="sun"] .crossing-action.stop {
+        color: var(--alert);
+      }
+      :root[data-theme="sun"] .crossing-action.wait {
+        color: var(--warning);
+      }
       :root[data-theme="sun"] .crossing-message {
         color: #000;
         font-size: 15px;
@@ -725,19 +775,25 @@
         font-size: 17px;
       }
       :root[data-theme="sun"] .crossing-btn.ready {
-        background: var(--success); color: #fff;
+        background: var(--success);
+        color: #fff;
       }
       :root[data-theme="sun"] .crossing-btn.ready:hover {
-        background: #084a08; transform: none; box-shadow: none;
+        background: #084a08;
+        transform: none;
+        box-shadow: none;
       }
       :root[data-theme="sun"] .crossing-btn.waiting {
-        background: #e0e0e0; color: #000;
+        background: #e0e0e0;
+        color: #000;
       }
       :root[data-theme="sun"] .crossing-btn.crossing {
-        background: var(--warning); color: #fff;
+        background: var(--warning);
+        color: #fff;
       }
       :root[data-theme="sun"] .crossing-btn.danger {
-        background: var(--alert); color: #fff;
+        background: var(--alert);
+        color: #fff;
       }
 
       :root[data-theme="sun"] .lights-grid {
@@ -751,10 +807,15 @@
         overflow: hidden;
       }
       :root[data-theme="sun"] .light-card .direction {
-        color: #000; font-weight: 800; font-size: 10px;
+        color: #000;
+        font-weight: 800;
+        font-size: 10px;
       }
       :root[data-theme="sun"] .light-card .state {
-        color: #000; font-weight: 800; opacity: 1; font-size: 11px;
+        color: #000;
+        font-weight: 800;
+        opacity: 1;
+        font-size: 11px;
       }
 
       /* ---- Guidance / obstacle / radar boxes ---- */
@@ -764,13 +825,18 @@
         box-shadow: none;
       }
       :root[data-theme="sun"] .path-action {
-        font-size: 22px; font-weight: 800; color: #000;
+        font-size: 22px;
+        font-weight: 800;
+        color: #000;
       }
       :root[data-theme="sun"] .path-detail {
-        color: #1a1a1a; font-size: 14px; font-weight: 600;
+        color: #1a1a1a;
+        font-size: 14px;
+        font-weight: 600;
       }
       :root[data-theme="sun"] .path-arrow {
-        filter: none; font-size: 50px;
+        filter: none;
+        font-size: 50px;
       }
 
       /* ---- Sector tiles: solid block of colour, white bold text ---- */
@@ -780,19 +846,28 @@
         box-shadow: none;
       }
       :root[data-theme="sun"] .sector-name {
-        color: #000; font-weight: 800; font-size: 11px;
+        color: #000;
+        font-weight: 800;
+        font-size: 11px;
       }
       :root[data-theme="sun"] .sector-dist {
-        font-size: 18px; font-weight: 800;
+        font-size: 18px;
+        font-weight: 800;
       }
       :root[data-theme="sun"] .sector.danger {
-        background: var(--alert); border-color: #000; box-shadow: none;
+        background: var(--alert);
+        border-color: #000;
+        box-shadow: none;
       }
       :root[data-theme="sun"] .sector.warning {
-        background: var(--warning); border-color: #000; box-shadow: none;
+        background: var(--warning);
+        border-color: #000;
+        box-shadow: none;
       }
       :root[data-theme="sun"] .sector.safe {
-        background: var(--success); border-color: #000; box-shadow: none;
+        background: var(--success);
+        border-color: #000;
+        box-shadow: none;
       }
       :root[data-theme="sun"] .sector.danger .sector-name,
       :root[data-theme="sun"] .sector.danger .sector-dist,
@@ -805,46 +880,76 @@
 
       /* ---- Control buttons ---- */
       :root[data-theme="sun"] .ctl-btn {
-        background: var(--info); color: #fff; border: 2px solid #000;
-        box-shadow: none; font-weight: 800; font-size: 14px;
+        background: var(--info);
+        color: #fff;
+        border: 2px solid #000;
+        box-shadow: none;
+        font-weight: 800;
+        font-size: 14px;
       }
       :root[data-theme="sun"] .ctl-btn:hover {
-        background: #002d63; transform: none; box-shadow: none;
+        background: #002d63;
+        transform: none;
+        box-shadow: none;
       }
 
       /* ---- Detections / stats ---- */
       :root[data-theme="sun"] .det-box {
-        background: #fff; border: 2px solid #000;
+        background: #fff;
+        border: 2px solid #000;
       }
-      :root[data-theme="sun"] .det-box h4 { color: #000; font-weight: 800; }
+      :root[data-theme="sun"] .det-box h4 {
+        color: #000;
+        font-weight: 800;
+      }
       :root[data-theme="sun"] .det-count {
-        background: #000; color: #fff; font-weight: 800;
+        background: #000;
+        color: #fff;
+        font-weight: 800;
       }
-      :root[data-theme="sun"] .det-list { font-size: 0.8em; }
+      :root[data-theme="sun"] .det-list {
+        font-size: 0.8em;
+      }
       :root[data-theme="sun"] .det-item {
-        background: #fff; border: 1px solid #000; color: #000;
+        background: #fff;
+        border: 1px solid #000;
+        color: #000;
         font-weight: 600;
       }
       :root[data-theme="sun"] .stat {
-        color: #000; font-weight: 600; font-size: 0.95rem;
+        color: #000;
+        font-weight: 600;
+        font-size: 0.95rem;
         border-bottom: 1px solid #000;
       }
-      :root[data-theme="sun"] .stat b { color: #000; font-weight: 800; }
+      :root[data-theme="sun"] .stat b {
+        color: #000;
+        font-weight: 800;
+      }
 
       /* ---- Camera tiles ---- */
       :root[data-theme="sun"] .video-container {
-        border: 2px solid #000; box-shadow: none;
+        border: 2px solid #000;
+        box-shadow: none;
       }
       :root[data-theme="sun"] .video-container .sector-label {
-        background: #000; color: #fff; backdrop-filter: none;
+        background: #000;
+        color: #fff;
+        backdrop-filter: none;
         font-weight: 800;
       }
       :root[data-theme="sun"] .fps-badge {
-        background: #000; color: #fff; font-weight: 800;
+        background: #000;
+        color: #fff;
+        font-weight: 800;
       }
 
-      :root[data-theme="sun"] ::-webkit-scrollbar-track { background: #e0e0e0; }
-      :root[data-theme="sun"] ::-webkit-scrollbar-thumb { background: #000; }
+      :root[data-theme="sun"] ::-webkit-scrollbar-track {
+        background: #e0e0e0;
+      }
+      :root[data-theme="sun"] ::-webkit-scrollbar-thumb {
+        background: #000;
+      }
 
       #theme-btn {
         border: 2px solid currentColor;
@@ -879,17 +984,27 @@
         background: var(--card);
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
       }
-      .guide-banner[data-level="clear"]   { --gb-accent: #22c55e; }
-      .guide-banner[data-level="caution"] { --gb-accent: #f59e0b; }
-      .guide-banner[data-level="danger"]  { --gb-accent: #ef4444; }
-      .guide-banner[data-level="idle"]    { --gb-accent: #475569; }
+      .guide-banner[data-level="clear"] {
+        --gb-accent: #22c55e;
+      }
+      .guide-banner[data-level="caution"] {
+        --gb-accent: #f59e0b;
+      }
+      .guide-banner[data-level="danger"] {
+        --gb-accent: #ef4444;
+      }
+      .guide-banner[data-level="idle"] {
+        --gb-accent: #475569;
+      }
 
       .gb-arrow {
         font-size: 56px;
         line-height: 1;
         filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
       }
-      .gb-main { min-width: 0; }
+      .gb-main {
+        min-width: 0;
+      }
       .gb-instruction {
         font-size: 40px;
         font-weight: 800;
@@ -947,13 +1062,21 @@
         color: var(--muted);
       }
 
-      .guide-banner.said { animation: gb-pulse 0.7s ease-out; }
+      .guide-banner.said {
+        animation: gb-pulse 0.7s ease-out;
+      }
       @keyframes gb-pulse {
-        0%   { box-shadow: 0 0 0 0 var(--gb-accent); }
-        100% { box-shadow: 0 0 0 18px rgba(0, 0, 0, 0); }
+        0% {
+          box-shadow: 0 0 0 0 var(--gb-accent);
+        }
+        100% {
+          box-shadow: 0 0 0 18px rgba(0, 0, 0, 0);
+        }
       }
       @media (prefers-reduced-motion: reduce) {
-        .guide-banner.said { animation: none; }
+        .guide-banner.said {
+          animation: none;
+        }
       }
 
       :root[data-theme="sun"] .guide-banner {
@@ -962,20 +1085,40 @@
         border-left: 14px solid var(--gb-accent, #000);
         box-shadow: none;
       }
-      :root[data-theme="sun"] .guide-banner[data-level="clear"]   { --gb-accent: #0a5c0a; }
-      :root[data-theme="sun"] .guide-banner[data-level="caution"] { --gb-accent: #8a4700; }
-      :root[data-theme="sun"] .guide-banner[data-level="danger"]  { --gb-accent: #b30000; }
-      :root[data-theme="sun"] .guide-banner[data-level="idle"]    { --gb-accent: #333; }
-      :root[data-theme="sun"] .gb-instruction { font-size: 44px; }
+      :root[data-theme="sun"] .guide-banner[data-level="clear"] {
+        --gb-accent: #0a5c0a;
+      }
+      :root[data-theme="sun"] .guide-banner[data-level="caution"] {
+        --gb-accent: #8a4700;
+      }
+      :root[data-theme="sun"] .guide-banner[data-level="danger"] {
+        --gb-accent: #b30000;
+      }
+      :root[data-theme="sun"] .guide-banner[data-level="idle"] {
+        --gb-accent: #333;
+      }
+      :root[data-theme="sun"] .gb-instruction {
+        font-size: 44px;
+      }
       :root[data-theme="sun"] .gb-reason {
-        color: #1a1a1a; font-size: 16px; font-weight: 600;
+        color: #1a1a1a;
+        font-size: 16px;
+        font-weight: 600;
       }
-      :root[data-theme="sun"] .gb-arrow { filter: none; }
+      :root[data-theme="sun"] .gb-arrow {
+        filter: none;
+      }
       :root[data-theme="sun"] .gb-stat {
-        background: #fff; border: 2px solid #000;
+        background: #fff;
+        border: 2px solid #000;
       }
-      :root[data-theme="sun"] .gb-stat b { color: #000; }
-      :root[data-theme="sun"] .gb-stat span { color: #1a1a1a; font-weight: 700; }
+      :root[data-theme="sun"] .gb-stat b {
+        color: #000;
+      }
+      :root[data-theme="sun"] .gb-stat span {
+        color: #1a1a1a;
+        font-weight: 700;
+      }
 
       @media (max-width: 760px) {
         .guide-banner {
@@ -984,11 +1127,22 @@
           margin: 10px 10px 0;
           padding: 14px;
         }
-        .gb-arrow { font-size: 40px; }
-        .gb-instruction { font-size: 30px; }
-        :root[data-theme="sun"] .gb-instruction { font-size: 32px; }
-        .gb-stats { grid-column: 1 / -1; }
-        .gb-stat { flex: 1; min-width: 0; }
+        .gb-arrow {
+          font-size: 40px;
+        }
+        .gb-instruction {
+          font-size: 30px;
+        }
+        :root[data-theme="sun"] .gb-instruction {
+          font-size: 32px;
+        }
+        .gb-stats {
+          grid-column: 1 / -1;
+        }
+        .gb-stat {
+          flex: 1;
+          min-width: 0;
+        }
       }
       .tp-mark {
         font: inherit;
@@ -1001,16 +1155,39 @@
         color: var(--fg);
         cursor: pointer;
       }
-      .tp-mark:active { transform: scale(0.97); }
-      .tp-mark[data-kind="right"] { border-color: var(--success); }
-      .tp-mark[data-kind="wrong"] { border-color: var(--alert); }
-      .tp-mark[data-kind="missed"] { border-color: var(--warning); }
-      .tp-row { display: grid; grid-template-columns: 5.5em 1fr; gap: 8px;
-                padding: 4px 0; border-bottom: 1px solid var(--border); }
-      .tp-row .tp-t { color: var(--muted); font-variant-numeric: tabular-nums; }
-      .tp-row .tp-why { color: var(--muted); font-size: 12px; }
-      .tp-row.urgent b { color: var(--alert); }
-      .tp-row.mark b { color: var(--info); }
+      .tp-mark:active {
+        transform: scale(0.97);
+      }
+      .tp-mark[data-kind="right"] {
+        border-color: var(--success);
+      }
+      .tp-mark[data-kind="wrong"] {
+        border-color: var(--alert);
+      }
+      .tp-mark[data-kind="missed"] {
+        border-color: var(--warning);
+      }
+      .tp-row {
+        display: grid;
+        grid-template-columns: 5.5em 1fr;
+        gap: 8px;
+        padding: 4px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .tp-row .tp-t {
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .tp-row .tp-why {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .tp-row.urgent b {
+        color: var(--alert);
+      }
+      .tp-row.mark b {
+        color: var(--info);
+      }
     </style>
   </head>
   <body>
@@ -1021,8 +1198,17 @@
           <span id="hz">--Hz</span> • <span id="scan">#--</span> •
           <span id="total-obj">0 objects</span>
         </div>
-        <a href="/test" style="margin-right:10px;font-weight:700" title="The page to hold during a walk">🧪 Field test</a>
-        <button id="theme-btn" onclick="toggleTheme()" title="Switch between the outdoor high-contrast theme and the night theme">
+        <a
+          href="/test"
+          style="margin-right: 10px; font-weight: 700"
+          title="The page to hold during a walk"
+          >🧪 Field test</a
+        >
+        <button
+          id="theme-btn"
+          onclick="toggleTheme()"
+          title="Switch between the outdoor high-contrast theme and the night theme"
+        >
           ☀ Sunlight
         </button>
       </div>
@@ -1032,7 +1218,9 @@
     <section class="guide-banner" id="guide-banner" data-level="idle">
       <div class="gb-arrow" id="gb-arrow" aria-hidden="true">•</div>
       <div class="gb-main">
-        <div class="gb-instruction" id="gb-instruction">Waiting for sensors…</div>
+        <div class="gb-instruction" id="gb-instruction">
+          Waiting for sensors…
+        </div>
         <div class="gb-reason" id="gb-reason">—</div>
         <div class="gb-voice" id="gb-voice">—</div>
       </div>
@@ -1057,26 +1245,74 @@
         <div class="gb-stat" title="Fused clearance straight ahead, in feet">
           <b id="gb-ahead">—</b><span>ft ahead</span>
         </div>
-        <div class="gb-stat" title="What the guide has identified ahead: wall, glass, a named object, a wall it is drifting toward, or offline">
+        <div
+          class="gb-stat"
+          title="What the guide has identified ahead: wall, glass, a named object, a wall it is drifting toward, or offline"
+        >
           <b id="gb-seen">—</b><span>detected</span>
         </div>
       </div>
     </section>
 
     <section class="card" id="test-panel" style="margin: 12px 0">
-      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <div
+        class="card-title"
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+        "
+      >
         <span>Field test</span>
-        <span id="tp-stats" style="font-size:12px;color:var(--muted)">—</span>
+        <span id="tp-stats" style="font-size: 12px; color: var(--muted)"
+          >—</span
+        >
       </div>
-      <div id="tp-health" class="path-detail" style="margin:4px 0 8px">Waiting for status…</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-        <button class="tp-mark" data-kind="right" title="The last sentence was right">✓ Right</button>
-        <button class="tp-mark" data-kind="wrong" title="The last sentence was wrong">✗ Wrong</button>
-        <button class="tp-mark" data-kind="missed" title="It should have said something and did not">⚠ Missed</button>
-        <button class="tp-mark" data-kind="note" title="Add a note to the log">📝 Note</button>
-        <span id="tp-mark-ack" class="path-detail" style="align-self:center"></span>
+      <div id="tp-health" class="path-detail" style="margin: 4px 0 8px">
+        Waiting for status…
       </div>
-      <div id="tp-log" class="det-list" style="max-height:260px;overflow-y:auto">—</div>
+      <div
+        style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px"
+      >
+        <button
+          class="tp-mark"
+          data-kind="right"
+          title="The last sentence was right"
+        >
+          ✓ Right
+        </button>
+        <button
+          class="tp-mark"
+          data-kind="wrong"
+          title="The last sentence was wrong"
+        >
+          ✗ Wrong
+        </button>
+        <button
+          class="tp-mark"
+          data-kind="missed"
+          title="It should have said something and did not"
+        >
+          ⚠ Missed
+        </button>
+        <button class="tp-mark" data-kind="note" title="Add a note to the log">
+          📝 Note
+        </button>
+        <span
+          id="tp-mark-ack"
+          class="path-detail"
+          style="align-self: center"
+        ></span>
+      </div>
+      <div
+        id="tp-log"
+        class="det-list"
+        style="max-height: 260px; overflow-y: auto"
+      >
+        —
+      </div>
     </section>
 
     <div class="main-grid">
@@ -1096,8 +1332,8 @@
             >
           </div>
           <div class="path-detail" style="margin: -4px 0 8px">
-            Display only — none of this is spoken. At a crossing the guide
-            just withholds "Walk straight".
+            Display only — none of this is spoken. At a crossing the guide just
+            withholds "Walk straight".
           </div>
 
           <div class="traffic-status">
@@ -1157,7 +1393,12 @@
             style="border: none; padding: 0; margin-bottom: 8px"
           >
             Path Guidance
-            <span class="det-count" id="walk-rule" title="blocked / approaching / drifting / near_wall / steering / vehicle_approaching / vehicle_ahead / clear / offline">—</span>
+            <span
+              class="det-count"
+              id="walk-rule"
+              title="blocked / approaching / drifting / near_wall / steering / vehicle_approaching / vehicle_ahead / clear / offline"
+              >—</span
+            >
           </div>
           <div class="path-direction">
             <div class="path-arrow" id="walk-arrow">•</div>
@@ -1166,8 +1407,12 @@
               <div id="walk-detail" class="path-detail">—</div>
             </div>
           </div>
-          <div id="walk-evidence" class="path-detail" style="margin-top: 6px">—</div>
-          <div id="walk-voice" class="path-detail" style="margin-top: 6px">—</div>
+          <div id="walk-evidence" class="path-detail" style="margin-top: 6px">
+            —
+          </div>
+          <div id="walk-voice" class="path-detail" style="margin-top: 6px">
+            —
+          </div>
           <div id="walk-readings" class="det-list" style="margin-top: 8px">
             —
           </div>
@@ -1205,11 +1450,14 @@
               <div id="radar-detail" class="path-detail">—</div>
             </div>
           </div>
-          <div id="radar-list" class="det-list radar-list" style="margin-top: 6px">
+          <div
+            id="radar-list"
+            class="det-list radar-list"
+            style="margin-top: 6px"
+          >
             —
           </div>
         </div>
-
       </aside>
 
       <!-- CENTER: Environment Map -->
@@ -1231,14 +1479,23 @@
           <span class="det-count" id="motion-src">—</span>
         </div>
         <div>
-          <div class="stat"><span>Walking speed</span><b id="mo-speed">--</b></div>
+          <div class="stat">
+            <span>Walking speed</span><b id="mo-speed">--</b>
+          </div>
           <div class="stat"><span>Cadence</span><b id="mo-cadence">--</b></div>
-          <div class="stat"><span>Sideways slip</span><b id="mo-slip">--</b></div>
+          <div class="stat">
+            <span>Sideways slip</span><b id="mo-slip">--</b>
+          </div>
           <div class="stat"><span>Turn rate</span><b id="mo-yaw">--</b></div>
         </div>
         <div
           id="motion-note"
-          style="font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5"
+          style="
+            font-size: 11px;
+            color: var(--muted);
+            margin-top: 6px;
+            line-height: 1.5;
+          "
         ></div>
 
         <div class="card-title" style="margin-top: 18px">
@@ -1253,7 +1510,12 @@
         ></svg>
         <div
           id="scope-note"
-          style="font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5"
+          style="
+            font-size: 11px;
+            color: var(--muted);
+            margin-top: 6px;
+            line-height: 1.5;
+          "
         ></div>
       </main>
 
@@ -1265,11 +1527,19 @@
         <div class="camera-grid">
           <div class="video-container">
             <span class="sector-label">Front</span>
-            <img class="camera-feed-img" src="/camera/stream/front" alt="Front" />
+            <img
+              class="camera-feed-img"
+              src="/camera/stream/front"
+              alt="Front"
+            />
           </div>
           <div class="video-container">
             <span class="sector-label">Right</span>
-            <img class="camera-feed-img" src="/camera/stream/right" alt="Right" />
+            <img
+              class="camera-feed-img"
+              src="/camera/stream/right"
+              alt="Right"
+            />
           </div>
           <div class="video-container">
             <span class="sector-label">Left</span>
@@ -1302,8 +1572,14 @@
 
         <div class="card-title" style="margin-top: 14px">
           Segmentation View
-          <button class="ctl-btn" id="seg-btn" onclick="toggleSeg()"
-                  style="margin-left: 8px">Show</button>
+          <button
+            class="ctl-btn"
+            id="seg-btn"
+            onclick="toggleSeg()"
+            style="margin-left: 8px"
+          >
+            Show
+          </button>
         </div>
         <div id="seg-grid" style="display: none">
           <div style="display: flex; gap: 6px; margin-bottom: 6px">
@@ -1322,8 +1598,17 @@
 
     <script>
       const tpEsc = (t) =>
-        String(t == null ? "" : t).replace(/[&<>"']/g, (c) =>
-          ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+        String(t == null ? "" : t).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
       const DANGER = 800,
         WARN = 1500;
       let crossingState = "idle",
@@ -1331,17 +1616,27 @@
 
       const PALETTE = {
         night: {
-          danger: "#ef4444", warning: "#f59e0b", caution: "#eab308",
-          clear: "#22c55e", idle: "#475569", dim: "#94a3b8",
-          axis: "#8b98a7", grid: "#2a3142",
+          danger: "#ef4444",
+          warning: "#f59e0b",
+          caution: "#eab308",
+          clear: "#22c55e",
+          idle: "#475569",
+          dim: "#94a3b8",
+          axis: "#8b98a7",
+          grid: "#2a3142",
           lightOn: { border: "2px solid #22c55e", background: "#1a2e1a" },
           lightOff: { border: "1px solid #1a2332", background: "#0d1628" },
           dotSize: 3,
         },
         sun: {
-          danger: "#b30000", warning: "#8a4700", caution: "#7a5c00",
-          clear: "#0a5c0a", idle: "#333333", dim: "#333333",
-          axis: "#000000", grid: "#9a9a9a",
+          danger: "#b30000",
+          warning: "#8a4700",
+          caution: "#7a5c00",
+          clear: "#0a5c0a",
+          idle: "#333333",
+          dim: "#333333",
+          axis: "#000000",
+          grid: "#9a9a9a",
           lightOn: { border: "3px solid #0a5c0a", background: "#e8f7e8" },
           lightOff: { border: "2px solid #000000", background: "#ffffff" },
           // Bigger dots: 3px specks wash out against a white plot in glare.
@@ -1400,39 +1695,44 @@
           '<div style="padding:16px;color:var(--muted);font-size:13px">' +
           "Scan plot unavailable — its library (cdn.plot.ly) needs internet. " +
           "Everything else on this page still works.</div>";
-      else Plotly.newPlot(
-        "chart",
-        [
-          {
-            type: "scatterpolar",
-            mode: "markers",
-            r: [],
-            theta: [],
-            marker: { size: C.dotSize, color: C.danger },
-          },
-          {
-            type: "scatterpolar",
-            mode: "markers",
-            r: [],
-            theta: [],
-            marker: { size: C.dotSize, color: C.warning },
-          },
-          {
-            type: "scatterpolar",
-            mode: "markers",
-            r: [],
-            theta: [],
-            marker: { size: C.dotSize, color: C.clear },
-          },
-        ],
-        layout,
-        { responsive: true, displayModeBar: false }
-      );
+      else
+        Plotly.newPlot(
+          "chart",
+          [
+            {
+              type: "scatterpolar",
+              mode: "markers",
+              r: [],
+              theta: [],
+              marker: { size: C.dotSize, color: C.danger },
+            },
+            {
+              type: "scatterpolar",
+              mode: "markers",
+              r: [],
+              theta: [],
+              marker: { size: C.dotSize, color: C.warning },
+            },
+            {
+              type: "scatterpolar",
+              mode: "markers",
+              r: [],
+              theta: [],
+              marker: { size: C.dotSize, color: C.clear },
+            },
+          ],
+          layout,
+          { responsive: true, displayModeBar: false },
+        );
 
       function mmFt(mm) {
         return mm && isFinite(mm) ? `${(mm / 304.8).toFixed(1)}ft` : "--";
       }
-      const LIGHT_COLOR = { red: "#b30000", yellow: "#8a4700", green: "#0a5c0a" };
+      const LIGHT_COLOR = {
+        red: "#b30000",
+        yellow: "#8a4700",
+        green: "#0a5c0a",
+      };
       function lightIcon(s) {
         return LIGHT_COLOR[s] ? "\u25CF" : "\u25CB"; // filled / hollow dot
       }
@@ -1540,28 +1840,43 @@
           tl.intersection_type
             ? `${tl.intersection_type} intersection`
             : detDir
-            ? `Detected: ${detDir.toUpperCase()}`
-            : "Scanning...";
+              ? `Detected: ${detDir.toUpperCase()}`
+              : "Scanning...";
       }
 
       // 8 x 45° LiDAR sectors, clockwise from straight ahead.
-      const LIDAR_SECTORS = ["front", "front_right", "right", "back_right",
-                             "back", "back_left", "left", "front_left"];
+      const LIDAR_SECTORS = [
+        "front",
+        "front_right",
+        "right",
+        "back_right",
+        "back",
+        "back_left",
+        "left",
+        "front_left",
+      ];
       const SECTOR_LABEL = {
-        front: "Front", front_right: "Front-R", right: "Right",
-        back_right: "Back-R", back: "Back", back_left: "Back-L",
-        left: "Left", front_left: "Front-L",
+        front: "Front",
+        front_right: "Front-R",
+        right: "Right",
+        back_right: "Back-R",
+        back: "Back",
+        back_left: "Back-L",
+        left: "Left",
+        front_left: "Front-L",
       };
       (function buildSectorGrid() {
-        document.getElementById("sector-grid").innerHTML = LIDAR_SECTORS
-          .map((s) => `<div class="sector" id="sec-${s}">` +
-                      `<div class="sector-name">${SECTOR_LABEL[s]}</div>` +
-                      `<div class="sector-dist" id="dist-${s}">--</div></div>`)
-          .join("");
+        document.getElementById("sector-grid").innerHTML = LIDAR_SECTORS.map(
+          (s) =>
+            `<div class="sector" id="sec-${s}">` +
+            `<div class="sector-name">${SECTOR_LABEL[s]}</div>` +
+            `<div class="sector-dist" id="dist-${s}">--</div></div>`,
+        ).join("");
       })();
 
       function updateNavUI(data) {
-        const noLidar = data.action === "no_lidar_data" ||
+        const noLidar =
+          data.action === "no_lidar_data" ||
           (data.sensor_health && data.sensor_health.lidar_fresh === false);
         LIDAR_SECTORS.forEach((s) => {
           const el = document.getElementById(`sec-${s}`);
@@ -1598,8 +1913,7 @@
           });
           const data = await res.json();
           if (data.status === "ok") {
-            document.getElementById("crossing-btn").textContent =
-              "Crossing…";
+            document.getElementById("crossing-btn").textContent = "Crossing…";
             document.getElementById("crossing-btn").className =
               "crossing-btn crossing";
           }
@@ -1615,7 +1929,7 @@
         const ws = new WebSocket(
           `${location.protocol === "https:" ? "wss" : "ws"}://${
             location.host
-          }/lidar/ws`
+          }/lidar/ws`,
         );
         ws.onopen = () => {
           _lidarRetryMs = 1000;
@@ -1643,7 +1957,7 @@
       function renderLidar(m) {
         document.getElementById("scan").textContent = `#${m.scan_index || 0}`;
         document.getElementById("hz").textContent = `${(m.hz || 0).toFixed(
-          1
+          1,
         )}Hz`;
         const A = m.points?.angles || [],
           D = m.points?.distances || [];
@@ -1659,7 +1973,7 @@
             }
           });
         document.getElementById("nearest").textContent = mmFt(
-          minD < Infinity ? minD : null
+          minD < Infinity ? minD : null,
         );
         document.getElementById("nearest-ang").textContent =
           minD < Infinity ? `${minA.toFixed(0)}°` : "--";
@@ -1684,33 +1998,34 @@
             gT.push(t);
           }
         }
-        if (HAS_PLOTLY) Plotly.react(
-          "chart",
-          [
-            {
-              type: "scatterpolar",
-              mode: "markers",
-              r: rR,
-              theta: rT,
-              marker: { size: C.dotSize, color: C.danger },
-            },
-            {
-              type: "scatterpolar",
-              mode: "markers",
-              r: yR,
-              theta: yT,
-              marker: { size: C.dotSize, color: C.warning },
-            },
-            {
-              type: "scatterpolar",
-              mode: "markers",
-              r: gR,
-              theta: gT,
-              marker: { size: C.dotSize, color: C.clear },
-            },
-          ],
-          layout
-        );
+        if (HAS_PLOTLY)
+          Plotly.react(
+            "chart",
+            [
+              {
+                type: "scatterpolar",
+                mode: "markers",
+                r: rR,
+                theta: rT,
+                marker: { size: C.dotSize, color: C.danger },
+              },
+              {
+                type: "scatterpolar",
+                mode: "markers",
+                r: yR,
+                theta: yT,
+                marker: { size: C.dotSize, color: C.warning },
+              },
+              {
+                type: "scatterpolar",
+                mode: "markers",
+                r: gR,
+                theta: gT,
+                marker: { size: C.dotSize, color: C.clear },
+              },
+            ],
+            layout,
+          );
       }
 
       // Navigation updates
@@ -1737,11 +2052,11 @@
           .slice(0, 3)
           .map(
             (d) =>
-              `<div class="det-item"><span>${
-                tpEsc(d.class_name)
-              }</span><span>${Math.round(
-                (d.confidence || 0) * 100
-              )}%</span></div>`
+              `<div class="det-item"><span>${tpEsc(
+                d.class_name,
+              )}</span><span>${Math.round(
+                (d.confidence || 0) * 100,
+              )}%</span></div>`,
           )
           .join("");
       }
@@ -1762,7 +2077,7 @@
             document.getElementById(`cnt-${c}`).textContent =
               d[c]?.num_objects || 0;
             document.getElementById(`det-${c}`).innerHTML = renderDets(
-              d[c]?.detections
+              d[c]?.detections,
             );
           });
         } catch (e) {
@@ -1776,8 +2091,7 @@
         a = (a || "").toLowerCase();
         if (a.includes("stop") || a === "wait_for_signal") return "⛔";
         if (a.includes("wait")) return "⏳";
-        if (a.includes("cross"))
-          return a.includes("caution") ? "⚠️" : "⛔";
+        if (a.includes("cross")) return a.includes("caution") ? "⚠️" : "⛔";
         // "move away from the wall on your right" -> step left
         if (a.includes("move_away_left")) return "↖️";
         if (a.includes("move_away_right")) return "↗️";
@@ -1793,14 +2107,25 @@
       }
       function guideLevel(a, blocked) {
         a = (a || "").toLowerCase();
-        if (a.includes("stop") || a.includes("wait") || a.startsWith("sensors") ||
-            a.startsWith("vehicle_approaching"))
+        if (
+          a.includes("stop") ||
+          a.includes("wait") ||
+          a.startsWith("sensors") ||
+          a.startsWith("vehicle_approaching")
+        )
           return "danger";
         if (blocked) return "caution";
-        if (a.startsWith("blocked") || a.endsWith("_ahead") ||
-            a.startsWith("drift") || a.startsWith("near_wall") ||
-            a.startsWith("vehicle") || a.startsWith("object") ||
-            a.startsWith("steer") || a === "walk_between") return "caution";
+        if (
+          a.startsWith("blocked") ||
+          a.endsWith("_ahead") ||
+          a.startsWith("drift") ||
+          a.startsWith("near_wall") ||
+          a.startsWith("vehicle") ||
+          a.startsWith("object") ||
+          a.startsWith("steer") ||
+          a === "walk_between"
+        )
+          return "caution";
         // Being half a metre off a wall is a warning, not a routine steer.
         if (a.includes("move_away") || a.includes("narrow")) return "caution";
         if (a.includes("caution")) return "caution";
@@ -1828,7 +2153,10 @@
       function announceSr(text) {
         const el = document.getElementById("gb-announce");
         el.textContent = "";
-        if (text) setTimeout(() => { el.textContent = text; }, 50);
+        if (text)
+          setTimeout(() => {
+            el.textContent = text;
+          }, 50);
       }
       async function updateWalk() {
         if (walkBusy) return;
@@ -1840,22 +2168,24 @@
           const p = d.path || {};
           const action = p.action || d.action || "unknown";
           const blocked = !!(d.walk && d.walk.blocked);
-          document.getElementById("walk-arrow").textContent = guideArrow(action);
+          document.getElementById("walk-arrow").textContent =
+            guideArrow(action);
           document.getElementById("walk-cue").textContent =
             p.instruction || "Waiting…";
-          document.getElementById("walk-detail").textContent =
-            (p.reason
-              ? p.reason
-              : p.clear_ft
+          document.getElementById("walk-detail").textContent = p.reason
+            ? p.reason
+            : p.clear_ft
               ? `${p.clear_ft}ft clear ahead`
-              : "clear ahead");
+              : "clear ahead";
 
           // What kind of situation the sentence describes.
           document.getElementById("walk-rule").textContent = p.rule || "—";
 
           const ev = p.raw || {};
           const evidence = [
-            ev.front_ft != null ? `front ${Number(ev.front_ft).toFixed(1)} ft` : "front open",
+            ev.front_ft != null
+              ? `front ${Number(ev.front_ft).toFixed(1)} ft`
+              : "front open",
             ev.wall ? "wall on path ✓" : "wall ✗",
             ev.glass ? "glass ahead ✓" : "glass ✗",
           ];
@@ -1863,9 +2193,11 @@
           if (ev.drift) evidence.push(`drifting toward ${ev.drift} wall`);
           if (ev.close) evidence.push(`near ${ev.close} wall`);
           const veh = ev.vehicles || {};
-          if (veh.approaching) evidence.push(`${veh.class} approaching from ${veh.side}`);
+          if (veh.approaching)
+            evidence.push(`${veh.class} approaching from ${veh.side}`);
           else if (veh.stopped) evidence.push(`${veh.class} stopped`);
-          document.getElementById("walk-evidence").textContent = evidence.join(" · ");
+          document.getElementById("walk-evidence").textContent =
+            evidence.join(" · ");
 
           // ---- VOICE: said, or silent for a stated reason ----
           const n = d.notify || {};
@@ -1882,7 +2214,7 @@
           const ago = saidAt ? Math.round((Date.now() - saidAt) / 1000) : null;
           const voiceEl = document.getElementById("walk-voice");
           voiceEl.textContent = n.speak
-            ? `🔊 saying “${n.instruction}”`
+            ? `🔊       saying “${n.instruction}”`
             : `🔇 quiet — ${n.quiet_reason || "nothing new to say"}` +
               (saidText ? ` · last said “${saidText}” ${ago}s ago` : "") +
               (saidCount ? ` · ${saidCount} this session` : "");
@@ -1901,34 +2233,37 @@
           document.getElementById("gb-ahead").textContent =
             ahead == null ? "—" : Number(ahead).toFixed(1);
           document.getElementById("gb-seen").textContent =
-            p.rule === "offline" ? "offline"
-            : p.rule === "drifting" || p.rule === "near_wall" ? `${p.turn_side || ""} wall`.trim()
-            : p.obstacle || (p.rule === "blocked" ? "obstacle" : "—");
+            p.rule === "offline"
+              ? "offline"
+              : p.rule === "drifting" || p.rule === "near_wall"
+                ? `${p.turn_side || ""} wall`.trim()
+                : p.obstacle || (p.rule === "blocked" ? "obstacle" : "—");
 
           const gbVoice = document.getElementById("gb-voice");
           gbVoice.textContent = n.speak
-            ? `🔊 announcing “${n.instruction}”`
+            ? `🔊       announcing “${n.instruction}”`
             : `🔇 quiet — ${n.quiet_reason || "nothing new to say"}` +
               (saidText ? ` · last “${saidText}” ${ago}s ago` : "");
-          gbVoice.style.color = n.speak
-            ? "var(--gb-accent)"
-            : "var(--muted)";
+          gbVoice.style.color = n.speak ? "var(--gb-accent)" : "var(--muted)";
 
           if (advanced) {
             banner.classList.remove("said");
             void banner.offsetWidth; // restart the animation
             banner.classList.add("said");
             const pv = n.pi_voice || {};
-            announceSr(pv.audio_enabled === false || piHasCue(pv, n.cue_seq) ? "" : n.instruction || p.instruction || "");  // audio off: silent
+            announceSr(
+              pv.audio_enabled === false || piHasCue(pv, n.cue_seq)
+                ? ""
+                : n.instruction || p.instruction || "",
+            ); // audio off: silent
           }
           const pvs = n.pi_voice || {};
           gbVoice.title = pvs.usable
             ? `Spoken by the Pi through ${pvs.output}; the phone stays quiet.`
             : pvs.running
-            ? `The Pi has no earpiece (${pvs.output || "no output"}), so the phone's screen reader speaks.`
-            : "The Pi's voice is off; the phone's screen reader speaks.";
+              ? `The Pi has no earpiece (${pvs.output || "no output"}), so the phone's screen reader speaks.`
+              : "The Pi's voice is off; the phone's screen reader speaks.";
           if (pvs.usable) gbVoice.textContent += ` · 🎧 ${pvs.output}`;
-
 
           const rd = p.readings || {};
           const ARROWS = { front: "↑", right: "→", back: "↓", left: "←" };
@@ -1936,10 +2271,10 @@
             v == null
               ? `<span style="color:${C.danger}">no data</span>`
               : measured
-              ? `${v.toFixed(1)}`
-              : `<span style="color:${C.dim}" title="max range — nothing detected">${v.toFixed(
-                  1
-                )}*</span>`;
+                ? `${v.toFixed(1)}`
+                : `<span style="color:${C.dim}" title="max range — nothing detected">${v.toFixed(
+                    1,
+                  )}*</span>`;
           const rows = ["front", "right", "back", "left"].filter((d) => rd[d]);
           document.getElementById("walk-readings").innerHTML = rows.length
             ? `<div class="det-item" style="opacity:.65"><span>dir · lidar ▸ radar</span>` +
@@ -1967,8 +2302,8 @@
             (guideColor(action, blocked) === C.clear && lvl === "urgent"
               ? C.danger
               : guideColor(action, blocked) === C.clear && lvl === "advisory"
-              ? C.warning
-              : guideColor(action, blocked));
+                ? C.warning
+                : guideColor(action, blocked));
 
           // ---- 2) OBSTACLE WARNINGS: what's around, ranked by urgency ----
           const o = d.obstacles || {};
@@ -1990,8 +2325,10 @@
                       UCOL[it.urgency] || C.dim
                     }">${tpEsc(it.object)} · ${tpEsc(it.clock)} o'clock</span>` +
                     `<span>${
-                      it.distance_ft != null ? tpEsc(it.distance_ft) + "ft" : "—"
-                    }</span></div>`
+                      it.distance_ft != null
+                        ? tpEsc(it.distance_ft) + "ft"
+                        : "—"
+                    }</span></div>`,
                 )
                 .join("")
             : "<div class='det-item'><span>Nothing detected nearby</span></div>";
@@ -2000,9 +2337,8 @@
             (o.level === "stop"
               ? C.danger
               : o.level === "caution" || o.level === "proceed_slow"
-              ? C.warning
-              : C.clear);
-
+                ? C.warning
+                : C.clear);
         } catch (e) {
         } finally {
           walkBusy = false;
@@ -2046,8 +2382,8 @@
               (best.mm <= 800
                 ? C.danger
                 : best.mm <= 1500
-                ? C.warning
-                : C.clear);
+                  ? C.warning
+                  : C.clear);
           } else {
             document.getElementById("radar-dir").textContent = "•";
             document.getElementById("radar-min").textContent = live.length
@@ -2093,7 +2429,9 @@
       function toggleSeg() {
         segOn = !segOn;
         document.getElementById("seg-grid").style.display = segOn ? "" : "none";
-        document.getElementById("seg-btn").textContent = segOn ? "Hide" : "Show";
+        document.getElementById("seg-btn").textContent = segOn
+          ? "Hide"
+          : "Show";
         applySeg();
       }
       function selSeg(s) {
@@ -2101,9 +2439,12 @@
         if (segOn) applySeg();
       }
 
-
       const SC_NS = "http://www.w3.org/2000/svg";
-      const SC_CX = 290, SC_CY = 290, SC_HUB = 34, SC_IN = 40, SC_OUT = 236;
+      const SC_CX = 290,
+        SC_CY = 290,
+        SC_HUB = 34,
+        SC_IN = 40,
+        SC_OUT = 236;
 
       const scEl = (n, a = {}) => {
         const e = document.createElementNS(SC_NS, n);
@@ -2122,8 +2463,10 @@
         const [x1, y1] = scPt(bearing + half, r0);
         const [x2, y2] = scPt(bearing + half, r1);
         const [x3, y3] = scPt(bearing - half, r1);
-        return `M ${x0} ${y0} A ${r0} ${r0} 0 0 1 ${x1} ${y1} L ${x2} ${y2} ` +
-               `A ${r1} ${r1} 0 0 0 ${x3} ${y3} Z`;
+        return (
+          `M ${x0} ${y0} A ${r0} ${r0} 0 0 1 ${x1} ${y1} L ${x2} ${y2} ` +
+          `A ${r1} ${r1} 0 0 0 ${x3} ${y3} Z`
+        );
       }
       function scArc(bearing, half, r) {
         const [x0, y0] = scPt(bearing - half, r);
@@ -2153,17 +2496,28 @@
         for (const [name, c] of Object.entries(d.cardinals || {}))
           for (const k of c.sources || []) feeds[k] = name;
 
-        const slit = (((g.offset_deg ?? 0) + step / 2) % step + step) % step;
+        const slit = ((((g.offset_deg ?? 0) + step / 2) % step) + step) % step;
         for (let ft = 2; ft <= end + 0.01; ft += 2) {
           const r = scR(ft, end);
-          svg.appendChild(scEl("circle", {
-            cx: SC_CX, cy: SC_CY, r, class: "sc-ring",
-          }));
+          svg.appendChild(
+            scEl("circle", {
+              cx: SC_CX,
+              cy: SC_CY,
+              r,
+              class: "sc-ring",
+            }),
+          );
           const [lx, ly] = scPt(slit, r);
           const t = scEl("text", {
-            x: lx, y: ly, fill: "var(--muted)", "font-size": 13,
-            "text-anchor": "middle", "dominant-baseline": "middle",
-            stroke: "var(--bg)", "stroke-width": 3, "paint-order": "stroke",
+            x: lx,
+            y: ly,
+            fill: "var(--muted)",
+            "font-size": 13,
+            "text-anchor": "middle",
+            "dominant-baseline": "middle",
+            stroke: "var(--bg)",
+            "stroke-width": 3,
+            "paint-order": "stroke",
           });
           t.textContent = ft + " ft";
           svg.appendChild(t);
@@ -2172,26 +2526,44 @@
         let live = 0;
         const slots = d.slots || [];
 
-        const wedgeD = (f) => slots.filter(f)
-          .map((s) => scWedge(s.bearing, half, SC_IN, SC_OUT)).join(" ");
+        const wedgeD = (f) =>
+          slots
+            .filter(f)
+            .map((s) => scWedge(s.bearing, half, SC_IN, SC_OUT))
+            .join(" ");
         const onlineOf = (s) => !!(s.board && s.board.online);
         const dOff = wedgeD((s) => !onlineOf(s));
         const dOn = wedgeD(onlineOf);
         if (dOff)
-          svg.appendChild(scEl("path", {
-            d: dOff, class: "sc-wedge off", "fill-rule": "nonzero",
-          }));
+          svg.appendChild(
+            scEl("path", {
+              d: dOff,
+              class: "sc-wedge off",
+              "fill-rule": "nonzero",
+            }),
+          );
         if (dOn)
-          svg.appendChild(scEl("path", {
-            d: dOn, class: "sc-wedge", "fill-rule": "nonzero",
-          }));
-        const dBlind = slots.filter(onlineOf)
-          .map((s) => scWedge(s.bearing, half, SC_IN, scR(g.start_ft || 0.82, end)))
+          svg.appendChild(
+            scEl("path", {
+              d: dOn,
+              class: "sc-wedge",
+              "fill-rule": "nonzero",
+            }),
+          );
+        const dBlind = slots
+          .filter(onlineOf)
+          .map((s) =>
+            scWedge(s.bearing, half, SC_IN, scR(g.start_ft || 0.82, end)),
+          )
           .join(" ");
         if (dBlind)
-          svg.appendChild(scEl("path", {
-            d: dBlind, class: "sc-blind", "fill-rule": "nonzero",
-          }));
+          svg.appendChild(
+            scEl("path", {
+              d: dBlind,
+              class: "sc-blind",
+              "fill-rule": "nonzero",
+            }),
+          );
 
         for (const slot of slots) {
           const b = slot.board;
@@ -2202,34 +2574,61 @@
           const col = scColor(ft, zones);
           const dim = b && b.degraded ? 0.45 : 1;
 
-          svg.appendChild(scEl("path", {
-            d: scArc(bearing, half, SC_OUT),
-            class: on ? "sc-edge" : "sc-edge off",
-            "stroke-width": on ? 1.4 : 1,
-            "stroke-dasharray": b ? (on ? "" : "5 4") : "6 5",
-          }));
+          svg.appendChild(
+            scEl("path", {
+              d: scArc(bearing, half, SC_OUT),
+              class: on ? "sc-edge" : "sc-edge off",
+              "stroke-width": on ? 1.4 : 1,
+              "stroke-dasharray": b ? (on ? "" : "5 4") : "6 5",
+            }),
+          );
 
           if (on && ft != null) {
             const r = scR(ft, end);
-            svg.appendChild(scEl("path", {
-              d: scArc(bearing, half, r), fill: "none", stroke: col,
-              "stroke-width": 4, "stroke-linecap": "round", opacity: 0.45 * dim,
-            }));
+            svg.appendChild(
+              scEl("path", {
+                d: scArc(bearing, half, r),
+                fill: "none",
+                stroke: col,
+                "stroke-width": 4,
+                "stroke-linecap": "round",
+                opacity: 0.45 * dim,
+              }),
+            );
             const [dx, dy] = scPt(bearing, r);
             const [tx0, ty0] = scPt(bearing, SC_IN);
-            svg.appendChild(scEl("line", {
-              x1: tx0, y1: ty0, x2: dx, y2: dy, stroke: col,
-              "stroke-width": 1, "stroke-dasharray": "3 4", opacity: 0.4 * dim,
-            }));
-            svg.appendChild(scEl("circle", {
-              cx: dx, cy: dy, r: 7, fill: col, stroke: "var(--bg)",
-              "stroke-width": 2, opacity: dim,
-            }));
+            svg.appendChild(
+              scEl("line", {
+                x1: tx0,
+                y1: ty0,
+                x2: dx,
+                y2: dy,
+                stroke: col,
+                "stroke-width": 1,
+                "stroke-dasharray": "3 4",
+                opacity: 0.4 * dim,
+              }),
+            );
+            svg.appendChild(
+              scEl("circle", {
+                cx: dx,
+                cy: dy,
+                r: 7,
+                fill: col,
+                stroke: "var(--bg)",
+                "stroke-width": 2,
+                opacity: dim,
+              }),
+            );
             const lside = Math.sin((bearing * Math.PI) / 180);
             const [lx, ly] = scPt(bearing, r + 22);
             const lyoff = Math.abs(lside) >= 0.7 ? -15 : 0;
             const lab = scEl("text", {
-              x: lx, y: ly + lyoff, fill: col, "font-size": 17, "font-weight": 700,
+              x: lx,
+              y: ly + lyoff,
+              fill: col,
+              "font-size": 17,
+              "font-weight": 700,
               "text-anchor":
                 Math.abs(lside) < 0.7 ? "middle" : lside > 0 ? "start" : "end",
               "dominant-baseline": "middle",
@@ -2243,13 +2642,22 @@
           const anchor =
             Math.abs(side) < 0.7 ? "middle" : side > 0 ? "end" : "start";
           const dir = feeds[slot.key];
-          const state = !b ? " · no board"
-            : !on ? " · offline"
-            : b.degraded ? " · lagging"
-            : ft == null ? " · clear" : "";
+          const state = !b
+            ? " · no board"
+            : !on
+              ? " · offline"
+              : b.degraded
+                ? " · lagging"
+                : ft == null
+                  ? " · clear"
+                  : "";
           const cap = scEl("text", {
-            x: cx2, y: cy2, "text-anchor": anchor,
-            "dominant-baseline": "middle", "font-size": 14, "font-weight": 600,
+            x: cx2,
+            y: cy2,
+            "text-anchor": anchor,
+            "dominant-baseline": "middle",
+            "font-size": 14,
+            "font-weight": 600,
             fill: !b ? "var(--muted)" : on ? "var(--fg)" : "var(--alert)",
           });
           const secLabel = slot.sector_label || `${bearing.toFixed(0)}°`;
@@ -2257,8 +2665,11 @@
           svg.appendChild(cap);
           if (b && b.serial) {
             const sub = scEl("text", {
-              x: cx2, y: cy2 + 15, "text-anchor": anchor,
-              "dominant-baseline": "middle", "font-size": 12,
+              x: cx2,
+              y: cy2 + 15,
+              "text-anchor": anchor,
+              "dominant-baseline": "middle",
+              "font-size": 12,
               fill: "var(--muted)",
             });
             sub.textContent = b.serial.slice(-6);
@@ -2276,40 +2687,64 @@
             liveAt[Math.round((((b0 - step) % 360) + 360) % 360)];
 
           if (overlapDeg > 0 && bothLive) {
-            svg.appendChild(scEl("path", {
-              d: scWedge(seam, overlapDeg / 2, SC_IN, SC_OUT),
-              class: "sc-overlap",
-            }));
+            svg.appendChild(
+              scEl("path", {
+                d: scWedge(seam, overlapDeg / 2, SC_IN, SC_OUT),
+                class: "sc-overlap",
+              }),
+            );
             const [ox, oy] = scPt(seam, SC_OUT + 11);
             const ol = scEl("text", {
-              x: ox, y: oy, "text-anchor": "middle",
-              "dominant-baseline": "middle", "font-size": 11,
-              fill: "var(--accent)", stroke: "var(--bg)",
-              "stroke-width": 2.5, "paint-order": "stroke",
+              x: ox,
+              y: oy,
+              "text-anchor": "middle",
+              "dominant-baseline": "middle",
+              "font-size": 11,
+              fill: "var(--accent)",
+              stroke: "var(--bg)",
+              "stroke-width": 2.5,
+              "paint-order": "stroke",
             });
             ol.textContent = overlapDeg.toFixed(0) + "°";
             svg.appendChild(ol);
           } else {
             const [x1, y1] = scPt(seam, SC_IN);
             const [x2, y2] = scPt(seam, SC_OUT);
-            svg.appendChild(scEl("line", {
-              x1, y1, x2, y2, stroke: "var(--accent)", "stroke-width": 1,
-              "stroke-opacity": 0.55,
-            }));
+            svg.appendChild(
+              scEl("line", {
+                x1,
+                y1,
+                x2,
+                y2,
+                stroke: "var(--accent)",
+                "stroke-width": 1,
+                "stroke-opacity": 0.55,
+              }),
+            );
           }
         }
 
-        const hex = (d.ring || []).map((b) => scPt(b - step / 2, SC_HUB).join(","));
+        const hex = (d.ring || []).map((b) =>
+          scPt(b - step / 2, SC_HUB).join(","),
+        );
         if (hex.length > 2) {
-          svg.appendChild(scEl("polygon", {
-            points: hex.join(" "), fill: "var(--card)",
-            stroke: "var(--fg)", "stroke-width": 1.5,
-          }));
+          svg.appendChild(
+            scEl("polygon", {
+              points: hex.join(" "),
+              fill: "var(--card)",
+              stroke: "var(--fg)",
+              "stroke-width": 1.5,
+            }),
+          );
         }
         const ah = scEl("text", {
-          x: SC_CX, y: SC_CY, "text-anchor": "middle",
-          "dominant-baseline": "middle", "font-size": 11,
-          fill: "var(--muted)", "letter-spacing": "1px",
+          x: SC_CX,
+          y: SC_CY,
+          "text-anchor": "middle",
+          "dominant-baseline": "middle",
+          "font-size": 11,
+          fill: "var(--muted)",
+          "letter-spacing": "1px",
         });
         ah.textContent = "AHEAD";
         svg.appendChild(ah);
@@ -2331,17 +2766,19 @@
                A121 resolves no angle inside its beam, so the dot's position
                round the ring is where the sensor points, not where the object
                is. Red band = the near zone it cannot see into. Colours are the
-               guidance bands (danger ${(zones && zones.danger || 0).toFixed(1)} ft,
-               warning ${(zones && zones.warning || 0).toFixed(1)} ft). Each wedge is
+               guidance bands (danger ${((zones && zones.danger) || 0).toFixed(1)} ft,
+               warning ${((zones && zones.warning) || 0).toFixed(1)} ft). Each wedge is
                one board's real ${(g.beam_deg || 65).toFixed(0)}° beam, so
-               ${(g.gap_deg ?? -5) < 0
+               ${
+                 (g.gap_deg ?? -5) < 0
                    ? `neighbours OVERLAP by ${Math.abs(g.gap_deg).toFixed(0)}° — the
                       brighter sliver marked at each seam is that overlap, ground
                       two boards see, and 6 × ${(g.beam_deg || 65).toFixed(0)}° less
                       6 × ${Math.abs(g.gap_deg).toFixed(0)}° is exactly 360°, so
                       nothing is missed`
                    : `there is a genuine ${g.gap_deg.toFixed(0)}° blind slit at each
-                      seam, including one dead ahead`}.`;
+                      seam, including one dead ahead`
+               }.`;
         }
       }
 
@@ -2369,7 +2806,9 @@
         const measured = h.speed_source === "odometry";
         const still = !!h.confidently_still;
         const simulated = !!(
-          typeof _latestLidar !== "undefined" && _latestLidar && _latestLidar.simulated
+          typeof _latestLidar !== "undefined" &&
+          _latestLidar &&
+          _latestLidar.simulated
         );
 
         const cadSpeed = h.speed_cadence_mps;
@@ -2389,8 +2828,10 @@
           spd.style.color = "var(--muted)";
         } else if (measured) {
           const kmh = (h.speed_measured_mps || 0) * MPS_TO_KMH;
-          const err = h.speed_error_mps == null
-            ? "" : ` ±${(h.speed_error_mps * MPS_TO_KMH).toFixed(1)}`;
+          const err =
+            h.speed_error_mps == null
+              ? ""
+              : ` ±${(h.speed_error_mps * MPS_TO_KMH).toFixed(1)}`;
           spd.textContent = `${kmh.toFixed(1)}${err} km/h`;
           spd.style.color = "var(--success)";
         } else if (cadKmh != null) {
@@ -2434,49 +2875,69 @@
         const src = el("motion-src");
         src.textContent = usingCadence
           ? "from footsteps"
-          : simulated ? "simulated"
-          : still ? "still" : measured ? "measured" : "no reading";
+          : simulated
+            ? "simulated"
+            : still
+              ? "still"
+              : measured
+                ? "measured"
+                : "no reading";
         src.style.color = usingCadence
           ? "var(--info)"
-          : simulated ? "var(--warning)"
-          : measured ? "var(--success)" : "var(--muted)";
+          : simulated
+            ? "var(--warning)"
+            : measured
+              ? "var(--success)"
+              : "var(--muted)";
 
         const note = el("motion-note");
         const notes = [];
         if (usingCadence)
           notes.push(
             `Pace from footfalls: ${(h.stride_m ?? 0).toFixed(2)} m stride × ` +
-            "cadence, because the scan matcher " +
-            (simulated ? "is simulated here." : "cannot resolve a pace here.") +
-            (h.stride_learned
-              ? ` Stride learned from ${tpEsc(h.stride_samples || 0)} LiDAR samples.`
-              : " Stride is still the default — it is taught automatically the " +
-                "first time you walk somewhere the LiDAR can measure pace."));
+              "cadence, because the scan matcher " +
+              (simulated
+                ? "is simulated here."
+                : "cannot resolve a pace here.") +
+              (h.stride_learned
+                ? ` Stride learned from ${tpEsc(h.stride_samples || 0)} LiDAR samples.`
+                : " Stride is still the default — it is taught automatically the " +
+                  "first time you walk somewhere the LiDAR can measure pace."),
+          );
         if (simulated && !usingCadence)
           notes.push(
             "<span style='color:var(--warning)'>The LiDAR is in simulation, so " +
-            "speed, slip and turn rate would be derived from fabricated scans — " +
-            "withheld rather than shown.</span> Take a few steps and pace will " +
-            "appear from the accelerometer instead.");
+              "speed, slip and turn rate would be derived from fabricated scans — " +
+              "withheld rather than shown.</span> Take a few steps and pace will " +
+              "appear from the accelerometer instead.",
+          );
         else if (!measured && !still && cadKmh == null)
           notes.push(
             "Pace could not be measured: " +
-            (h.speed_observable
-              ? "the scan match was too noisy to trust here."
-              : "these surroundings give the scan matcher nothing to range against " +
-                `(forward sensitivity ${(h.forward_sensitivity ?? 0).toFixed(2)}).`) +
-            " The guidance layer still uses a nominal pace internally for " +
-            "time-to-contact, but that is an assumption, not your speed.");
+              (h.speed_observable
+                ? "the scan match was too noisy to trust here."
+                : "these surroundings give the scan matcher nothing to range against " +
+                  `(forward sensitivity ${(h.forward_sensitivity ?? 0).toFixed(2)}).`) +
+              " The guidance layer still uses a nominal pace internally for " +
+              "time-to-contact, but that is an assumption, not your speed.",
+          );
         // The one contradiction worth surfacing rather than averaging away.
-        if (measured && (h.speed_measured_mps || 0) > 0.4 && gyroOk
-            && !h.walking_confirmed)
+        if (
+          measured &&
+          (h.speed_measured_mps || 0) > 0.4 &&
+          gyroOk &&
+          !h.walking_confirmed
+        )
           notes.push(
             "<span style='color:var(--warning)'>Odometry says moving but the " +
-            "accelerometer sees no footfalls — being carried, or a scan-match " +
-            "artifact off something else that moved.</span>");
+              "accelerometer sees no footfalls — being carried, or a scan-match " +
+              "artifact off something else that moved.</span>",
+          );
         if (gyroOk && gy.tilt_warn)
-          notes.push(`Gyro board is ${(gy.tilt_deg ?? 0).toFixed(0)}° off level — ` +
-                     "cadence and tilt are unreliable until it is mounted flat.");
+          notes.push(
+            `Gyro board is ${(gy.tilt_deg ?? 0).toFixed(0)}° off level — ` +
+              "cadence and tilt are unreliable until it is mounted flat.",
+          );
         note.innerHTML = notes.join("<br>");
       }
 
@@ -2494,7 +2955,6 @@
         }
       }
 
-
       setInterval(updateNav, 200);
       setInterval(updateCam, 500);
       setInterval(updateWalk, 400);
@@ -2509,7 +2969,11 @@
           const v = d.voice || {};
           const ok = (b) => (b ? "✓" : "✗");
           const down = (h.radar_down || []).join(", ");
-          const radar = h.radar_ok ? (down ? `partial (${down} down)` : "✓") : "✗";
+          const radar = h.radar_ok
+            ? down
+              ? `partial (${down} down)`
+              : "✓"
+            : "✗";
           const voice = v.usable
             ? `🎧 Pi → ${v.output}`
             : `📱 phone screen reader${v.running ? ` (Pi has ${v.output || "no output"})` : ""}`;
@@ -2525,13 +2989,24 @@
             `${d.marks_total || 0} marks`;
           const rows = (d.lines || []).slice().reverse();
           document.getElementById("tp-log").innerHTML = rows.length
-            ? rows.map((r) => {
-                const cls = r.source === "tester" ? "mark" : r.level === "urgent" ? "urgent" : "";
-                return `<div class="tp-row ${cls}"><span class="tp-t">${tpEsc(r.time)}</span>` +
-                  `<span><b>${tpEsc(r.text)}</b>` +
-                  (r.detail ? `<br><span class="tp-why">${tpEsc(r.detail)}</span>` : "") +
-                  `</span></div>`;
-              }).join("")
+            ? rows
+                .map((r) => {
+                  const cls =
+                    r.source === "tester"
+                      ? "mark"
+                      : r.level === "urgent"
+                        ? "urgent"
+                        : "";
+                  return (
+                    `<div class="tp-row ${cls}"><span class="tp-t">${tpEsc(r.time)}</span>` +
+                    `<span><b>${tpEsc(r.text)}</b>` +
+                    (r.detail
+                      ? `<br><span class="tp-why">${tpEsc(r.detail)}</span>`
+                      : "") +
+                    `</span></div>`
+                  );
+                })
+                .join("")
             : "<div class='det-item'><span>Nothing said yet this run</span></div>";
         } catch (e) {
           document.getElementById("tp-health").textContent =
@@ -2550,17 +3025,20 @@
           }
           const ack = document.getElementById("tp-mark-ack");
           try {
-            const r = await (await fetch("/guidance/mark", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ kind, note }),
-            })).json();
+            const r = await (
+              await fetch("/guidance/mark", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ kind, note }),
+              })
+            ).json();
             ack.textContent = `marked ${kind} — after “${r.last_said}”`;
           } catch (e) {
             ack.textContent = "⚠ mark not saved";
           }
           updateTest();
-        }));
+        }),
+      );
       updateTest();
       setInterval(updateTest, 1000);
       setInterval(updateRadar, 300);

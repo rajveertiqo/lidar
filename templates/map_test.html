@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -17,124 +17,443 @@
         --info: #4299e1;
         --accent: #667eea;
       }
-      * { box-sizing: border-box; }
-      html, body { height: 100%; }
+      * {
+        box-sizing: border-box;
+      }
+      html,
       body {
-        margin: 0; background: var(--bg); color: var(--fg);
-        font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-        display: flex; flex-direction: column;
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          14px/1.45 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+        display: flex;
+        flex-direction: column;
       }
       header {
-        display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
-        padding: 10px 16px; border-bottom: 1px solid var(--border);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--border);
       }
-      h1 { font-size: 16px; margin: 0; font-weight: 650; }
-      header .sub { color: var(--muted); font-size: 12px; }
-      header .spacer { flex: 1; }
-      header a { color: var(--muted); font-size: 12px; text-decoration: none; }
-      header a:hover { color: var(--fg); }
+      h1 {
+        font-size: 16px;
+        margin: 0;
+        font-weight: 650;
+      }
+      header .sub {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      header .spacer {
+        flex: 1;
+      }
+      header a {
+        color: var(--muted);
+        font-size: 12px;
+        text-decoration: none;
+      }
+      header a:hover {
+        color: var(--fg);
+      }
       .pill {
-        font-size: 12px; padding: 2px 9px; border-radius: 999px;
-        border: 1px solid var(--border); color: var(--muted); background: var(--card);
+        font-size: 12px;
+        padding: 2px 9px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        background: var(--card);
       }
-      .ok { color: var(--success); }
-      .warn { color: var(--warning); }
-      .bad { color: var(--alert); }
-      .pill.ok { border-color: #2c5b40; }
-      .pill.bad { border-color: #5b2c2c; }
+      .ok {
+        color: var(--success);
+      }
+      .warn {
+        color: var(--warning);
+      }
+      .bad {
+        color: var(--alert);
+      }
+      .pill.ok {
+        border-color: #2c5b40;
+      }
+      .pill.bad {
+        border-color: #5b2c2c;
+      }
       #alerts {
-        display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
-        padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--card);
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 14px;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--border);
+        background: var(--card);
       }
-      #alerts .icon { font-size: 22px; line-height: 1; }
-      #alert-main { font-size: 22px; font-weight: 800; letter-spacing: .1px; flex: 1 1 380px; }
-      #alert-more { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 100%; }
-      #alert-more:empty { display: none; }
-      #alerts .chip { font-size: 13px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg); }
-      #alerts .speak { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-      #alerts.none #alert-main { color: var(--muted); font-weight: 600; font-size: 18px; }
-      #alerts.urgent { background: #3a1316; border-bottom-color: #7f1d1d; }
-      #alerts.urgent #alert-main, .chip.urgent { color: #ff8a8a; }
-      #alerts.soon { background: #33230f; border-bottom-color: #7c4a12; }
-      #alerts.soon #alert-main, .chip.soon { color: #ffc070; }
-      #alerts.info { background: #2b2a12; border-bottom-color: #6b6514; }
-      #alerts.info #alert-main, .chip.info { color: #f5e27a; }
-      .tag.hot.urgent { border-color: #ff5a5a; background: rgba(90, 14, 18, .9); }
-      .tag.hot.soon { border-color: #ffa53d; background: rgba(80, 45, 8, .9); }
-      .tag.hot.info { border-color: #facc15; }
-      .tag .ttc { font-weight: 800; }
-      .lv { display: inline-block; font-size: 10px; font-weight: 800; padding: 0 5px; border-radius: 4px; margin-right: 4px; color: #0a0e14; }
-      .lv.l1 { background: #ff5a5a; } .lv.l2 { background: #ffa53d; } .lv.l3 { background: #64748b; color: #e5e9f0; }
-      .levels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
-      .levels div { border: 1px solid var(--border); border-radius: 8px; padding: 6px; text-align: center; font-size: 12px; color: var(--muted); }
-      .levels b { display: block; font-size: 20px; color: var(--fg); }
-      .levels .l1 b { color: #ff7a7a; } .levels .l2 b { color: #ffb45e; }
-      .obj .ttc { font-weight: 700; }
-      main { flex: 1; display: grid; grid-template-columns: 1fr 360px; min-height: 0; }
-      #view { position: relative; min-height: 0; overflow: hidden; }
-      #view canvas { display: block; }
-      .labels { position: absolute; top: 0; left: 0; pointer-events: none; }
+      #alerts .icon {
+        font-size: 22px;
+        line-height: 1;
+      }
+      #alert-main {
+        font-size: 22px;
+        font-weight: 800;
+        letter-spacing: 0.1px;
+        flex: 1 1 380px;
+      }
+      #alert-more {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        flex: 1 1 100%;
+      }
+      #alert-more:empty {
+        display: none;
+      }
+      #alerts .chip {
+        font-size: 13px;
+        padding: 3px 9px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+      }
+      #alerts .speak {
+        font-size: 13px;
+        color: var(--muted);
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+      }
+      #alerts.none #alert-main {
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 18px;
+      }
+      #alerts.urgent {
+        background: #3a1316;
+        border-bottom-color: #7f1d1d;
+      }
+      #alerts.urgent #alert-main,
+      .chip.urgent {
+        color: #ff8a8a;
+      }
+      #alerts.soon {
+        background: #33230f;
+        border-bottom-color: #7c4a12;
+      }
+      #alerts.soon #alert-main,
+      .chip.soon {
+        color: #ffc070;
+      }
+      #alerts.info {
+        background: #2b2a12;
+        border-bottom-color: #6b6514;
+      }
+      #alerts.info #alert-main,
+      .chip.info {
+        color: #f5e27a;🔊
+      }
+      .tag.hot.urgent {
+        border-color: #ff5a5a;
+        background: rgba(90, 14, 18, 0.9);
+      }
+      .tag.hot.soon {
+        border-color: #ffa53d;
+        background: rgba(80, 45, 8, 0.9);
+      }
+      .tag.hot.info {
+        border-color: #facc15;
+      }
+      .tag .ttc {
+        font-weight: 800;
+      }
+      .lv {
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 800;
+        padding: 0 5px;
+        border-radius: 4px;
+        margin-right: 4px;
+        color: #0a0e14;
+      }
+      .lv.l1 {
+        background: #ff5a5a;
+      }
+      .lv.l2 {
+        background: #ffa53d;
+      }
+      .lv.l3 {
+        background: #64748b;
+        color: #e5e9f0;
+      }
+      .levels {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+      .levels div {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 6px;
+        text-align: center;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .levels b {
+        display: block;
+        font-size: 20px;
+        color: var(--fg);
+      }
+      .levels .l1 b {
+        color: #ff7a7a;
+      }
+      .levels .l2 b {
+        color: #ffb45e;
+      }
+      .obj .ttc {
+        font-weight: 700;
+      }
+      main {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 1fr 360px;
+        min-height: 0;
+      }
+      #view {
+        position: relative;
+        min-height: 0;
+        overflow: hidden;
+      }
+      #view canvas {
+        display: block;
+      }
+      .labels {
+        position: absolute;
+        top: 0;
+        left: 0;
+        pointer-events: none;
+      }
       .hud {
-        position: absolute; z-index: 2; background: rgba(10, 14, 20, .82);
-        border: 1px solid var(--border); border-radius: 10px; padding: 8px 11px; font-size: 13px;
+        position: absolute;
+        z-index: 2;
+        background: rgba(10, 14, 20, 0.82);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 8px 11px;
+        font-size: 13px;
       }
-      #hud-facing { top: 12px; left: 12px; max-width: 360px; }
-      #hud-facing .big { font-size: 17px; font-weight: 700; }
-      #hud-facing small { color: var(--muted); }
-      #hud-view { top: 12px; right: 12px; display: flex; gap: 6px; padding: 6px; }
-      #hud-legend { bottom: 12px; left: 12px; font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 12px; max-width: 560px; }
-      .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+      #hud-facing {
+        top: 12px;
+        left: 12px;
+        max-width: 360px;
+      }
+      #hud-facing .big {
+        font-size: 17px;
+        font-weight: 700;
+      }
+      #hud-facing small {
+        color: var(--muted);
+      }
+      #hud-view {
+        top: 12px;
+        right: 12px;
+        display: flex;
+        gap: 6px;
+        padding: 6px;
+      }
+      #hud-legend {
+        bottom: 12px;
+        left: 12px;
+        font-size: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 12px;
+        max-width: 560px;
+      }
+      .sw {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 3px;
+        margin-right: 5px;
+        vertical-align: -1px;
+      }
       #banner {
-        position: absolute; z-index: 3; left: 50%; top: 64px; transform: translateX(-50%);
-        background: #2a1a1a; border: 1px solid #5b2c2c; color: #ffb4b4;
-        padding: 10px 14px; border-radius: 10px; font-size: 14px; max-width: 80%; text-align: center;
+        position: absolute;
+        z-index: 3;
+        left: 50%;
+        top: 64px;
+        transform: translateX(-50%);
+        background: #2a1a1a;
+        border: 1px solid #5b2c2c;
+        color: #ffb4b4;
+        padding: 10px 14px;
+        border-radius: 10px;
+        font-size: 14px;
+        max-width: 80%;
+        text-align: center;
       }
-      #banner[hidden] { display: none; }
+      #banner[hidden] {
+        display: none;
+      }
       button {
-        font: inherit; font-size: 12px; padding: 6px 9px; border-radius: 7px; cursor: pointer;
-        background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+        font: inherit;
+        font-size: 12px;
+        padding: 6px 9px;
+        border-radius: 7px;
+        cursor: pointer;
+        background: var(--bg);
+        color: var(--fg);
+        border: 1px solid var(--border);
       }
-      button:hover { border-color: #33405a; }
-      button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-      aside { border-left: 1px solid var(--border); overflow-y: auto; padding: 12px; }
+      button:hover {
+        border-color: #33405a;
+      }
+      button.on {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+        font-weight: 600;
+      }
+      aside {
+        border-left: 1px solid var(--border);
+        overflow-y: auto;
+        padding: 12px;
+      }
       .panel {
-        background: var(--card); border: 1px solid var(--border);
-        border-radius: 12px; padding: 12px; margin-bottom: 12px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+        margin-bottom: 12px;
       }
       .panel h2 {
-        font-size: 12px; text-transform: uppercase; letter-spacing: .8px;
-        color: var(--muted); margin: 0 0 8px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: var(--muted);
+        margin: 0 0 8px;
       }
       .row {
-        display: flex; justify-content: space-between; gap: 10px;
-        padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 5px 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 13px;
       }
-      .row:last-child { border-bottom: 0; }
-      .row .k { color: var(--muted); white-space: nowrap; }
-      .row .v { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
-      .cams { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 6px; }
-      .cam { text-align: center; font-size: 11px; padding: 3px 0; border-radius: 6px; border: 1px solid var(--border); }
-      .note { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
-      .check { border-color: #5b452c; }
-      .check p { margin: 0 0 8px; font-size: 13px; }
-      .btns { display: flex; flex-wrap: wrap; gap: 6px; }
-      .obj { padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
-      .obj:last-child { border-bottom: 0; }
-      .obj .top { display: flex; justify-content: space-between; gap: 8px; }
-      .obj .meta { color: var(--muted); font-size: 12px; }
-      .layers label { display: inline-flex; align-items: center; gap: 5px; margin: 0 12px 6px 0; font-size: 13px; }
+      .row:last-child {
+        border-bottom: 0;
+      }
+      .row .k {
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .row .v {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+      }
+      .cams {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 4px;
+        margin-top: 6px;
+      }
+      .cam {
+        text-align: center;
+        font-size: 11px;
+        padding: 3px 0;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+      }
+      .note {
+        font-size: 12px;
+        color: var(--muted);
+        margin: 6px 0 0;
+      }
+      .check {
+        border-color: #5b452c;
+      }
+      .check p {
+        margin: 0 0 8px;
+        font-size: 13px;
+      }
+      .btns {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .obj {
+        padding: 7px 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 13px;
+      }
+      .obj:last-child {
+        border-bottom: 0;
+      }
+      .obj .top {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .obj .meta {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .layers label {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        margin: 0 12px 6px 0;
+        font-size: 13px;
+      }
       .tag {
-        font-size: 11px; line-height: 1.25; padding: 3px 6px; border-radius: 6px; white-space: nowrap;
-        background: rgba(10, 14, 20, .78); border: 1px solid rgba(255, 255, 255, .14); color: #fff;
+        font-size: 11px;
+        line-height: 1.25;
+        padding: 3px 6px;
+        border-radius: 6px;
+        white-space: nowrap;
+        background: rgba(10, 14, 20, 0.78);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        color: #fff;
         transform: translateY(-4px);
       }
-      .tag b { font-size: 12px; }
-      .tag small { color: #c3cad5; }
-      .tag.ego { font-size: 10px; color: #9fb3c8; background: none; border: 0; padding: 0; }
+      .tag b {
+        font-size: 12px;
+      }
+      .tag small {
+        color: #c3cad5;
+      }
+      .tag.ego {
+        font-size: 10px;
+        color: #9fb3c8;
+        background: none;
+        border: 0;
+        padding: 0;
+      }
       @media (max-width: 900px) {
-        main { grid-template-columns: 1fr; grid-template-rows: 62vh auto; }
-        aside { border-left: 0; border-top: 1px solid var(--border); }
+        main {
+          grid-template-columns: 1fr;
+          grid-template-rows: 62vh auto;
+        }
+        aside {
+          border-left: 0;
+          border-top: 1px solid var(--border);
+        }
       }
     </style>
     <script type="importmap">
@@ -149,7 +468,10 @@
   <body>
     <header>
       <h1>Live Map</h1>
-      <span class="sub">what the LiDAR, radar and cameras see · direction from the gyro · silent unless “Speak alerts” is on</span>
+      <span class="sub"
+        >what the LiDAR, radar and cameras see · direction from the gyro ·
+        silent unless “Speak alerts” is on</span
+      >
       <div class="spacer"></div>
       <span class="pill" id="p-conn">connecting…</span>
       <a href="/">← dashboard</a>
@@ -158,7 +480,8 @@
       <span class="icon" id="alert-icon">✓</span>
       <div id="alert-main">Nothing approaching you</div>
       <label class="speak" title="Say each new alert out loud in this browser">
-        <input type="checkbox" id="speak-alerts" /> <span id="speak-label">🔊 Speak alerts</span>
+        <input type="checkbox" id="speak-alerts" />
+        <span id="speak-label">🔊 Speak alerts</span>
       </label>
       <div id="alert-more"></div>
     </section>
@@ -170,49 +493,116 @@
           <small id="h-pos">—</small>
         </div>
         <div class="hud" id="hud-view">
-          <button data-mode="follow" class="on" title="Orbit around the user with the mouse">Follow</button>
-          <button data-mode="behind" title="Camera behind the user, turning with them">Behind</button>
-          <button data-mode="top" title="Straight down, start direction up">Top</button>
+          <button
+            data-mode="follow"
+            class="on"
+            title="Orbit around the user with the mouse"
+          >
+            Follow
+          </button>
+          <button
+            data-mode="behind"
+            title="Camera behind the user, turning with them"
+          >
+            Behind
+          </button>
+          <button data-mode="top" title="Straight down, start direction up">
+            Top
+          </button>
         </div>
         <div class="hud" id="hud-legend">
-          <span><span class="sw" style="background:#3b82f6"></span>you</span>
-          <span><span class="sw" style="background:#22d3ee"></span>laser now</span>
-          <span><span class="sw" style="background:#ff6b6b"></span>laser under 4 ft</span>
-          <span><span class="sw" style="background:#5f7396"></span>remembered wall</span>
-          <span><span class="sw" style="background:#8b5cf6"></span>radar echo</span>
-          <span><span class="sw" style="background:#ff2bd6"></span>radar only (glass?)</span>
-          <span><span class="sw" style="background:#38bdf8"></span>camera left half</span>
-          <span><span class="sw" style="background:#2dd4bf"></span>camera right half</span>
-          <span><span class="sw" style="background:#f59e0b"></span>person</span>
-          <span><span class="sw" style="background:#ef4444"></span>vehicle</span>
-          <span><span class="sw" style="background:#84cc16"></span>animal</span>
-          <span><span class="sw" style="background:#94a3b8"></span>other</span>
-          <span><span class="sw" style="background:#ff5a5a"></span>line to you = approaching</span>
+          <span><span class="sw" style="background: #3b82f6"></span>you</span>
+          <span
+            ><span class="sw" style="background: #22d3ee"></span>laser now</span
+          >
+          <span
+            ><span class="sw" style="background: #ff6b6b"></span>laser under 4
+            ft</span
+          >
+          <span
+            ><span class="sw" style="background: #5f7396"></span>remembered
+            wall</span
+          >
+          <span
+            ><span class="sw" style="background: #8b5cf6"></span>radar
+            echo</span
+          >
+          <span
+            ><span class="sw" style="background: #ff2bd6"></span>radar only
+            (glass?)</span
+          >
+          <span
+            ><span class="sw" style="background: #38bdf8"></span>camera left
+            half</span
+          >
+          <span
+            ><span class="sw" style="background: #2dd4bf"></span>camera right
+            half</span
+          >
+          <span
+            ><span class="sw" style="background: #f59e0b"></span>person</span
+          >
+          <span
+            ><span class="sw" style="background: #ef4444"></span>vehicle</span
+          >
+          <span
+            ><span class="sw" style="background: #84cc16"></span>animal</span
+          >
+          <span><span class="sw" style="background: #94a3b8"></span>other</span>
+          <span
+            ><span class="sw" style="background: #ff5a5a"></span>line to you =
+            approaching</span
+          >
           <span><span class="lv l1">L1</span>path conflict</span>
           <span><span class="lv l2">L2</span>high potential threat</span>
           <span><span class="lv l3">L3</span>monitor</span>
-          <span><span class="sw" style="background:#3b82f6;opacity:.5"></span>your projected path</span>
-          <span><span class="sw" style="background:#7c4a12"></span>hidden area beside your path</span>
-          <span style="color:var(--muted)">see-through figure = camera distance only</span>
+          <span
+            ><span class="sw" style="background: #3b82f6; opacity: 0.5"></span
+            >your projected path</span
+          >
+          <span
+            ><span class="sw" style="background: #7c4a12"></span>hidden area
+            beside your path</span
+          >
+          <span style="color: var(--muted)"
+            >see-through figure = camera distance only</span
+          >
         </div>
       </div>
       <aside>
         <div class="panel">
           <h2>Sensors</h2>
-          <div class="row"><span class="k">LiDAR</span><span class="v" id="s-lidar">—</span></div>
-          <div class="row"><span class="k">Radar</span><span class="v" id="s-radar">—</span></div>
-          <div class="row"><span class="k">Gyro (MPU6500)</span><span class="v" id="s-gyro">—</span></div>
-          <div class="row"><span class="k">Direction from</span><span class="v" id="s-yaw">—</span></div>
-          <div class="row"><span class="k">Walking distance</span><span class="v" id="s-pos">—</span></div>
-          <div class="row" style="display:block"><span class="k">Cameras</span>
+          <div class="row">
+            <span class="k">LiDAR</span><span class="v" id="s-lidar">—</span>
+          </div>
+          <div class="row">
+            <span class="k">Radar</span><span class="v" id="s-radar">—</span>
+          </div>
+          <div class="row">
+            <span class="k">Gyro (MPU6500)</span
+            ><span class="v" id="s-gyro">—</span>
+          </div>
+          <div class="row">
+            <span class="k">Direction from</span
+            ><span class="v" id="s-yaw">—</span>
+          </div>
+          <div class="row">
+            <span class="k">Walking distance</span
+            ><span class="v" id="s-pos">—</span>
+          </div>
+          <div class="row" style="display: block">
+            <span class="k">Cameras</span>
             <div class="cams" id="s-cams"></div>
           </div>
         </div>
 
         <div class="panel check" id="gyro-check" hidden>
           <h2>Check the gyro first</h2>
-          <p>The gyro's mounting has not been confirmed. Turn right on the spot: the blue figure must turn
-            <b>right</b> too, and the walls must stay still. If it turns left (walls smear when you turn), press Flip.</p>
+          <p>
+            The gyro's mounting has not been confirmed. Turn right on the spot:
+            the blue figure must turn <b>right</b> too, and the walls must stay
+            still. If it turns left (walls smear when you turn), press Flip.
+          </p>
           <div class="btns">
             <button id="b-flip">Flip gyro direction</button>
             <button id="b-source">Use LiDAR for direction</button>
@@ -226,43 +616,90 @@
             <div class="l2"><b id="lv2">0</b>L2 potential</div>
             <div class="l3"><b id="lv3">0</b>L3 monitor</div>
           </div>
-          <p class="note" style="margin-top:0">L1: on course to reach you, or standing in your path (urgency = how soon you
-            would meet it). L2: vehicles and fast movers, tracked with their predicted track; one that heads into your
-            path becomes L1. L3: everything else. <span id="hidden-count"></span></p>
+          <p class="note" style="margin-top: 0">
+            L1: on course to reach you, or standing in your path (urgency = how
+            soon you would meet it). L2: vehicles and fast movers, tracked with
+            their predicted track; one that heads into your path becomes L1. L3:
+            everything else. <span id="hidden-count"></span>
+          </p>
         </div>
 
         <div class="panel">
-          <h2>Around you <span id="o-count" style="text-transform:none;letter-spacing:0"></span></h2>
-          <div id="objects"><div class="note">Nothing named by the cameras right now.</div></div>
-          <p class="note">Each camera is split into a left and a right half. Distance comes from the laser when it
-            sees the same thing, otherwise from the box size in the picture (rough).</p>
+          <h2>
+            Around you
+            <span
+              id="o-count"
+              style="text-transform: none; letter-spacing: 0"
+            ></span>
+          </h2>
+          <div id="objects">
+            <div class="note">Nothing named by the cameras right now.</div>
+          </div>
+          <p class="note">
+            Each camera is split into a left and a right half. Distance comes
+            from the laser when it sees the same thing, otherwise from the box
+            size in the picture (rough).
+          </p>
         </div>
 
         <div class="panel">
           <h2>Map</h2>
           <div class="layers" id="layers">
-            <label><input type="checkbox" data-layer="walls" checked /> remembered walls</label>
-            <label><input type="checkbox" data-layer="floor" checked /> seen floor</label>
-            <label><input type="checkbox" data-layer="laser" checked /> live laser</label>
-            <label><input type="checkbox" data-layer="radar" checked /> radar</label>
-            <label><input type="checkbox" data-layer="wedges" checked /> camera views</label>
-            <label><input type="checkbox" data-layer="labels" checked /> labels</label>
-            <label><input type="checkbox" data-layer="path" checked /> your path</label>
-            <label><input type="checkbox" data-layer="hidden" checked /> hidden areas</label>
+            <label
+              ><input type="checkbox" data-layer="walls" checked /> remembered
+              walls</label
+            >
+            <label
+              ><input type="checkbox" data-layer="floor" checked /> seen
+              floor</label
+            >
+            <label
+              ><input type="checkbox" data-layer="laser" checked /> live
+              laser</label
+            >
+            <label
+              ><input type="checkbox" data-layer="radar" checked /> radar</label
+            >
+            <label
+              ><input type="checkbox" data-layer="wedges" checked /> camera
+              views</label
+            >
+            <label
+              ><input type="checkbox" data-layer="labels" checked />
+              labels</label
+            >
+            <label
+              ><input type="checkbox" data-layer="path" checked /> your
+              path</label
+            >
+            <label
+              ><input type="checkbox" data-layer="hidden" checked /> hidden
+              areas</label
+            >
           </div>
           <div class="btns">
-            <button class="primary" id="b-reset" title="Forget the map and start again from here">Reset map</button>
+            <button
+              class="primary"
+              id="b-reset"
+              title="Forget the map and start again from here"
+            >
+              Reset map
+            </button>
           </div>
-          <p class="note">Keeps the last ~20 m around you. Walls not seen again fade in about 25 s.
-            Walking distance comes from LiDAR scan matching; along long plain walls it cannot be measured and the
-            map may stretch.</p>
+          <p class="note">
+            Keeps the last ~20 m around you. Walls not seen again fade in about
+            25 s. Walking distance comes from LiDAR scan matching; along long
+            plain walls it cannot be measured and the map may stretch.
+          </p>
         </div>
 
         <div class="panel">
           <h2>Camera lens check</h2>
           <div id="lens"></div>
-          <p class="note">When the laser and a camera see the same thing, their two directions are compared.
-            The guide assumes a <span id="hfov">70</span>° lens.</p>
+          <p class="note">
+            When the laser and a camera see the same thing, their two directions
+            are compared. The guide assumes a <span id="hfov">70</span>° lens.
+          </p>
         </div>
       </aside>
     </main>
@@ -272,7 +709,8 @@
       setTimeout(function () {
         if (!window.__mapReady) {
           var b = document.getElementById("banner");
-          b.textContent = "The 3D library did not load. This page needs internet access to cdn.jsdelivr.net.";
+          b.textContent =
+            "The 3D library did not load. This page needs internet access to cdn.jsdelivr.net.";
           b.hidden = false;
         }
       }, 8000);
@@ -280,15 +718,40 @@
     <script type="module">
       import * as THREE from "three";
       import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-      import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+      import {
+        CSS2DRenderer,
+        CSS2DObject,
+      } from "three/addons/renderers/CSS2DRenderer.js";
       window.__mapReady = true;
 
       const $ = (id) => document.getElementById(id);
       const D2R = Math.PI / 180;
-      const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
       const store = {
-        get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
-        set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+        get(k, d) {
+          try {
+            const v = localStorage.getItem(k);
+            return v === null ? d : JSON.parse(v);
+          } catch (e) {
+            return d;
+          }
+        },
+        set(k, v) {
+          try {
+            localStorage.setItem(k, JSON.stringify(v));
+          } catch (e) {}
+        },
       };
 
       // World: x right, y forward (as the user faced at the start). three.js: x right, z = -y, y up.
@@ -329,7 +792,8 @@
       scene.add(gridHelper);
 
       function resize() {
-        const w = view.clientWidth, h = view.clientHeight;
+        const w = view.clientWidth,
+          h = view.clientHeight;
         renderer.setSize(w, h);
         labelRenderer.setSize(w, h);
         camera.aspect = w / Math.max(1, h);
@@ -340,59 +804,130 @@
 
       // ---- figures -------------------------------------------------------------------
       const mat = (color, opacity = 1) =>
-        new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.05, transparent: true, opacity });
+        new THREE.MeshStandardMaterial({
+          color,
+          roughness: 0.55,
+          metalness: 0.05,
+          transparent: true,
+          opacity,
+        });
 
       function makeHuman(color) {
-        const g = new THREE.Group(), m = mat(color);
+        const g = new THREE.Group(),
+          m = mat(color);
         const legGeo = new THREE.CylinderGeometry(0.07, 0.06, 0.82, 10);
-        for (const s of [-1, 1]) { const leg = new THREE.Mesh(legGeo, m); leg.position.set(0.1 * s, 0.41, 0); g.add(leg); }
-        const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.19, 0.38, 6, 14), m);
-        torso.position.y = 1.12; torso.scale.z = 0.7; g.add(torso);
+        for (const s of [-1, 1]) {
+          const leg = new THREE.Mesh(legGeo, m);
+          leg.position.set(0.1 * s, 0.41, 0);
+          g.add(leg);
+        }
+        const torso = new THREE.Mesh(
+          new THREE.CapsuleGeometry(0.19, 0.38, 6, 14),
+          m,
+        );
+        torso.position.y = 1.12;
+        torso.scale.z = 0.7;
+        g.add(torso);
         const armGeo = new THREE.CylinderGeometry(0.05, 0.045, 0.62, 8);
-        for (const s of [-1, 1]) { const arm = new THREE.Mesh(armGeo, m); arm.position.set(0.27 * s, 1.1, 0); arm.rotation.z = 0.08 * s; g.add(arm); }
+        for (const s of [-1, 1]) {
+          const arm = new THREE.Mesh(armGeo, m);
+          arm.position.set(0.27 * s, 1.1, 0);
+          arm.rotation.z = 0.08 * s;
+          g.add(arm);
+        }
         const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12), m);
-        head.position.y = 1.58; g.add(head);
-        const nose = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.13, 10), mat(0xffffff));
-        nose.rotation.x = -Math.PI / 2; nose.position.set(0, 1.58, -0.15); g.add(nose);
+        head.position.y = 1.58;
+        g.add(head);
+        const nose = new THREE.Mesh(
+          new THREE.ConeGeometry(0.045, 0.13, 10),
+          mat(0xffffff),
+        );
+        nose.rotation.x = -Math.PI / 2;
+        nose.position.set(0, 1.58, -0.15);
+        g.add(nose);
         return g;
       }
       function makeVehicle(color) {
-        const g = new THREE.Group(), m = mat(color), dark = mat(0x1f2937);
-        const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.8, 4.3), m); body.position.y = 0.6; g.add(body);
-        const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.6, 2.2), dark); cabin.position.set(0, 1.3, 0.2); g.add(cabin);
+        const g = new THREE.Group(),
+          m = mat(color),
+          dark = mat(0x1f2937);
+        const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.8, 4.3), m);
+        body.position.y = 0.6;
+        g.add(body);
+        const cabin = new THREE.Mesh(🔊
+          new THREE.BoxGeometry(1.6, 0.6, 2.2),
+          dark,
+        );
+        cabin.position.set(0, 1.3, 0.2);
+        g.add(cabin);
         const wheelGeo = new THREE.CylinderGeometry(0.33, 0.33, 0.25, 16);
-        for (const sx of [-0.9, 0.9]) for (const sz of [-1.4, 1.4]) {
-          const w = new THREE.Mesh(wheelGeo, dark); w.rotation.z = Math.PI / 2; w.position.set(sx, 0.33, sz); g.add(w);
-        }
+        for (const sx of [-0.9, 0.9])
+          for (const sz of [-1.4, 1.4]) {
+            const w = new THREE.Mesh(wheelGeo, dark);
+            w.rotation.z = Math.PI / 2;
+            w.position.set(sx, 0.33, sz);
+            g.add(w);
+          }
         return g;
       }
       function makeBike(color) {
-        const g = new THREE.Group(), m = mat(color);
+        const g = new THREE.Group(),
+          m = mat(color);
         const wheelGeo = new THREE.TorusGeometry(0.33, 0.04, 8, 24);
-        for (const sz of [-0.55, 0.55]) { const w = new THREE.Mesh(wheelGeo, m); w.rotation.y = Math.PI / 2; w.position.set(0, 0.37, sz); g.add(w); }
-        const frame = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 1.1), m); frame.position.y = 0.7; g.add(frame);
-        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.05), m); bar.position.set(0, 1.0, -0.5); g.add(bar);
+        for (const sz of [-0.55, 0.55]) {
+          const w = new THREE.Mesh(wheelGeo, m);
+          w.rotation.y = Math.PI / 2;
+          w.position.set(0, 0.37, sz);
+          g.add(w);
+        }
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 1.1), m);
+        frame.position.y = 0.7;
+        g.add(frame);
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.05), m);
+        bar.position.set(0, 1.0, -0.5);
+        g.add(bar);
         return g;
       }
       function makeAnimal(color) {
-        const g = new THREE.Group(), m = mat(color);
-        const body = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.32, 0.8), m); body.position.y = 0.5; g.add(body);
-        const head = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.28), m); head.position.set(0, 0.72, -0.5); g.add(head);
+        const g = new THREE.Group(),
+          m = mat(color);
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.32, 0.8), m);
+        body.position.y = 0.5;
+        g.add(body);
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.28), m);
+        head.position.set(0, 0.72, -0.5);
+        g.add(head);
         const legGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.36, 6);
-        for (const sx of [-0.11, 0.11]) for (const sz of [-0.3, 0.3]) {
-          const l = new THREE.Mesh(legGeo, m); l.position.set(sx, 0.18, sz); g.add(l);
-        }
+        for (const sx of [-0.11, 0.11])
+          for (const sz of [-0.3, 0.3]) {
+            const l = new THREE.Mesh(legGeo, m);
+            l.position.set(sx, 0.18, sz);
+            g.add(l);
+          }
         return g;
       }
       function makePole(color) {
-        const g = new THREE.Group(), m = mat(color);
-        const p = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.6, 12), m); p.position.y = 1.3; g.add(p);
-        const top = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.32, 0.12), m); top.position.y = 2.6; g.add(top);
+        const g = new THREE.Group(),
+          m = mat(color);
+        const p = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.07, 0.07, 2.6, 12),
+          m,
+        );
+        p.position.y = 1.3;
+        g.add(p);
+        const top = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.32, 0.12), m);
+        top.position.y = 2.6;
+        g.add(top);
         return g;
       }
       function makeOther(color) {
         const g = new THREE.Group();
-        const c = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.6, 16), mat(color)); c.position.y = 0.3; g.add(c);
+        const c = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.28, 0.28, 0.6, 16),
+          mat(color),
+        );
+        c.position.y = 0.3;
+        g.add(c);
         return g;
       }
       const KIND = {
@@ -404,35 +939,64 @@
         other: { make: makeOther, color: 0x94a3b8, h: 0.7 },
       };
       function setOpacity(obj, a) {
-        obj.traverse((o) => { if (o.material && o.material.opacity !== undefined && !o.isCSS2DObject) o.material.opacity = a; });
+        obj.traverse((o) => {
+          if (
+            o.material &&
+            o.material.opacity !== undefined &&
+            !o.isCSS2DObject
+          )
+            o.material.opacity = a;
+        });
       }
 
       // ---- the user and what turns with them ------------------------------------------
       const user = makeHuman(0x3b82f6);
       scene.add(user);
-      const ego = new THREE.Group();            // at the user, turned with the user
+      const ego = new THREE.Group(); // at the user, turned with the user
       scene.add(ego);
-      const around = new THREE.Group();         // at the user, never turned (range rings)
+      const around = new THREE.Group(); // at the user, never turned (range rings)
       scene.add(around);
 
       // A flat sector on the floor between two bearings (clockwise from the user's front).
       function sectorGeo(r0, r1, bLo, bHi, segs = 24) {
-        const g = new THREE.RingGeometry(r0, r1, segs, 1, (90 - bHi) * D2R, (bHi - bLo) * D2R);
+        const g = new THREE.RingGeometry(
+          r0,
+          r1,
+          segs,
+          1,
+          (90 - bHi) * D2R,
+          (bHi - bLo) * D2R,
+        );
         g.rotateX(-Math.PI / 2);
         return g;
       }
       const flat = (color, opacity) =>
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false });
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
       function egoLabel(text, bearing, r, cls = "tag ego") {
         const div = document.createElement("div");
-        div.className = cls; div.textContent = text;
+        div.className = cls;
+        div.textContent = text;
         const o = new CSS2DObject(div);
-        o.position.set(Math.sin(bearing * D2R) * r, 0.05, -Math.cos(bearing * D2R) * r);
+        o.position.set(
+          Math.sin(bearing * D2R) * r,
+          0.05,
+          -Math.cos(bearing * D2R) * r,
+        );
         return o;
       }
 
-      const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.5, 3), flat(0x3b82f6, 0.9));
-      arrow.rotation.x = -Math.PI / 2; arrow.position.set(0, 0.03, -0.75);
+      const arrow = new THREE.Mesh(
+        new THREE.ConeGeometry(0.18, 0.5, 3),
+        flat(0x3b82f6, 0.9),
+      );
+      arrow.rotation.x = -Math.PI / 2;
+      arrow.position.set(0, 0.03, -0.75);
       ego.add(arrow);
 
       const wedges = new THREE.Group();
@@ -443,14 +1007,36 @@
         wedgeHfov = hfov;
         while (wedges.children.length) wedges.remove(wedges.children[0]);
         const half = hfov / 2;
-        for (const [name, c] of [["front", 0], ["right", 90], ["back", 180], ["left", 270]]) {
+        for (const [name, c] of [
+          ["front", 0],
+          ["right", 90],
+          ["back", 180],
+          ["left", 270],
+        ]) {
           const strong = name === "front" ? 0.11 : 0.06;
-          wedges.add(new THREE.Mesh(sectorGeo(0.45, 6, c - half, c), flat(0x38bdf8, strong)));
-          wedges.add(new THREE.Mesh(sectorGeo(0.45, 6, c, c + half), flat(0x2dd4bf, strong)));
+          wedges.add(
+            new THREE.Mesh(
+              sectorGeo(0.45, 6, c - half, c),
+              flat(0x38bdf8, strong),
+            ),
+          );
+          wedges.add(
+            new THREE.Mesh(
+              sectorGeo(0.45, 6, c, c + half),
+              flat(0x2dd4bf, strong),
+            ),
+          );
           const line = new THREE.Line(
-            new THREE.BufferGeometry().setFromPoints([V(Math.sin(c * D2R) * 0.45, Math.cos(c * D2R) * 0.45, 0.02),
-                                                      V(Math.sin(c * D2R) * 6, Math.cos(c * D2R) * 6, 0.02)]),
-            new THREE.LineBasicMaterial({ color: 0x5eead4, transparent: true, opacity: 0.35 }));
+            new THREE.BufferGeometry().setFromPoints([
+              V(Math.sin(c * D2R) * 0.45, Math.cos(c * D2R) * 0.45, 0.02),
+              V(Math.sin(c * D2R) * 6, Math.cos(c * D2R) * 6, 0.02),
+            ]),
+            new THREE.LineBasicMaterial({
+              color: 0x5eead4,
+              transparent: true,
+              opacity: 0.35,
+            }),
+          );
           wedges.add(line);
           wedges.add(egoLabel(name + " camera", c, 6.5));
           wedges.add(egoLabel("L", c - half / 2, 5.4));
@@ -459,7 +1045,10 @@
       }
 
       function ring(r, color, opacity) {
-        return new THREE.Mesh(sectorGeo(r - 0.02, r + 0.02, 0, 359.99, 96), flat(color, opacity));
+        return new THREE.Mesh(
+          sectorGeo(r - 0.02, r + 0.02, 0, 359.99, 96),
+          flat(color, opacity),
+        );
       }
       let ringsBuilt = false;
       function buildRings(geo, radarReach) {
@@ -468,7 +1057,10 @@
         around.add(ring(geo.block_m, 0xff6b6b, 0.55));
         around.add(ring(radarReach, 0x8b5cf6, 0.25));
         around.add(ring(geo.lidar_max_m, 0x334155, 0.5));
-        const lab = (t, r) => { const o = egoLabel(t, 135, r); around.add(o); };
+        const lab = (t, r) => {
+          const o = egoLabel(t, 135, r);
+          around.add(o);
+        };
         lab("4 ft — blocked", geo.block_m);
         lab("radar reach", radarReach);
         lab("laser reach", geo.lidar_max_m);
@@ -476,17 +1068,33 @@
 
       // ---- live laser ---------------------------------------------------------------------
       const MAXP = 4000;
-      const lPos = new Float32Array(MAXP * 6), lCol = new Float32Array(MAXP * 6);
+      const lPos = new Float32Array(MAXP * 6),
+        lCol = new Float32Array(MAXP * 6);
       const lGeo = new THREE.BufferGeometry();
       lGeo.setAttribute("position", new THREE.BufferAttribute(lPos, 3));
       lGeo.setAttribute("color", new THREE.BufferAttribute(lCol, 3));
-      const laser = new THREE.LineSegments(lGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.95 }));
+      const laser = new THREE.LineSegments(
+        lGeo,
+        new THREE.LineBasicMaterial({
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.95,
+        }),
+      );
       laser.frustumCulled = false;
-      const tPos = new Float32Array(MAXP * 3), tCol = new Float32Array(MAXP * 3);
+      const tPos = new Float32Array(MAXP * 3),
+        tCol = new Float32Array(MAXP * 3);
       const tGeo = new THREE.BufferGeometry();
       tGeo.setAttribute("position", new THREE.BufferAttribute(tPos, 3));
       tGeo.setAttribute("color", new THREE.BufferAttribute(tCol, 3));
-      const laserTops = new THREE.Points(tGeo, new THREE.PointsMaterial({ size: 4, sizeAttenuation: false, vertexColors: true }));
+      const laserTops = new THREE.Points(
+        tGeo,
+        new THREE.PointsMaterial({
+          size: 4,
+          sizeAttenuation: false,
+          vertexColors: true,
+        }),
+      );
       laserTops.frustumCulled = false;
       const laserLayer = new THREE.Group();
       laserLayer.add(laser, laserTops);
@@ -494,51 +1102,76 @@
 
       function i16(b64) {
         if (!b64) return new Int16Array(0);
-        const s = atob(b64), u = new Uint8Array(s.length);
+        const s = atob(b64),
+          u = new Uint8Array(s.length);
         for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
         return new Int16Array(u.buffer);
       }
 
       let blockM = 1.22;
       function setLaser(lidar, ox, oy) {
-        const pts = i16(lidar.points), n = Math.min(MAXP, pts.length / 2);
+        const pts = i16(lidar.points),
+          n = Math.min(MAXP, pts.length / 2);
         const movers = new Set(lidar.mover || []);
         for (let i = 0; i < n; i++) {
-          const px = pts[2 * i] / 100, py = pts[2 * i + 1] / 100;
-          const x = ox + px, z = -(oy + py), d = Math.hypot(px, py);
-          let c = d < blockM ? [1, 0.42, 0.42] : d < 2.5 ? [1, 0.72, 0.25] : [0.13, 0.83, 0.93];
+          const px = pts[2 * i] / 100,
+            py = pts[2 * i + 1] / 100;
+          const x = ox + px,
+            z = -(oy + py),
+            d = Math.hypot(px, py);
+          let c =
+            d < blockM
+              ? [1, 0.42, 0.42]
+              : d < 2.5
+                ? [1, 0.72, 0.25]
+                : [0.13, 0.83, 0.93];
           if (movers.has(i)) c = [0.96, 0.62, 0.04];
           lPos.set([x, 0.02, z, x, 1.0, z], i * 6);
-          lCol.set([c[0] * 0.25, c[1] * 0.25, c[2] * 0.25, c[0], c[1], c[2]], i * 6);
+          lCol.set(
+            [c[0] * 0.25, c[1] * 0.25, c[2] * 0.25, c[0], c[1], c[2]],
+            i * 6,
+          );
           tPos.set([x, 1.0, z], i * 3);
           tCol.set(c, i * 3);
         }
         lGeo.setDrawRange(0, n * 2);
         tGeo.setDrawRange(0, n);
-        lGeo.attributes.position.needsUpdate = lGeo.attributes.color.needsUpdate = true;
-        tGeo.attributes.position.needsUpdate = tGeo.attributes.color.needsUpdate = true;
+        lGeo.attributes.position.needsUpdate =
+          lGeo.attributes.color.needsUpdate = true;
+        tGeo.attributes.position.needsUpdate =
+          tGeo.attributes.color.needsUpdate = true;
       }
 
       // ---- remembered walls and seen floor --------------------------------------------------
       const WMAX = 9000;
-      const walls = new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.9, 0.1),
-        new THREE.MeshLambertMaterial({ color: 0x5f7396 }), WMAX);
+      const walls = new THREE.InstancedMesh(
+        new THREE.BoxGeometry(0.1, 0.9, 0.1),
+        new THREE.MeshLambertMaterial({ color: 0x5f7396 }),
+        WMAX,
+      );
       walls.count = 0;
       walls.frustumCulled = false;
       scene.add(walls);
       const m4 = new THREE.Matrix4();
       function setWalls(map, ox, oy) {
-        const w = i16(map.walls), n = Math.min(WMAX, w.length / 2);
+        const w = i16(map.walls),
+          n = Math.min(WMAX, w.length / 2);
         for (let i = 0; i < n; i++) {
-          m4.makeTranslation(ox + w[2 * i] / 100, 0.45, -(oy + w[2 * i + 1] / 100));
+          m4.makeTranslation(
+            ox + w[2 * i] / 100,
+            0.45,
+            -(oy + w[2 * i + 1] / 100),
+          );
           walls.setMatrixAt(i, m4);
         }
         walls.count = n;
         walls.instanceMatrix.needsUpdate = true;
       }
 
-      const floor = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
-        new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }));
+      const floor = new THREE.Mesh(
+        new THREE.PlaneGeometry(1, 1),
+        new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }),
+      );
       floor.rotation.x = -Math.PI / 2;
       floor.visible = false;
       scene.add(floor);
@@ -567,11 +1200,22 @@
       pathGeo.rotateX(-Math.PI / 2);
       pathGeo.translate(0, 0, -0.5);
       const pathStrip = new THREE.Mesh(pathGeo, flat(0x3b82f6, 0.14));
-      pathStrip.add(new THREE.LineSegments(new THREE.EdgesGeometry(pathGeo),
-        new THREE.LineBasicMaterial({ color: 0x60a5fa, transparent: true, opacity: 0.55 })));
+      pathStrip.add(
+        new THREE.LineSegments(
+          new THREE.EdgesGeometry(pathGeo),
+          new THREE.LineBasicMaterial({
+            color: 0x60a5fa,
+            transparent: true,
+            opacity: 0.55,
+          }),
+        ),
+      );
       pathStrip.position.y = 0.012;
       scene.add(pathStrip);
-      let pathHeading = 0, pathHeadingTarget = 0, pathHalf = 0.6, pathLen = 3;
+      let pathHeading = 0,
+        pathHeadingTarget = 0,
+        pathHalf = 0.6,
+        pathLen = 3;
 
       const hiddenGroup = new THREE.Group();
       scene.add(hiddenGroup);
@@ -581,32 +1225,52 @@
           if (c.geometry) c.geometry.dispose();
           if (c.material) c.material.dispose();
         }
-        let labelled = 0;                 // only the two nearest beside the path get words
+        let labelled = 0; // only the two nearest beside the path get words
         for (const oc of list || []) {
           const p = oc.poly;
           if (p.length < 6) continue;
           const shape = new THREE.Shape();
           shape.moveTo(ox + p[0], oy + p[1]);
-          for (let k = 2; k < p.length; k += 2) shape.lineTo(ox + p[k], oy + p[k + 1]);
+          for (let k = 2; k < p.length; k += 2)
+            shape.lineTo(ox + p[k], oy + p[k + 1]);
           const g = new THREE.ShapeGeometry(shape);
           g.rotateX(-Math.PI / 2);
-          const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
-            color: oc.borders_path ? 0x7c4a12 : 0x0f172a, transparent: true,
-            opacity: oc.borders_path ? 0.55 : 0.5, depthWrite: false, side: THREE.DoubleSide }));
+          const mesh = new THREE.Mesh(
+            g,
+            new THREE.MeshBasicMaterial({
+              color: oc.borders_path ? 0x7c4a12 : 0x0f172a,
+              transparent: true,
+              opacity: oc.borders_path ? 0.55 : 0.5,
+              depthWrite: false,
+              side: THREE.DoubleSide,
+            }),
+          );
           mesh.position.y = 0.018;
           hiddenGroup.add(mesh);
           const pts = [];
-          for (let k = 0; k < p.length; k += 2) pts.push(new THREE.Vector3(ox + p[k], 0.03, -(oy + p[k + 1])));
+          for (let k = 0; k < p.length; k += 2)
+            pts.push(new THREE.Vector3(ox + p[k], 0.03, -(oy + p[k + 1])));
           pts.push(pts[0].clone());
-          const outline = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
-            new THREE.LineDashedMaterial({ color: oc.borders_path ? 0xffa53d : 0x475569, dashSize: 0.25, gapSize: 0.18 }));
+          const outline = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(pts),
+            new THREE.LineDashedMaterial({
+              color: oc.borders_path ? 0xffa53d : 0x475569,
+              dashSize: 0.25,
+              gapSize: 0.18,
+            }),
+          );
           outline.computeLineDistances();
           hiddenGroup.add(outline);
           if (oc.borders_path && labelled < 2 && oc.near_m <= 6) {
             labelled++;
-            let cx = 0, cy = 0;
-            for (let k = 0; k < p.length; k += 2) { cx += p[k]; cy += p[k + 1]; }
-            cx = ox + cx / (p.length / 2); cy = oy + cy / (p.length / 2);
+            let cx = 0,
+              cy = 0;
+            for (let k = 0; k < p.length; k += 2) {
+              cx += p[k];
+              cy += p[k + 1];
+            }
+            cx = ox + cx / (p.length / 2);
+            cy = oy + cy / (p.length / 2);
             const div = document.createElement("div");
             div.className = "tag ego";
             div.style.color = "#ffb45e";
@@ -632,21 +1296,46 @@
           if (c.material) c.material.dispose();
         }
         for (const b of radar.boards) {
-          const lo = b.bearing - b.beam_deg / 2, hi = b.bearing + b.beam_deg / 2;
-          radarGroup.add(new THREE.Mesh(sectorGeo(radar.start_m, radar.reach_m, lo, hi),
-            flat(b.online ? 0x8b5cf6 : 0x64748b, b.online ? 0.05 : 0.04)));
+          const lo = b.bearing - b.beam_deg / 2,
+            hi = b.bearing + b.beam_deg / 2;
+          radarGroup.add(
+            new THREE.Mesh(
+              sectorGeo(radar.start_m, radar.reach_m, lo, hi),
+              flat(b.online ? 0x8b5cf6 : 0x64748b, b.online ? 0.05 : 0.04),
+            ),
+          );
           if (!b.online) {
-            radarGroup.add(egoLabel(b.missing ? "radar missing" : "radar off", b.bearing, 2.2, "tag ego"));
+            radarGroup.add(
+              egoLabel(
+                b.missing ? "radar missing" : "radar off",
+                b.bearing,
+                2.2,
+                "tag ego",
+              ),
+            );
             continue;
           }
           for (const p of b.peaks_m || []) {
             if (b.min_m && Math.abs(p - b.min_m) < 0.05) continue;
-            radarGroup.add(new THREE.Mesh(sectorGeo(p - 0.025, p + 0.025, lo, hi), flat(0x8b5cf6, 0.35)));
+            radarGroup.add(
+              new THREE.Mesh(
+                sectorGeo(p - 0.025, p + 0.025, lo, hi),
+                flat(0x8b5cf6, 0.35),
+              ),
+            );
           }
           if (b.min_m) {
             const color = b.glass_hint ? 0xff2bd6 : 0x8b5cf6;
-            radarGroup.add(new THREE.Mesh(sectorGeo(b.min_m - 0.05, b.min_m + 0.05, lo, hi), flat(color, 0.85)));
-            if (b.glass_hint) radarGroup.add(egoLabel("glass?", b.bearing, b.min_m + 0.35, "tag"));
+            radarGroup.add(
+              new THREE.Mesh(
+                sectorGeo(b.min_m - 0.05, b.min_m + 0.05, lo, hi),
+                flat(color, 0.85),
+              ),
+            );
+            if (b.glass_hint)
+              radarGroup.add(
+                egoLabel("glass?", b.bearing, b.min_m + 0.35, "tag"),
+              );
           }
         }
       }
@@ -655,7 +1344,10 @@
       const figures = new Map();
       function figureFor(o) {
         let f = figures.get(o.id);
-        if (f && f.group !== o.group) { removeFigure(o.id); f = null; }
+        if (f && f.group !== o.group) {
+          removeFigure(o.id);
+          f = null;
+        }
         if (!f) {
           const k = KIND[o.group] || KIND.other;
           const g = k.make(k.color);
@@ -664,18 +1356,58 @@
           const label = new CSS2DObject(div);
           label.position.set(0, k.h + 0.3, 0);
           g.add(label);
-          const arrowHelper = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1, k.color, 0.3, 0.2);
+          const arrowHelper = new THREE.ArrowHelper(
+            new THREE.Vector3(1, 0, 0),
+            new THREE.Vector3(),
+            1,
+            k.color,
+            0.3,
+            0.2,
+          );
           arrowHelper.visible = false;
-          const lineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
-          const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: 0xff5a5a, transparent: true, opacity: 0.9 }));
+          const lineGeo = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(),
+            new THREE.Vector3(),
+          ]);
+          const line = new THREE.Line(
+            lineGeo,
+            new THREE.LineBasicMaterial({
+              color: 0xff5a5a,
+              transparent: true,
+              opacity: 0.9,
+            }),
+          );
           line.visible = false;
           line.frustumCulled = false;
-          const rr = { person: 0.45, vehicle: 2.4, bike: 0.9, animal: 0.6, pole: 0.35, other: 0.5 }[o.group] || 0.5;
-          const ring = new THREE.Mesh(new THREE.RingGeometry(rr, rr + 0.08, 40).rotateX(-Math.PI / 2), flat(0x64748b, 0.9));
+          const rr =
+            {
+              person: 0.45,
+              vehicle: 2.4,
+              bike: 0.9,
+              animal: 0.6,
+              pole: 0.35,
+              other: 0.5,
+            }[o.group] || 0.5;
+          const ring = new THREE.Mesh(
+            new THREE.RingGeometry(rr, rr + 0.08, 40).rotateX(-Math.PI / 2),
+            flat(0x64748b, 0.9),
+          );
           ring.position.y = 0.025;
           g.add(ring);
           scene.add(g, arrowHelper, line);
-          f = { g, label, div, arrow: arrowHelper, line, ring, level: 3, group: o.group, target: new THREE.Vector3(), heading: 0, fresh: true };
+          f = {
+            g,
+            label,
+            div,
+            arrow: arrowHelper,
+            line,
+            ring,
+            level: 3,
+            group: o.group,
+            target: new THREE.Vector3(),
+            heading: 0,
+            fresh: true,
+          };
           figures.set(o.id, f);
         }
         return f;
@@ -686,16 +1418,30 @@
         scene.remove(f.g, f.arrow, f.line);
         f.line.geometry.dispose();
         f.line.material.dispose();
-        f.g.traverse((c) => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
+        f.g.traverse((c) => {
+          if (c.geometry) c.geometry.dispose();
+          if (c.material) c.material.dispose();
+        });
         f.label.element.remove();
         figures.delete(id);
       }
       const LEVEL_COLOR = { urgent: 0xff5a5a, soon: 0xffa53d, info: 0xfacc15 };
       const THREAT_COLOR = { 1: 0xff5a5a, 2: 0xffa53d, 3: 0x64748b };
-      const half = (o) => (o.between ? "between cameras" : `${o.camera} camera, ${o.half} half`);
+      const half = (o) =>
+        o.between ? "between cameras" : `${o.camera} camera, ${o.half} half`;
       function describe(o) {
-        const src = o.source === "laser" ? "laser" : o.rough ? "camera, size guessed" : "camera";
-        const radar = o.radar === true ? " · radar ✓" : o.radar === false ? " · radar —" : "";
+        const src =
+          o.source === "laser"
+            ? "laser"
+            : o.rough
+              ? "camera, size guessed"
+              : "camera";
+        const radar =
+          o.radar === true
+            ? " · radar ✓"
+            : o.radar === false
+              ? " · radar —"
+              : "";
         return { src, radar };
       }
       function setObjects(objs, ox, oy, userYaw) {
@@ -703,23 +1449,47 @@
         for (const o of objs) {
           seen.add(o.id);
           const f = figureFor(o);
-          const x = ox + o.x, y = oy + o.y;
+          const x = ox + o.x,
+            y = oy + o.y;
           f.target.set(x, 0, -y);
-          if (f.fresh) { f.g.position.copy(f.target); }
+          if (f.fresh) {
+            f.g.position.copy(f.target);
+          }
           let heading;
-          if (o.speed_mps && o.speed_mps >= 0.3 && o.motion) heading = Math.atan2(-o.vx, o.vy);
-          else heading = Math.atan2(-(ox - x), ox === x && oy === y ? 1 : oy - y);
+          if (o.speed_mps && o.speed_mps >= 0.3 && o.motion)
+            heading = Math.atan2(-o.vx, o.vy);
+          else
+            heading = Math.atan2(-(ox - x), ox === x && oy === y ? 1 : oy - y);
           f.heading = heading;
-          if (f.fresh) { f.g.rotation.y = heading; f.fresh = false; }
+          if (f.fresh) {
+            f.g.rotation.y = heading;
+            f.fresh = false;
+          }
           setOpacity(f.g, o.source === "laser" ? 1 : 0.45);
-          const d = describe(o), ap = o.approach, th = o.threat || { level: 3 };
+          const d = describe(o),
+            ap = o.approach,
+            th = o.threat || { level: 3 };
           const secs = ap ? ap.seconds : th.seconds;
-          const hot = ap ? ap.level : th.ttc_s != null ? (th.ttc_s <= 3 ? "urgent" : th.ttc_s <= 6 ? "soon" : "info") :
-            th.kind === "path" ? (th.gap_m <= 1.22 ? "urgent" : th.gap_m <= 2.5 ? "soon" : "info") : "";
+          const hot = ap
+            ? ap.level
+            : th.ttc_s != null
+              ? th.ttc_s <= 3
+                ? "urgent"
+                : th.ttc_s <= 6
+                  ? "soon"
+                  : "info"
+              : th.kind === "path"
+                ? th.gap_m <= 1.22
+                  ? "urgent"
+                  : th.gap_m <= 2.5
+                    ? "soon"
+                    : "info"
+                : "";
           f.level = th.level;
           f.ring.material.color.setHex(THREAT_COLOR[th.level]);
           f.div.className = "tag" + (hot ? " hot " + hot : "");
-          f.div.innerHTML = `<span class="lv l${th.level}">L${th.level}</span><b>${esc(o.name)}</b> ${o.dist_m.toFixed(1)} m` +
+          f.div.innerHTML =
+            `<span class="lv l${th.level}">L${th.level}</span><b>${esc(o.name)}</b> ${o.dist_m.toFixed(1)} m` +
             (secs ? ` <span class="ttc">⏱ ${secs} s</span>` : "") +
             `<br><small>${th.level === 1 ? esc(th.reason) + " · " : ""}${esc(d.src)}${d.radar}` +
             `${o.motion && o.motion !== "still" ? " · " + esc(o.motion) : ""}</small>`;
@@ -728,19 +1498,34 @@
           if (o.motion && o.motion !== "still" && o.speed_mps) {
             f.arrow.visible = true;
             f.arrow.setDirection(new THREE.Vector3(o.vx, 0, -o.vy).normalize());
-            const ahead = th.level <= 2 ? 3 : 1.5;          // L1/L2: show the predicted track 3 s ahead
-            f.arrow.setLength(Math.min(15, Math.max(0.5, o.speed_mps * ahead)), 0.3, 0.2);
+            const ahead = th.level <= 2 ? 3 : 1.5; // L1/L2: show the predicted track 3 s ahead
+            f.arrow.setLength(
+              Math.min(15, Math.max(0.5, o.speed_mps * ahead)),
+              0.3,
+              0.2,
+            );
           } else {
             f.arrow.visible = false;
           }
         }
-        for (const id of [...figures.keys()]) if (!seen.has(id)) removeFigure(id);
+        for (const id of [...figures.keys()])
+          if (!seen.has(id)) removeFigure(id);
       }
 
       // ---- layers --------------------------------------------------------------------------------
-      const layers = Object.assign({ walls: true, floor: true, laser: true, radar: true, wedges: true, labels: true,
-                                     path: true, hidden: true },
-        store.get("mapLayers", {}));
+      const layers = Object.assign(
+        {
+          walls: true,
+          floor: true,
+          laser: true,
+          radar: true,
+          wedges: true,
+          labels: true,
+          path: true,
+          hidden: true,
+        },
+        store.get("mapLayers", {}),
+      );
       function applyLayers() {
         walls.visible = layers.walls;
         floor.visible = layers.floor && !!floor.material.map;
@@ -753,7 +1538,11 @@
       }
       for (const cb of document.querySelectorAll("#layers input")) {
         cb.checked = layers[cb.dataset.layer];
-        cb.addEventListener("change", () => { layers[cb.dataset.layer] = cb.checked; store.set("mapLayers", layers); applyLayers(); });
+        cb.addEventListener("change", () => {
+          layers[cb.dataset.layer] = cb.checked;
+          store.set("mapLayers", layers);
+          applyLayers();
+        });
       }
       applyLayers();
 
@@ -763,7 +1552,8 @@
       function setMode(m) {
         mode = m;
         store.set("mapView", m);
-        for (const b of document.querySelectorAll("#hud-view button")) b.classList.toggle("on", b.dataset.mode === m);
+        for (const b of document.querySelectorAll("#hud-view button"))
+          b.classList.toggle("on", b.dataset.mode === m);
         const u = user.position;
         controls.enabled = m !== "behind";
         controls.minPolarAngle = m === "top" ? 0.0001 : 0;
@@ -774,11 +1564,14 @@
         lastTarget.copy(u);
         controls.update();
       }
-      for (const b of document.querySelectorAll("#hud-view button")) b.addEventListener("click", () => setMode(b.dataset.mode));
+      for (const b of document.querySelectorAll("#hud-view button"))
+        b.addEventListener("click", () => setMode(b.dataset.mode));
 
       // ---- live state, smoothed per frame ---------------------------------------------------------
       const userTarget = new THREE.Vector3();
-      let userYaw = 0, userYawTarget = 0, firstPose = true;
+      let userYaw = 0,
+        userYawTarget = 0,
+        firstPose = true;
       const clock = new THREE.Clock();
       function frame() {
         requestAnimationFrame(frame);
@@ -790,7 +1583,11 @@
         ego.position.copy(user.position);
         ego.rotation.y = user.rotation.y;
         around.position.copy(user.position);
-        gridHelper.position.set(Math.round(user.position.x), 0, Math.round(user.position.z));
+        gridHelper.position.set(
+          Math.round(user.position.x),
+          0,
+          Math.round(user.position.z),
+        );
         let dp = pathHeadingTarget - pathHeading;
         dp = ((dp + 540) % 360) - 180;
         pathHeading += dp * k;
@@ -815,10 +1612,22 @@
         }
         const u = user.position;
         if (mode === "behind") {
-          const fwd = new THREE.Vector3(Math.sin(userYaw * D2R), 0, -Math.cos(userYaw * D2R));
-          const want = u.clone().addScaledVector(fwd, -5.5).add(new THREE.Vector3(0, 3.6, 0));
+          const fwd = new THREE.Vector3(
+            Math.sin(userYaw * D2R),
+            0,
+            -Math.cos(userYaw * D2R),
+          );
+          const want = u
+            .clone()
+            .addScaledVector(fwd, -5.5)
+            .add(new THREE.Vector3(0, 3.6, 0));
           camera.position.lerp(want, 1 - Math.exp(-dt * 5));
-          camera.lookAt(u.clone().addScaledVector(fwd, 2.5).add(new THREE.Vector3(0, 0.8, 0)));
+          camera.lookAt(
+            u
+              .clone()
+              .addScaledVector(fwd, 2.5)
+              .add(new THREE.Vector3(0, 0.8, 0)),
+          );
         } else {
           camera.position.add(u.clone().sub(lastTarget));
           controls.target.copy(u);
@@ -833,7 +1642,8 @@
       speakBox.checked = store.get("mapSpeak", false);
       speakBox.addEventListener("change", () => {
         store.set("mapSpeak", speakBox.checked);
-        if (!speakBox.checked && "speechSynthesis" in window) speechSynthesis.cancel();
+        if (!speakBox.checked && "speechSynthesis" in window)
+          speechSynthesis.cancel();
       });
       const ICON = { urgent: "⚠", soon: "⏱", info: "ℹ" };
       function renderAlerts(d) {
@@ -842,49 +1652,73 @@
         if (!al.length) {
           bar.className = "none";
           $("alert-icon").textContent = "✓";
-          $("alert-main").textContent = d.lidar.fresh || d.objects.length ? "Nothing approaching you" :
-            "Nothing approaching you (no live LiDAR: only the cameras are watching)";
+          $("alert-main").textContent =
+            d.lidar.fresh || d.objects.length
+              ? "Nothing approaching you"
+              : "Nothing approaching you (no live LiDAR: only the cameras are watching)";
           $("alert-more").innerHTML = "";
         } else {
           bar.className = al[0].level;
           $("alert-icon").textContent = ICON[al[0].level];
           $("alert-main").textContent = al[0].text;
-          $("alert-more").innerHTML = al.slice(1, 5).map((a) => `<span class="chip ${a.level}">${esc(a.text)}</span>`).join("");
+          $("alert-more").innerHTML = al
+            .slice(1, 5)
+            .map((a) => `<span class="chip ${a.level}">${esc(a.text)}</span>`)
+            .join("");
         }
         const off = d.audio_enabled === false || !("speechSynthesis" in window);
         speakBox.disabled = off;
-        $("speak-label").textContent = d.audio_enabled === false ? "🔇 audio switched off in config" :
-          !("speechSynthesis" in window) ? "🔇 this browser cannot speak" : "🔊 Speak alerts";
+        $("speak-label").textContent =
+          d.audio_enabled === false
+            ? "🔇 audio switched off in config"
+            : !("speechSynthesis" in window)
+              ? "🔇 this browser cannot speak"
+              : "🔊      Speak alerts";
       }
       // Say a new alert once; again if it turns urgent, or if it is still there 4 s on and its time moved.
       const spoken = new Map();
       function speakAlerts(d) {
         const now = performance.now();
-        for (const a of d.alerts || []) { const s = spoken.get(a.key); if (s) s.seen = now; }
-        for (const [k, s] of [...spoken]) if (now - s.seen > 2000) spoken.delete(k);
+        for (const a of d.alerts || []) {
+          const s = spoken.get(a.key);
+          if (s) s.seen = now;
+        }
+        for (const [k, s] of [...spoken])
+          if (now - s.seen > 2000) spoken.delete(k);
         if (!speakBox.checked || speakBox.disabled) return;
         for (const a of d.alerts || []) {
           const last = spoken.get(a.key);
-          const due = !last || (a.level === "urgent" && last.level !== "urgent") ||
+          const due =
+            !last ||
+            (a.level === "urgent" && last.level !== "urgent") ||
             (now - last.at > 4000 && Math.abs(last.seconds - a.seconds) >= 2);
           if (!due) continue;
           if (speechSynthesis.speaking) {
-            if (a.level !== "urgent") return;      // let the current sentence finish
+            if (a.level !== "urgent") return; // let the current sentence finish
             speechSynthesis.cancel();
           }
           const u = new SpeechSynthesisUtterance(a.text);
           u.rate = 1.1;
           speechSynthesis.speak(u);
-          spoken.set(a.key, { at: now, seen: now, seconds: a.seconds, level: a.level });
+          spoken.set(a.key, {
+            at: now,
+            seen: now,
+            seconds: a.seconds,
+            level: a.level,
+          });
           return;
         }
       }
 
-      let latest = null, lastMsg = 0, panelAt = 0, firstPath = true;
+      let latest = null,
+        lastMsg = 0,
+        panelAt = 0,
+        firstPath = true;
       function apply(d) {
         latest = d;
         lastMsg = performance.now();
-        const ox = d.origin.x, oy = d.origin.y;
+        const ox = d.origin.x,
+          oy = d.origin.y;
         userTarget.set(ox, 0, -oy);
         userYawTarget = d.pose.yaw_deg;
         if (firstPose) {
@@ -901,7 +1735,10 @@
         setObjects(d.objects, ox, oy, d.pose.yaw_deg);
         if (d.path) {
           pathHeadingTarget = d.path.heading_deg;
-          if (firstPath) { pathHeading = pathHeadingTarget; firstPath = false; }
+          if (firstPath) {
+            pathHeading = pathHeadingTarget;
+            firstPath = false;
+          }
           pathHalf = d.path.half_m;
           pathLen = d.path.length_m;
         }
@@ -912,51 +1749,111 @@
           setWalls(d.map, ox, oy);
           if (d.map.floor) setFloor(d.map.floor, ox, oy);
         }
-        if (performance.now() - panelAt > 250) { panelAt = performance.now(); renderPanel(d); }
+        if (performance.now() - panelAt > 250) {
+          panelAt = performance.now();
+          renderPanel(d);
+        }
       }
 
       // ---- panel -------------------------------------------------------------------------------------
       const cls = (ok, warn) => (ok ? "ok" : warn ? "warn" : "bad");
-      function put(id, text, klass) { const el = $(id); el.textContent = text; el.className = "v " + (klass || ""); }
+      function put(id, text, klass) {
+        const el = $(id);
+        el.textContent = text;
+        el.className = "v " + (klass || "");
+      }
       function renderPanel(d) {
         const L = d.lidar;
         if (L.simulated) put("s-lidar", "SIMULATED — not real", "warn");
         else if (L.fresh) put("s-lidar", `${L.hz} Hz · ${L.n} points`, "ok");
-        else put("s-lidar", L.age_s ? `no scan for ${L.age_s.toFixed(0)} s` : "no scan yet", "bad");
+        else
+          put(
+            "s-lidar",
+            L.age_s ? `no scan for ${L.age_s.toFixed(0)} s` : "no scan yet",
+            "bad",
+          );
 
-        const boards = d.radar.boards, live = boards.filter((b) => b.online).length;
+        const boards = d.radar.boards,
+          live = boards.filter((b) => b.online).length;
         const glass = boards.filter((b) => b.glass_hint).length;
-        put("s-radar", `${live}/${boards.length} boards${glass ? ` · ${glass} hear glass?` : ""}`, cls(live === boards.length && live > 0, live > 0));
+        put(
+          "s-radar",
+          `${live}/${boards.length} boards${glass ? ` · ${glass} hear glass?` : ""}`,
+          cls(live === boards.length && live > 0, live > 0),
+        );
 
         const G = d.gyro;
-        put("s-gyro", G.healthy ? `${G.chip || "ok"} · ${G.rate_hz ?? "—"} Hz${d.pose.settings.gyro_flip ? " · flipped" : ""}` :
-          "not reading", cls(G.healthy));
+        put(
+          "s-gyro",
+          G.healthy
+            ? `${G.chip || "ok"} · ${G.rate_hz ?? "—"} Hz${d.pose.settings.gyro_flip ? " · flipped" : ""}`
+            : "not reading",
+          cls(G.healthy),
+        );
         const src = d.pose.yaw_source;
-        put("s-yaw", src === "gyro" ? "gyro" : src === "lidar" ? "LiDAR scan matching" : "nothing yet",
-          cls(src === "gyro", src === "lidar"));
-        const pm = d.pose.position_measured, psrc = d.pose.position_source;
-        put("s-pos", psrc === "steps" ? "from your steps (estimated)" : pm == null ? "—" : pm >= 0.7 ? "measured" :
-          pm >= 0.2 ? "partly measured" : "not measurable here", psrc === "steps" ? "warn" : pm == null ? "" : cls(pm >= 0.7, pm >= 0.2));
+        put(
+          "s-yaw",
+          src === "gyro"
+            ? "gyro"
+            : src === "lidar"
+              ? "LiDAR scan matching"
+              : "nothing yet",
+          cls(src === "gyro", src === "lidar"),
+        );
+        const pm = d.pose.position_measured,
+          psrc = d.pose.position_source;
+        put(
+          "s-pos",
+          psrc === "steps"
+            ? "from your steps (estimated)"
+            : pm == null
+              ? "—"
+              : pm >= 0.7
+                ? "measured"
+                : pm >= 0.2
+                  ? "partly measured"
+                  : "not measurable here",
+          psrc === "steps"
+            ? "warn"
+            : pm == null
+              ? ""
+              : cls(pm >= 0.7, pm >= 0.2),
+        );
 
-        $("s-cams").innerHTML = Object.entries(d.cameras.sectors).map(([name, c]) =>
-          `<div class="cam ${c.simulated ? "warn" : c.fresh ? "ok" : "bad"}">${name}<br>${c.simulated ? "sim" :
-            c.fresh ? c.detections + " seen" : "off"}</div>`).join("");
+        $("s-cams").innerHTML = Object.entries(d.cameras.sectors)
+          .map(
+            ([name, c]) =>
+              `<div class="cam ${c.simulated ? "warn" : c.fresh ? "ok" : "bad"}">${name}<br>${
+                c.simulated ? "sim" : c.fresh ? c.detections + " seen" : "off"
+              }</div>`,
+          )
+          .join("");
 
         $("gyro-check").hidden = G.mounting_confirmed;
-        $("b-flip").textContent = d.pose.settings.gyro_flip ? "Un-flip gyro direction" : "Flip gyro direction";
-        $("b-source").textContent = d.pose.settings.yaw_source === "gyro" ? "Use LiDAR for direction" : "Use gyro for direction";
+        $("b-flip").textContent = d.pose.settings.gyro_flip
+          ? "Un-flip gyro direction"
+          : "Flip gyro direction";
+        $("b-source").textContent =
+          d.pose.settings.yaw_source === "gyro"
+            ? "Use LiDAR for direction"
+            : "Use gyro for direction";
 
         const f = d.pose.facing_deg;
-        $("h-facing").textContent = Math.abs(f) <= 2 ? "Facing the start direction" :
-          `Facing ${Math.abs(f).toFixed(0)}° ${f > 0 ? "right" : "left"} of start`;
-        const fwd = d.pose.y, side = d.pose.x;
-        $("h-pos").textContent = `${Math.abs(fwd).toFixed(1)} m ${fwd >= 0 ? "forward" : "back"}, ` +
+        $("h-facing").textContent =
+          Math.abs(f) <= 2
+            ? "Facing the start direction"
+            : `Facing ${Math.abs(f).toFixed(0)}° ${f > 0 ? "right" : "left"} of start`;
+        const fwd = d.pose.y,
+          side = d.pose.x;
+        $("h-pos").textContent =
+          `${Math.abs(fwd).toFixed(1)} m ${fwd >= 0 ? "forward" : "back"}, ` +
           `${Math.abs(side).toFixed(1)} m ${side >= 0 ? "right" : "left"} of where the map started` +
           (d.pose.turning ? " · turning" : "");
 
         const banner = $("banner");
         if (!L.fresh && !L.simulated) {
-          banner.textContent = "LiDAR is not updating — turn it on. The map shows nothing new until it does.";
+          banner.textContent =
+            "LiDAR is not updating — turn it on. The map shows nothing new until it does.";
           banner.hidden = false;
         } else if (window.__mapReady) {
           banner.hidden = true;
@@ -967,51 +1864,109 @@
         $("lv2").textContent = lv["2"] || 0;
         $("lv3").textContent = lv["3"] || 0;
         const hid = (d.occluded || []).filter((o) => o.borders_path).length;
-        $("hidden-count").textContent = hid ? `${hid} hidden area${hid > 1 ? "s" : ""} beside your path.` : "";
-        const objs = [...d.objects].sort((a, b) => (a.threat.level - b.threat.level) ||
-          ((a.threat.ttc_s ?? 99) - (b.threat.ttc_s ?? 99)) || (a.dist_m - b.dist_m));
+        $("hidden-count").textContent = hid
+          ? `${hid} hidden area${hid > 1 ? "s" : ""} beside your path.`
+          : "";
+        const objs = [...d.objects].sort(
+          (a, b) =>
+            a.threat.level - b.threat.level ||
+            (a.threat.ttc_s ?? 99) - (b.threat.ttc_s ?? 99) ||
+            a.dist_m - b.dist_m,
+        );
         $("o-count").textContent = objs.length ? `(${objs.length})` : "";
-        $("objects").innerHTML = objs.length ? objs.map((o) => {
-          const k = KIND[o.group] || KIND.other;
-          const dsc = describe(o);
-          const motion = o.motion ? (o.motion === "still" ? "still" : `${o.motion}, ${o.speed_mps.toFixed(1)} m/s`) :
-            d.pose.turning ? "— (you are turning)" : "—";
-          const ap = o.approach, th = o.threat;
-          const pathTime = !ap && th.kind === "path" ? (th.seconds ?
-            `<div class="ttc warn">⏱ in your path, ${th.seconds} s ahead at your pace</div>` :
-            `<div class="ttc warn">in your path, ${th.gap_m.toFixed(1)} m ahead</div>`) : "";
-          return `<div class="obj"><div class="top"><span><span class="lv l${th.level}">L${th.level}</span>` +
-            `<span class="sw" style="background:#${k.color.toString(16).padStart(6, "0")}"></span>` +
-            `<b>${esc(o.name)}</b></span><span>${o.dist_m.toFixed(1)} m (${o.dist_ft.toFixed(0)} ft) · ${o.clock} o'clock</span></div>` +
-            (ap ? `<div class="ttc ${ap.level === "urgent" ? "bad" : "warn"}">⏱ reaches you in ${ap.seconds} s ` +
-              `(closing ${ap.closing_mps.toFixed(1)} m/s, passes ${ap.miss_m.toFixed(1)} m from you)</div>` : pathTime) +
-            `<div class="meta">${esc(half(o))} · ${esc(dsc.src)}${dsc.radar} · ${esc(motion)}</div></div>`;
-        }).join("") : `<div class="note">Nothing named by the cameras right now.</div>`;
+        $("objects").innerHTML = objs.length
+          ? objs
+              .map((o) => {
+                const k = KIND[o.group] || KIND.other;
+                const dsc = describe(o);
+                const motion = o.motion
+                  ? o.motion === "still"
+                    ? "still"
+                    : `${o.motion}, ${o.speed_mps.toFixed(1)} m/s`
+                  : d.pose.turning
+                    ? "— (you are turning)"
+                    : "—";
+                const ap = o.approach,
+                  th = o.threat;
+                const pathTime =
+                  !ap && th.kind === "path"
+                    ? th.seconds
+                      ? `<div class="ttc warn">⏱ in your path, ${th.seconds} s ahead at your pace</div>`
+                      : `<div class="ttc warn">in your path, ${th.gap_m.toFixed(1)} m ahead</div>`
+                    : "";
+                return (
+                  `<div class="obj"><div class="top"><span><span class="lv l${th.level}">L${th.level}</span>` +
+                  `<span class="sw" style="background:#${k.color.toString(16).padStart(6, "0")}"></span>` +
+                  `<b>${esc(o.name)}</b></span><span>${o.dist_m.toFixed(1)} m (${o.dist_ft.toFixed(0)} ft) · ${o.clock} o'clock</span></div>` +
+                  (ap
+                    ? `<div class="ttc ${ap.level === "urgent" ? "bad" : "warn"}">⏱ reaches you in ${ap.seconds} s ` +
+                      `(closing ${ap.closing_mps.toFixed(1)} m/s, passes ${ap.miss_m.toFixed(1)} m from you)</div>`
+                    : pathTime) +
+                  `<div class="meta">${esc(half(o))} · ${esc(dsc.src)}${dsc.radar} · ${esc(motion)}</div></div>`
+                );
+              })
+              .join("")
+          : `<div class="note">Nothing named by the cameras right now.</div>`;
 
         $("hfov").textContent = d.cameras.hfov_deg;
-        $("lens").innerHTML = Object.entries(d.cameras.sectors).map(([name, c]) => {
-          const lens = c.lens_hfov_deg != null ? `lens ≈ ${c.lens_hfov_deg}° (${c.lens_samples})` : "lens: collecting…";
-          const aim = c.aim_offset_deg != null ? `aim ${c.aim_offset_deg > 0 ? "+" : ""}${c.aim_offset_deg}° (${c.aim_samples})` : "";
-          const swap = c.mirror_votes > 3 && c.mirror_votes > c.lens_samples ? ` · <span class="bad">left/right look swapped</span>` : "";
-          return `<div class="row"><span class="k">${name}</span><span class="v">${lens}${aim ? " · " + aim : ""}${swap}</span></div>`;
-        }).join("");
+        $("lens").innerHTML = Object.entries(d.cameras.sectors)
+          .map(([name, c]) => {
+            const lens =
+              c.lens_hfov_deg != null
+                ? `lens ≈ ${c.lens_hfov_deg}° (${c.lens_samples})`
+                : "lens: collecting…";
+            const aim =
+              c.aim_offset_deg != null
+                ? `aim ${c.aim_offset_deg > 0 ? "+" : ""}${c.aim_offset_deg}° (${c.aim_samples})`
+                : "";
+            const swap =
+              c.mirror_votes > 3 && c.mirror_votes > c.lens_samples
+                ? ` · <span class="bad">left/right look swapped</span>`
+                : "";
+            return `<div class="row"><span class="k">${name}</span><span class="v">${lens}${aim ? " · " + aim : ""}${swap}</span></div>`;
+          })
+          .join("");
       }
 
       // ---- buttons ---------------------------------------------------------------------------------------
       async function post(path, body) {
         try {
-          await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+          await fetch(path, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body || {}),
+          });
         } catch (e) {}
       }
       $("b-reset").addEventListener("click", () => post("/map/reset"));
-      $("b-flip").addEventListener("click", () => latest && post("/map/settings", { gyro_flip: !latest.pose.settings.gyro_flip }));
-      $("b-source").addEventListener("click", () => latest &&
-        post("/map/settings", { yaw_source: latest.pose.settings.yaw_source === "gyro" ? "lidar" : "gyro" }));
+      $("b-flip").addEventListener(
+        "click",
+        () =>
+          latest &&
+          post("/map/settings", { gyro_flip: !latest.pose.settings.gyro_flip }),
+      );
+      $("b-source").addEventListener(
+        "click",
+        () =>
+          latest &&
+          post("/map/settings", {
+            yaw_source:
+              latest.pose.settings.yaw_source === "gyro" ? "lidar" : "gyro",
+          }),
+      );
 
       // ---- connection --------------------------------------------------------------------------------------
       function connect() {
-        const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/map/ws`);
-        ws.onmessage = (ev) => { try { apply(JSON.parse(ev.data)); } catch (e) { console.error(e); } };
+        const ws = new WebSocket(
+          `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/map/ws`,
+        );
+        ws.onmessage = (ev) => {
+          try {
+            apply(JSON.parse(ev.data));
+          } catch (e) {
+            console.error(e);
+          }
+        };
         ws.onclose = () => setTimeout(connect, 1500);
         ws.onerror = () => ws.close();
       }

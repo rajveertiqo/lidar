@@ -1210,6 +1210,14 @@ PI_VOICE_ENABLED = True
 # The guidance loop ticks on every LiDAR scan as it lands (~15 Hz, 2026-10-30); this is
 # the floor when no scan comes (was a 5 Hz timer). A tick takes ~4 ms on the Pi 5.
 PI_VOICE_TICK_HZ = 10.0
+# An urgent sentence ("Blocked…", "Vehicle approaching…", "Guidance stopped…") starts with a
+# short tone the wearer can react to at once — the words take ~1 s to say (2026-10-30). Played
+# through PipeWire, like espeak-ng's voice; it holds the words back ~0.17 s (measured on the
+# Pi: 0.1 s tone + ~60 ms to start the player). False: words only.
+PI_VOICE_URGENT_TONE = True
+PI_VOICE_TONE_CMD = ["pw-play", "-"]  # the tone's WAV on stdin
+PI_VOICE_TONE_HZ = 1000.0
+PI_VOICE_TONE_S = 0.1
 # /guidance/walk serves the loop's newest result; older than this, it says so.
 GUIDANCE_RESULT_STALE_S = 2.0
 PI_VOICE_REPORT_QUEUE_MAX = 256

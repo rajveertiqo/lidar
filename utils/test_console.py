@@ -91,8 +91,10 @@ def spoken(
     urgent: bool = False,
     raw: Optional[Dict[str, Any]] = None,
     voice: Optional[Dict[str, Any]] = None,
+    timing: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """One line per sentence actually committed. Called at the commit point."""
+    """One line per sentence actually committed. Called at the commit point. `timing`: how
+    late it is (unified_guidance._timing), shown as "⏱ scan 45 ms"."""
     with _lock:
         _said.append(time.time())
     colour = _RED if urgent else _YEL if text not in ("Walk straight",) else _GRN
@@ -104,16 +106,18 @@ def spoken(
         if voice and voice.get("usable")
         else "📱 phone"
     )
+    age = (timing or {}).get("scan_age_ms")
+    late = f"  ⏱ scan {age:.0f} ms" if isinstance(age, (int, float)) else ""
     _emit(
         f"{_DIM}{_now()}{_RESET}  {'🔇' if muted else '🔊'} {colour}{_BOLD}{text:<46}{_RESET} "
-        f"{_DIM}{_evidence(raw)}  ({reason})  {who}{_RESET}"
+        f"{_DIM}{_evidence(raw)}  ({reason}){late}  {who}{_RESET}"
     )
 
 
 def would_say(text: str, reason: str = "", source: str = "LiDAR movers") -> None:
     """A silent trial's sentence, held but not spoken (LIDAR_MOVERS_SPEAK, ROUTE_PLANNER_SPEAK)."""
     _emit(
-        f"{_DIM}{_now()}{_RESET}  👁 {_CYN}would say: {text:<35}{_RESET} "
+        f"{_DIM}{_now()}{_RESET}  👁   {_CYN}would say: {text:<35}{_RESET} "
         f"{_DIM}{source}, silent  ({reason}){_RESET}"
     )
 

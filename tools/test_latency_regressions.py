@@ -454,6 +454,108 @@ class VoiceHangTimeoutTests(unittest.TestCase):
         self.assertLess(hung[0] - t0, pi_voice._SAY_TIMEOUT_S - 1.0)
 
 
+class UrgentToneTests(unittest.TestCase):
+    """An urgent sentence starts with the tone; a non-urgent one does not; a newer urgent
+    sentence cuts a tone and is said instead."""
+
+    def run_voice(self, sentences, gap=0.02):
+        import sys
+        import tempfile
+
+        log = tempfile.NamedTemporaryFile("r", suffix=".log", delete=False)
+        stamp = f"open({log.name!r}, 'a').write"
+        tone = [sys.executable, "-c", "import sys, time; sys.stdin.buffer.read(); "
+                f"{stamp}(f'tone {{time.monotonic()}}\\n'); time.sleep(0.15)"]
+        say = [sys.executable, "-c", f"import sys, time; {stamp}("
+               "f'say {sys.argv[1]} {time.monotonic()}\\n')"]
+        voice = pi_voice._Voice()
+        voice.tone = True
+        with patch.object(pi_voice, "PI_VOICE_TONE_CMD", tone), patch.object(
+            pi_voice, "PI_VOICE_CMD", say
+        ), patch.object(pi_voice, "_report", lambda *a, **k: None):
+            voice.start()
+            for i, (text, urgent) in enumerate(sentences):
+                voice.say(text, urgent=urgent, seq=100 + i)
+                time.sleep(gap)
+            time.sleep(1.5)
+            voice.stop()
+        rows = [line.split() for line in open(log.name).read().splitlines()]
+        return [(r[0], " ".join(r[1:-1]), float(r[-1])) for r in rows]
+
+    def test_tone_then_words_for_urgent_only(self):
+        rows = self.run_voice([("Blocked", True)])
+        self.assertEqual([r[0] for r in rows], ["tone", "say"])
+        rows = self.run_voice([("Walk", False)])
+        self.assertEqual([r[0] for r in rows], ["say"])
+
+    def test_newer_urgent_cuts_the_tone(self):
+        rows = self.run_voice([("Blocked", True), ("Vehicle", True)], gap=0.08)
+        said = [r[1] for r in rows if r[0] == "say"]
+        self.assertEqual(said, ["Vehicle"])
+
+    def test_tone_wav_is_valid_and_short(self):
+        import io
+        import wave
+
+        with wave.open(io.BytesIO(pi_voice._tone_wav())) as w:
+            secs = w.getnframes() / w.getframerate()
+        self.assertAlmostEqual(secs, config.PI_VOICE_TONE_S, places=2)
+
+
+class SentenceTimingTests(unittest.TestCase):
+    """Each spoken sentence records how late it was; the voice's events are stamped when
+    they happen, not when the log's writer gets to them."""
+
+    def test_timing_from_the_tick(self):
+        now = 2_000_000.0
+        out = unified_guidance._timing(
+            time.perf_counter() - 0.004, now,
+            {"last_update": now - 0.045},
+            {"front": {"frame_time": now - 0.06}},
+            {"obstacle": "person", "raw": {"front_ft": 3.62}},
+        )
+        self.assertEqual(out["scan_age_ms"], 45)
+        self.assertEqual(out["camera_age_ms"], 60)
+        self.assertEqual(out["front_ft"], 3.6)
+        self.assertGreaterEqual(out["decide_ms"], 4.0)
+        wall = unified_guidance._timing(time.perf_counter(), now, {}, {}, {"obstacle": "wall"})
+        self.assertNotIn("camera_age_ms", wall)
+
+    def test_voice_start_and_summary(self):
+        from utils import speech_log
+
+        t = time.time()
+        seq = 9_000_001
+        speech_log.say("test", "Blocked by wall", level="urgent", now=t, cue_seq=seq,
+                       timing={"scan_age_ms": 45, "decide_ms": 4.0, "front_ft": 3.6})
+        speech_log.delivery(seq, "started", text="Blocked by wall", now=t + 0.08)
+        line = speech_log.recent(1)["lines"][-1]
+        self.assertEqual(line["timing"]["voice_start_ms"], 80)
+        urgent = speech_log.latency_summary()["urgent"]
+        self.assertIn("voice_start_ms", urgent)
+        self.assertIn("front_ft", urgent)
+
+    def test_events_stamped_when_they_happen(self):
+        from utils import speech_log
+
+        stamps, first = [], threading.Event()
+
+        def delivery(seq, event, text="", detail="", now=None):
+            if not first.is_set():
+                first.set()
+                time.sleep(0.3)  # a slow writer
+            stamps.append((event, now))
+
+        with patch.object(speech_log, "delivery", delivery):
+            pi_voice._report(1, "queued", "x")
+            first.wait(1.0)
+            at = time.time()
+            pi_voice._report(1, "started", "x")
+            pi_voice.flush_reports(2.0)
+        started = dict(stamps)["started"]
+        self.assertLess(abs(started - at), 0.05)  # not ~0.3 s late
+
+
 class BleHealthOffCueLoopTests(unittest.TestCase):
     """A slow /health no longer holds the next /guidance/walk poll, and a cue, back."""
 

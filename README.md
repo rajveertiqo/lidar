@@ -892,6 +892,20 @@ On exit it prints FPS min/avg, how often the path was blocked, how often glass
 was flagged, whether any radar board dropped out, and a tally of each guidance
 action. `logs/` is gitignored.
 
+**How late was each sentence?** (2026-10-30) Every sentence the device says carries its
+timing in the speech log (`/guidance/log`, `/guidance/log/text`, and `logs/speech_*.log` with
+`SPEECH_LOG_TO_FILE`): how old the LiDAR scan it was decided on was (`scan 45 ms old`, captured
+→ said), the camera frame's when the camera named it, the tick's own time, how soon the Pi
+voice started it (`voice +170 ms` — the urgent tone included) and the front range it was said
+at (`front 3.6 ft`: a block should come near `WALK_BLOCK_FT`, 4 ft). The test console shows
+`⏱ scan 45 ms` on each line. After a walk, `curl <pi>:8000/guidance/latency` gives the medians
+and worst cases, urgent sentences apart. The audio path after that (PipeWire, a Bluetooth
+earpiece waking) is not in these figures: time it once by ear against the console.
+
+**The urgent tone.** "Blocked…", "Vehicle approaching…" and "Guidance stopped…" start with a
+0.1 s tone (`PI_VOICE_URGENT_TONE`), on the Pi and on the dashboard's phone voice (after one
+tap on the page), so the wearer can react before the words are understood.
+
 ---
 
 
@@ -1057,6 +1071,7 @@ label sizes are set for that capped width; changing the cap needs them revisited
 | `WS  /guidance/ws`      | Push stream of fused guidance (~5 Hz)                                                                                                                                                                                                   |
 | `GET /guidance/log`     | Every line the device has SAID this run, timestamped. Written at the commit point, so it is the conversation the user had — a poller would see a different one |
 | `GET /guidance/log/text`| The same as plain text, for `curl` from a phone mid-walk |
+| `GET /guidance/latency` | How late this run's sentences were: scan and camera age, tick time, Pi voice start, front range at the warning — median and worst, urgent apart |
 
 **Sensors**
 

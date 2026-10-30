@@ -97,6 +97,28 @@ def _one_line(value: Any) -> str:
     return " ".join("".join(c if c.isprintable() else " " for c in text).split())
 
 
+def _timing_text(timing: Dict[str, Any]) -> str:
+    """ "scan 45 ms old · decided in 4 ms · voice +80 ms · front 3.6 ft" — what is known."""
+    parts = []
+    for key, fmt in (
+        ("scan_age_ms", "scan {:.0f} ms old"),
+        ("camera_age_ms", "camera {:.0f} ms old"),
+        ("decide_ms", "decided in {:.0f} ms"),
+        ("voice_start_ms", "voice +{:.0f} ms"),
+        ("front_ft", "front {:.1f} ft"),
+    ):
+        value = timing.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            parts.append(fmt.format(value))
+    return " · ".join(parts)
+
+
+def _note_start(rec: Dict[str, Any], event: str, t_ev: float) -> None:
+    """The Pi voice started this sentence: its delay after admission, into its timing."""
+    if event == "started" and t_ev >= rec["t"]:
+        rec.setdefault("timing", {})["voice_start_ms"] = round((t_ev - rec["t"]) * 1000)
+
+
 def say(
     source: str,
     text: str,
@@ -105,8 +127,11 @@ def say(
     now: Optional[float] = None,
     cue_seq: Optional[int] = None,
     via: str = "",
+    timing: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """Record one utterance."""
+    """Record one utterance. `timing`: how late it was — scan_age_ms, camera_age_ms,
+    decide_ms, front_ft (unified_guidance); voice_start_ms is added when the Pi voice starts
+    it (2026-10-30)."""
     global _bytes, _full, _started
     source, level, text, detail = (
         _one_line(source),
@@ -133,6 +158,7 @@ def say(
                 "via": via,
                 "outcome": "admitted",
                 "outcomes": [],
+                "timing": dict(timing or {}),
             }
             _recent.append(rec)
             early = []
@@ -144,6 +170,7 @@ def say(
                     rec["outcomes"].append(
                         {"event": event, "t": round(t_ev, 3), "detail": det}
                     )
+                    _note_start(rec, event, t_ev)
             for old in _recent[:-SPEECH_LOG_KEEP_LINES]:
                 _by_seq.pop(old.get("cue_seq"), None)
             del _recent[:-SPEECH_LOG_KEEP_LINES]
@@ -162,6 +189,8 @@ def say(
             )
             if detail:
                 line += f"   ({detail})"
+            if rec["timing"]:
+                line += f"   [{_timing_text(rec['timing'])}]"
             line += "\n"
 
             if _bytes + len(line) > SPEECH_LOG_MAX_BYTES:
@@ -213,6 +242,10 @@ def delivery(
                 {"event": event, "t": round(now, 3), "detail": detail}
             )
             del rec["outcomes"][:-8]
+            _note_start(rec, event, now)
+            if event == "started" and "voice_start_ms" in rec.get("timing", {}):
+                after = f"+{rec['timing']['voice_start_ms']} ms after admitted"
+                detail = f"{detail}; {after}" if detail else after
             if _full or _path is None:
                 return
             line = (
@@ -252,10 +285,40 @@ def recent(limit: int = 50) -> Dict[str, Any]:
                     "cue_seq": r.get("cue_seq"),
                     "via": r.get("via", ""),
                     "outcome": r.get("outcome", "admitted"),
+                    "timing": dict(r.get("timing") or {}),
                 }
                 for r in rows
             ],
         }
+
+
+def latency_summary() -> Dict[str, Any]:
+    """How late this run's sentences were (say(timing=...)): median and worst of each part,
+    for urgent sentences and for all, and how far ahead a block was when its warning went.
+    For /guidance/latency, to check a field walk against the bench (2026-10-30)."""
+    with _lock:
+        rows = [(r["level"], dict(r.get("timing") or {})) for r in _recent]
+
+    def stats(values):
+        v = sorted(x for x in values if isinstance(x, (int, float)))
+        if not v:
+            return None
+        return {"median": v[len(v) // 2], "worst": v[-1], "n": len(v)}
+
+    out: Dict[str, Any] = {}
+    for group, keep in (("urgent", lambda lvl: lvl == "urgent"), ("all", lambda lvl: True)):
+        timings = [t for lvl, t in rows if t and keep(lvl)]
+        summary: Dict[str, Any] = {"sentences": len(timings)}
+        for key in ("scan_age_ms", "camera_age_ms", "decide_ms", "voice_start_ms"):
+            s = stats(t.get(key) for t in timings)
+            if s:
+                summary[key] = s
+        # Nearer is later: the worst is the nearest (WALK_BLOCK_FT is where it should come).
+        ft = sorted(t["front_ft"] for t in timings if isinstance(t.get("front_ft"), (int, float)))
+        if ft:
+            summary["front_ft"] = {"median": ft[len(ft) // 2], "nearest": ft[0], "n": len(ft)}
+        out[group] = summary
+    return out
 
 
 def reset() -> None:

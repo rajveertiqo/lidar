@@ -254,6 +254,17 @@ async def guidance_websocket(websocket: WebSocket):
         print(f"[WARN] Guidance WebSocket error: {e}")
 
 
+@router.get("/latency")
+def speech_latency():
+    """How late this run's sentences were, from the speech log: the age of the scan (and
+    camera frame) each was decided on, the tick's own time, how soon the Pi voice started it
+    (`voice_start_ms`, the urgent tone included) and the front range it was said at — median
+    and worst, urgent sentences apart. For checking a field walk (2026-10-30)."""
+    from utils import speech_log
+
+    return speech_log.latency_summary()
+
+
 @router.get("/log")
 async def speech_log_recent(limit: int = 50):
     """Everything the device has ADMITTED for speech this run, newest last, with timestamps, where each was handed (`via`) and what became of it (`outcome`: queued, started, completed, replaced, interrupted, failed, unavailable…)."""

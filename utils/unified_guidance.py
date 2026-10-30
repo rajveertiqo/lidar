@@ -203,8 +203,38 @@ def _record(
         _warn("walk recorder", e)
 
 
+def _timing(
+    tick_started: float,
+    admitted_at: float,
+    lidar: Dict[str, Any],
+    camera: Dict[str, Any],
+    simple: Dict[str, Any],
+) -> Dict[str, Any]:
+    """How late a sentence admitted now is, for the speech log (2026-10-30): the age of the
+    LiDAR scan it was decided on (captured -> admitted), of the camera frame when the camera
+    named it, the tick's own time, and the front range it was said at."""
+    out: Dict[str, Any] = {
+        "decide_ms": round((time.perf_counter() - tick_started) * 1000.0, 1)
+    }
+    try:
+        stamp = (lidar or {}).get("last_update")
+        if isinstance(stamp, (int, float)) and stamp > 0:
+            out["scan_age_ms"] = round(max(0.0, admitted_at - stamp) * 1000.0)
+        if simple.get("obstacle") not in (None, "glass", "wall"):  # named by the camera
+            shot = ((camera or {}).get("front") or {}).get("frame_time")
+            if isinstance(shot, (int, float)) and shot > 0:
+                out["camera_age_ms"] = round(max(0.0, admitted_at - shot) * 1000.0)
+        front = (simple.get("raw") or {}).get("front_ft")
+        if isinstance(front, (int, float)):
+            out["front_ft"] = round(float(front), 1)
+    except Exception:
+        pass  # timing is a report: it never costs the sentence
+    return out
+
+
 def get_unified_guidance() -> Dict[str, Any]:
     """Compute one merged guidance instruction from live sensor state, and commit it to speech — the guidance loop's tick; readers use latest_guidance()."""
+    tick_started = time.perf_counter()
     from utils.unified_navigation_system import decisionMaker
     from utils.sensor_fusion import fresh_camera_state, merge_navigation_inputs
     from utils.shared_state import (
@@ -579,6 +609,8 @@ def get_unified_guidance() -> Dict[str, Any]:
 
     if say:
         handed = "none"
+        admitted_at = time.time()
+        timing = _timing(tick_started, admitted_at, lidar, camera, simple)
         try:
             from utils import pi_voice
 
@@ -599,6 +631,7 @@ def get_unified_guidance() -> Dict[str, Any]:
                 urgent=urgent,
                 raw=path.get("raw"),
                 voice=voice,
+                timing=timing,
             )
         except Exception:
             pass
@@ -610,7 +643,9 @@ def get_unified_guidance() -> Dict[str, Any]:
                 text=instruction,
                 level="urgent" if urgent else "advisory",
                 detail=str(path.get("reason") or path.get("note") or ""),
+                now=admitted_at,
                 cue_seq=notify_seq,
+                timing=timing,
                 via=(
                     "pi" if handed == "queued" else
                     "phone" if handed == "unavailable" and voice.get("phone_usable") else

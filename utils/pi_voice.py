@@ -1,9 +1,14 @@
 """The Pi's own voice — guidance that does not depend on a browser tab."""
 
+import functools
+import io
+import math
 import shutil
+import struct
 import subprocess
 import threading
 import time
+import wave
 from collections import deque
 from typing import Any, Dict, Optional
 
@@ -16,6 +21,10 @@ from config import (
     PI_VOICE_REAP_WAIT_S,
     PI_VOICE_REPORT_QUEUE_MAX,
     PI_VOICE_TICK_HZ,
+    PI_VOICE_TONE_CMD,
+    PI_VOICE_TONE_HZ,
+    PI_VOICE_TONE_S,
+    PI_VOICE_URGENT_TONE,
     SIMPLE_OFFLINE_REPEAT_S,
 )
 
@@ -123,7 +132,9 @@ def _report(seq: Optional[int], event: str, text: str, detail: str = "") -> None
         return
     try:
         with _reports_lock:
-            _reports.append((seq, event, text, detail))
+            # Stamped here, not when the writer gets to it: the speech log times each
+            # sentence's delay from these (2026-10-30).
+            _reports.append((seq, event, text, detail, time.time()))
             _reports_idle.clear()
             if not (_reporter and _reporter.is_alive()):
                 _reporter = threading.Thread(
@@ -146,9 +157,9 @@ def _drain_reports() -> None:
                 if not _reports:
                     _reports_idle.set()
                     break
-                seq, event, text, detail = _reports.popleft()
+                seq, event, text, detail, at = _reports.popleft()
             try:
-                speech_log.delivery(seq, event, text=text, detail=detail)
+                speech_log.delivery(seq, event, text=text, detail=detail, now=at)
             except Exception:
                 pass
 
@@ -158,6 +169,29 @@ def flush_reports(timeout: float = 2.0) -> bool:
     _reports_wake.set()
     return _reports_idle.wait(timeout)
 
+
+@functools.lru_cache(maxsize=1)
+def _tone_wav() -> bytes:
+    """The urgent tone (PI_VOICE_TONE_HZ for PI_VOICE_TONE_S), as a 16-bit mono WAV, faded
+    in and out over 5 ms so it does not click."""
+    rate = 22050
+    n = max(1, int(rate * PI_VOICE_TONE_S))
+    fade = 0.005 * rate
+    frames = bytearray()
+    for i in range(n):
+        env = min(1.0, i / fade, (n - i) / fade)
+        sample = 0.5 * env * math.sin(2.0 * math.pi * PI_VOICE_TONE_HZ * i / rate)
+        frames += struct.pack("<h", int(32767 * sample))
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(bytes(frames))
+    return buf.getvalue()
+
+
+_TONE_WAIT_S = 0.6  # the most the tone may hold an urgent sentence back
 
 _SAY_TIMEOUT_S = 8.0
 # A sentence is hung once it has played its own airtime plus this (espeak-ng starting, a
@@ -183,6 +217,8 @@ class _Voice:
         self._wake = threading.Event()
         self._next: Optional[str] = None
         self._next_seq: Optional[int] = None
+        self._next_urgent = False
+        self.tone = False  # play the urgent tone (set by start(): enabled and installed)
         self._last_seq: Optional[int] = None
         self._playing_seq: Optional[int] = None
         self._proc: Optional[subprocess.Popen] = None
@@ -244,6 +280,7 @@ class _Voice:
                         )
                     )
                 self._next, self._next_seq = text, seq
+                self._next_urgent = urgent
                 if seq is not None:
                     self._last_seq = seq
                 events.append((seq, "queued", text, "urgent" if urgent else ""))
@@ -281,6 +318,42 @@ class _Voice:
         except Exception:
             pass
 
+    def _tone(self) -> bool:
+        """The urgent tone, before an urgent sentence; False if a newer urgent sentence cut
+        it (that one is next). A missing or failing player costs only the tone."""
+        with self._lock:
+            if self._stop.is_set():
+                return False
+            try:
+                proc = subprocess.Popen(
+                    list(PI_VOICE_TONE_CMD),
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception:
+                return True
+            self._proc = proc
+        try:
+            try:
+                proc.stdin.write(_tone_wav())
+                proc.stdin.close()
+            except Exception:
+                pass  # cut already (a broken pipe), or the player failed
+            try:
+                proc.wait(timeout=_TONE_WAIT_S)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                try:
+                    proc.wait(timeout=PI_VOICE_REAP_WAIT_S)
+                except Exception:
+                    pass
+        finally:
+            with self._lock:
+                self._proc = None
+                cut = self._killed is proc
+        return not cut
+
     def _run(self) -> None:
         while not self._stop.is_set():
             self._wake.wait(timeout=1.0)
@@ -288,7 +361,18 @@ class _Voice:
             with self._lock:
                 text, self._next = self._next, None
                 seq, self._next_seq = self._next_seq, None
+                urgent, self._next_urgent = self._next_urgent, False
                 if not text or self._stop.is_set():
+                    continue
+            if urgent and self.tone and not self._tone():
+                _report(seq, "interrupted", text, "by a newer urgent sentence, in its tone")
+                continue
+            with self._lock:
+                if self._stop.is_set():
+                    continue
+                if self._next is not None and self._next_urgent:
+                    # A newer urgent sentence came during the tone: it is said instead.
+                    _report(seq, "replaced", text, "by a newer urgent sentence")
                     continue
                 try:
                     proc = subprocess.Popen(
@@ -479,6 +563,9 @@ def start() -> None:
     if AUDIO_ENABLED and PI_VOICE_ENABLED and shutil.which(str(PI_VOICE_CMD[0])):
         probe_audio_output()  # bounded by wpctl's 2 s timeout
         _start_prober()
+        _voice.tone = bool(
+            PI_VOICE_URGENT_TONE and shutil.which(str(PI_VOICE_TONE_CMD[0]))
+        )
         _voice.start()
         _running = True
         _start_airtime_timing()
@@ -554,6 +641,7 @@ def status() -> Dict[str, Any]:
         "phone_usable": bool(AUDIO_ENABLED and phone["usable"]),
         "delivery_available": bool(AUDIO_ENABLED and (usable or phone["usable"])),
         "accepted_seq": _voice.accepted_seq if _running else None,
+        "urgent_tone": bool(_running and _voice.tone),
         "last": _voice.last,
         "error": _voice.error,
     }

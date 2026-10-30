@@ -26,6 +26,7 @@ from config import (
     SIMPLE_CAMERA_STARTUP_GRACE_S,
     SIMPLE_ALERT_CONFIRM_S,
     SIMPLE_LIDAR_CONFIRM_SCANS,
+    SIMPLE_CAMERA_CONFIRM_FRAMES,
     SIMPLE_ALERT_GAP_S,
     SIMPLE_BAND_MARGIN_FT,
     SIMPLE_BLOCKED_REPEAT_S,
@@ -2128,6 +2129,9 @@ def decide(
         "glass_side": glass_side,
         "glass_side_ft": beside_ft,
         "object": obj,
+        # The front camera frame these detections came from: _World confirms a name (and a
+        # vehicle approaching) on the second different frame (SIMPLE_CAMERA_CONFIRM_FRAMES).
+        "camera_frame": _front_stamp(camera_state) if camera_state else None,
         "front_ft": front_ft,
         # The block as the LiDAR itself measured it, and on which scan: _World confirms it
         # on the second different scan (SIMPLE_LIDAR_CONFIRM_SCANS).
@@ -2272,6 +2276,9 @@ class _World:
         self.blocked = _Hold(*timing)
         self.block_scans = _ScanRun()  # SIMPLE_LIDAR_CONFIRM_SCANS
         self.wall_scans = _ScanRun()
+        self.obj_frames = _ScanRun()  # SIMPLE_CAMERA_CONFIRM_FRAMES, of camera frames
+        self.vehicle_frames = _ScanRun()
+        self.steer_frames = _ScanRun()
         self.near = _Hold(*timing)
         self.glass = _Hold(*timing)
         self.wall = _Hold(*timing)
@@ -2385,6 +2392,22 @@ class _World:
             0.0 if fast and lidar_block >= fast else SIMPLE_ALERT_CONFIRM_S
         )
         self.wall.attack = 0.0 if fast and lidar_wall >= fast else SIMPLE_ALERT_CONFIRM_S
+        # And what the front camera names, on two different camera frames (2026-10-30) — its
+        # way past it too (camera_path), or the bare name won the race and its "turn left"
+        # came a settle time later ("Person in front" for "Person in front, turn left").
+        cam_fast, frame = SIMPLE_CAMERA_CONFIRM_FRAMES, raw.get("camera_frame")
+        named = self.obj_frames.update(bool(raw.get("object")), frame)
+        approach = self.vehicle_frames.update(bool(raw.get("vehicle")), frame)
+        way = self.steer_frames.update(
+            bool(raw.get("steer")) and not ROUTE_PLANNER_SPEAK, frame
+        )
+        self.obj.attack = (
+            0.0 if cam_fast and named >= cam_fast else SIMPLE_ALERT_CONFIRM_S
+        )
+        self.steer.attack = 0.0 if cam_fast and way >= cam_fast else SIMPLE_ALERT_CONFIRM_S
+        self.vehicle.attack = (
+            0.0 if cam_fast and approach >= cam_fast else SIMPLE_ALERT_CONFIRM_S
+        )
         blocked = self.blocked.update(in_block, now)
         near = self.near.update(in_band, now)
         glass = self.glass.update(raw["glass"], now)

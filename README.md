@@ -99,7 +99,9 @@ How it decides, in one paragraph each:
   the device on every LiDAR scan as it lands (~15 Hz; at least `PI_VOICE_TICK_HZ`, 10 Hz,
   without one — a 5 Hz timer until 2026-10-30). A block the LiDAR measures in two different
   scans is warned of at once (`SIMPLE_LIDAR_CONFIRM_SCANS`): an obstacle appearing 3 ft ahead
-  is warned of in ~90 ms, not ~320 (simulated), and every sentence is spoken with `espeak-ng` through the
+  is warned of in ~90 ms, not ~320 (simulated). What the front camera names, and its way past,
+  on two different frames (`SIMPLE_CAMERA_CONFIRM_FRAMES`): "Person in front, turn left" in
+  ~120 ms, not ~235; "Vehicle approaching" ~0.65 s, not ~1.0. Every sentence is spoken with `espeak-ng` through the
   default audio output — plug in or pair an earpiece and it follows. While no
   earpiece is connected (HDMI does not count), the dashboard's screen-reader
   banner is the voice instead; never both.

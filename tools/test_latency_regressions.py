@@ -1,6 +1,7 @@
 """Hardware-free checks for the guidance-delay fixes of 2026-10-30; run with
 venv/bin/python -m unittest tools.test_latency_regressions."""
 
+import math
 import threading
 import time
 import unittest
@@ -214,6 +215,64 @@ class StallWatchTests(unittest.TestCase):
             self.mode = "fail"
             time.sleep(1.2)
         self.assertEqual(self.said, [])
+
+
+class CameraConfirmTests(unittest.TestCase):
+    """What the front camera names is confirmed on two different camera frames, its way past
+    with it (or "Person in front" beat "Person in front, turn left" by a settle time)."""
+
+    def raw(self, scan, frame, steer=True):
+        return {
+            "blocked": True, "near": True, "glass": False, "wall": False,
+            "front_ft": 3.0, "lidar_block": True, "scan_index": scan,
+            "object": "Person", "camera_frame": frame, "side": "left",
+            "side_room": {"left": 10.0, "right": 10.0},
+            "steer": {"turn": "left", "word": "Person", "where": "in front",
+                      "range_m": 0.9, "cut": True} if steer else None,
+        }
+
+    def test_name_and_way_confirm_on_the_second_frame(self):
+        world = sg._World()
+        world.update(self.raw(1, 1000.00), 100.0)
+        text, naming = world.update(self.raw(2, 1000.05), 100.067)
+        self.assertEqual(text, sg.STEER_IN_FRONT[("Person", "left")])
+        self.assertFalse(naming)
+
+    def test_the_same_frame_twice_does_not_name(self):
+        world = sg._World()
+        world.update(self.raw(1, 1000.00, steer=False), 100.0)
+        text, naming = world.update(self.raw(2, 1000.00, steer=False), 100.067)
+        self.assertNotEqual(text, sg.OBJECT_IN_FRONT["Person"])
+        self.assertTrue(naming)  # the block waits for its name, as before
+
+    def test_off_restores_the_confirm_time(self):
+        with patch.object(sg, "SIMPLE_CAMERA_CONFIRM_FRAMES", 0):
+            world = sg._World()
+            world.update(self.raw(1, 1000.00, steer=False), 100.0)
+            _, naming = world.update(self.raw(2, 1000.05, steer=False), 100.067)
+        self.assertTrue(naming)
+
+
+class VehicleSpanTests(unittest.TestCase):
+    """A car coming at the user, ~20 frames a second, is judged approaching within ~0.5 s."""
+
+    def test_car_judged_within_half_a_second(self):
+        qw, qh = sg._QUAD_W, sg._QUAD_H
+        focal = (qw / 2.0) / math.tan(math.radians(config.SIMPLE_CAMERA_HFOV_DEG) / 2.0)
+        vehicles, t0, first = sg._Vehicles(), 1000.0, None
+        for i in range(40):
+            t = t0 + i * 0.05
+            r = 20.0 - 5.0 * (t - t0)  # 20 m ahead-left, closing at 5 m/s
+            h, w, cx = focal * 1.5 / r, focal * 1.8 / r, qw / 2 - focal * 1.0 / r
+            cam = {"front": {"frame_time": t, "detections": [{
+                "class_name": "car", "confidence": 0.9,
+                "bbox": [cx - w / 2, qh * 0.55 - h / 2, cx + w / 2, qh * 0.55 + h / 2],
+            }]}}
+            if vehicles.update(cam, t, 0.0)["approaching"] and first is None:
+                first = t - t0
+        self.assertIsNotNone(first)
+        self.assertLess(first, config.SIMPLE_VEHICLE_MIN_SPAN_S + 0.15)
+        self.assertLess(first, 0.55)  # 0.6 s of span alone, before 2026-10-30
 
 
 class TrafficLightSpellingTests(unittest.TestCase):

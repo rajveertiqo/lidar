@@ -906,6 +906,11 @@ SIMPLE_ALERT_CONFIRM_S = 0.2
 # a ~320 ms reaction (2026-10-30). Radar-only (glass) and camera names keep the 0.2 s:
 # their frames come slower and can repeat between ticks. 0: off. VALIDATE on a walk.
 SIMPLE_LIDAR_CONFIRM_SCANS = 2
+# The same for what the FRONT CAMERA names (a person, a vehicle in front) and a vehicle its
+# tracker judges approaching: this many DIFFERENT detected frames in a row (~50-100 ms at
+# ~20 a second), not SIMPLE_ALERT_CONFIRM_S — "Person in front" waited ~0.25 s, and held a
+# LiDAR-confirmed block back while it did (2026-10-30). 0: off. VALIDATE on a walk.
+SIMPLE_CAMERA_CONFIRM_FRAMES = 2
 SIMPLE_ALERT_GAP_S = 0.5
 SIMPLE_CLEAR_CONFIRM_S = 1.0
 SIMPLE_BAND_MARGIN_FT = 1.0
@@ -1120,7 +1125,9 @@ SIMPLE_VEHICLE_CLASSES = tuple(SIMPLE_VEHICLE_HEIGHT_M)
 SIMPLE_VEHICLE_MIN_CONF = 0.45
 SIMPLE_VEHICLE_MIN_HEIGHT_FRAC = 0.06  # ~32 px: a car ~30 m out
 SIMPLE_VEHICLE_WINDOW_S = 1.0
-SIMPLE_VEHICLE_MIN_SPAN_S = 0.6
+# 0.4 s (was 0.6, 2026-10-30): the front camera is detected ~20 times a second now (was ~9),
+# so 0.4 s holds more frames than 0.6 s did. VALIDATE on a walk: a parked car walked toward.
+SIMPLE_VEHICLE_MIN_SPAN_S = 0.4
 SIMPLE_VEHICLE_LOST_S = 1.0  # a track unseen this long is dropped
 SIMPLE_VEHICLE_APPROACH_RATE = 0.12
 SIMPLE_VEHICLE_CONFIRM_FRAMES = 3

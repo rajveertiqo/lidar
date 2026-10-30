@@ -96,7 +96,10 @@ How it decides, in one paragraph each:
   more urgent (a name flickering, the side flipping, a step back) must hold 6 s.
   Blocked sentences repeat after 30 s, 60 s, then every 2 min.
 - **The Pi speaks for itself** (`utils/pi_voice.py`): the guidance loop runs on
-  the device at 10 Hz (`PI_VOICE_TICK_HZ`; 5 Hz until 2026-10-30), and every sentence is spoken with `espeak-ng` through the
+  the device on every LiDAR scan as it lands (~15 Hz; at least `PI_VOICE_TICK_HZ`, 10 Hz,
+  without one — a 5 Hz timer until 2026-10-30). A block the LiDAR measures in two different
+  scans is warned of at once (`SIMPLE_LIDAR_CONFIRM_SCANS`): an obstacle appearing 3 ft ahead
+  is warned of in ~90 ms, not ~320 (simulated), and every sentence is spoken with `espeak-ng` through the
   default audio output — plug in or pair an earpiece and it follows. While no
   earpiece is connected (HDMI does not count), the dashboard's screen-reader
   banner is the voice instead; never both.
@@ -558,7 +561,7 @@ config.py               Every threshold, in one place — the single source of t
 utils/
   simple_guidance.py        THE ONE SPEAKER: the closed vocabulary, warn-fast /
                             clear-slowly smoothing, and the gate that decides what is said
-  pi_voice.py               The 10 Hz guidance loop and espeak-ng, so the device talks
+  pi_voice.py               The guidance loop (each LiDAR scan) and espeak-ng, so the device talks
                             without a browser; hands the voice to the phone when no
                             earpiece is connected
   startup_gate.py           Silent until the sensors have settled ("scan before you speak")
@@ -656,7 +659,7 @@ detector.
 | Detection pass         | ~190 ms (4 quadrants)        | ~90 ms (2 quadrants, 79 ms of it NPU) |
 | Letterbox per quadrant | 16 ms (PIL)                  | 4 ms (OpenCV)                         |
 | Segmentation           | 10 Hz, always                | only while its view is open           |
-| LiDAR                  | ~23 scans/s                  | unchanged                             |
+| LiDAR                  | ~23 scans/s                  | ~15 scans/s (`LIDAR_RPM` 900)         |
 | Guidance decision      | ~6 ms per poll               | unchanged                             |
 
 ---
@@ -1041,7 +1044,7 @@ label sizes are set for that capped width; changing the cap needs them revisited
 
 | Endpoint                | Returns                                                                                                                                                                                                                                 |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /guidance/walk`    | **The one merged instruction.** Obstacle avoidance + surface steering + crossing, in safety-first priority order. `notify.speak` / `notify.cue_seq` is the _only_ field that means "announce this"; everything else is state to display. It is the 10 Hz guidance loop's newest result (`loop.age_s`): a request never runs the pipeline, so no page decides or commits what is said. Older than `GUIDANCE_RESULT_STALE_S`, it reports rule `unavailable` and why |
+| `GET /guidance/walk`    | **The one merged instruction.** Obstacle avoidance + surface steering + crossing, in safety-first priority order. `notify.speak` / `notify.cue_seq` is the _only_ field that means "announce this"; everything else is state to display. It is the guidance loop's newest result (one per LiDAR scan) (`loop.age_s`): a request never runs the pipeline, so no page decides or commits what is said. Older than `GUIDANCE_RESULT_STALE_S`, it reports rule `unavailable` and why |
 | `GET /guidance/policy`  | The straight-walk decision on its own, in feet — the guidance loop's last one (`loop.age_s`), never re-run by the request                                                                                                                |
 | `GET /guidance/gyro`    | IMU health, yaw bias and whether it is trusted, tilt, gait. `/guidance/heading`'s `yaw_source` says which sensor is steering; this says why |
 | `GET /guidance/drift`   | Collision course + veer: what you will walk into, when, and the smallest correction                                                                                                                                                     |

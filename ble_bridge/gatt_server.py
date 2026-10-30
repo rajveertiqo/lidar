@@ -542,8 +542,15 @@ class Server:
     # --- polling the navigation service (its own thread) ---
 
     def poll_loop(self) -> None:
-        """Runs until stop. Nothing may end it: the process would live on, the phone silent."""
-        next_health = 0.0
+        """Runs until stop. Nothing may end it: the process would live on, the phone silent.
+        /health and the rest are asked on their own thread (health_loop): asked here, they
+        held the next /guidance/walk poll, and a cue, back by up to four 0.5 s timeouts a
+        second (2026-10-30)."""
+        reachable = threading.Event()  # the last /guidance/walk answered
+        due = threading.Event()  # ask /health now: once the service answers again
+        threading.Thread(
+            target=self.health_loop, args=(reachable, due), name="ble-health", daemon=True
+        ).start()
         while not self.stop.is_set():
             started = time.monotonic()
             outs: List[Out] = []
@@ -551,22 +558,12 @@ class Server:
                 try:
                     outs += self.bridge.on_walk(self.source.walk())
                 except Exception as exc:
-                    next_health = 0.0  # once it answers again, ask /health at once
+                    reachable.clear()
                     outs += self.bridge.on_unreachable(f"{type(exc).__name__}: {exc}")
                 else:
-                    if started >= next_health:
-                        next_health = started + HEALTH_S
-                        self.report_delivery()
-                        try:
-                            outs += self.bridge.on_health(
-                                self.source.health(),
-                                self.source.system_health(),
-                                self.source.system(),
-                            )
-                        except Exception as exc:
-                            outs += self.bridge.on_unreachable(
-                                f"{type(exc).__name__}: {exc}"
-                            )
+                    if not reachable.is_set():
+                        reachable.set()
+                        due.set()  # once it answers again, ask /health at once
                 outs += self.bridge.tick()
             except (
                 Exception
@@ -574,6 +571,29 @@ class Server:
                 self.bridge.log("poll", f"poll loop: {type(exc).__name__}: {exc}")
             self.post(outs)
             self.stop.wait(max(0.0, POLL_S - (time.monotonic() - started)))
+
+    def health_loop(self, reachable: threading.Event, due: threading.Event) -> None:
+        """/health, /guidance/status and the Pi's thermals every HEALTH_S while the service
+        answers /guidance/walk (an outage is that loop's to report). Nothing may end it."""
+        while not self.stop.is_set():
+            due.wait(HEALTH_S)
+            due.clear()
+            if self.stop.is_set() or not reachable.is_set():
+                continue
+            outs: List[Out] = []
+            try:
+                self.report_delivery()
+                try:
+                    outs += self.bridge.on_health(
+                        self.source.health(),
+                        self.source.system_health(),
+                        self.source.system(),
+                    )
+                except Exception as exc:
+                    outs += self.bridge.on_unreachable(f"{type(exc).__name__}: {exc}")
+            except Exception as exc:  # a bug or a value nobody expected: log it, go on
+                self.bridge.log("health", f"health loop: {type(exc).__name__}: {exc}")
+            self.post(outs)
 
     # --- connections ---
 

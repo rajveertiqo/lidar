@@ -1,6 +1,7 @@
 """Fused guidance API routes."""
 
 import asyncio
+import time
 from pathlib import Path
 
 from fastapi import (
@@ -12,6 +13,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from pydantic import BaseModel, StrictBool
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse
 from starlette.concurrency import run_in_threadpool
 
@@ -50,6 +52,33 @@ def get_fused():
 def get_walk():
     """ONE merged walking instruction, as the guidance loop last made it — a request never runs the pipeline, so it cannot decide or commit what is said."""
     return latest_guidance()
+
+
+# /walk/ws: how often it looks for a newly admitted sentence, and its refresh in between.
+_WALK_CHECK_S = 0.05
+_WALK_REFRESH_S = 0.4
+
+
+@router.websocket("/walk/ws")
+async def walk_websocket(websocket: WebSocket):
+    """/walk, pushed: at once when a sentence is admitted (notify.cue_seq steps), else
+    every _WALK_REFRESH_S. The dashboard's 400 ms poll of /walk held a cue back up to
+    0.4 s from the phone's speech (2026-10-30)."""
+    await websocket.accept()
+    sent_seq, sent_at = None, float("-inf")
+    try:
+        while True:
+            snap = latest_guidance()  # a dict read: never waits on a guidance tick
+            seq = (snap.get("notify") or {}).get("cue_seq")
+            mono = time.monotonic()
+            if seq != sent_seq or mono - sent_at >= _WALK_REFRESH_S:
+                await websocket.send_json(await run_in_threadpool(jsonable_encoder, snap))
+                sent_seq, sent_at = seq, mono
+            await asyncio.sleep(_WALK_CHECK_S)
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        print(f"[WARN] Walk WebSocket error: {e}")
 
 
 @router.get("/policy")

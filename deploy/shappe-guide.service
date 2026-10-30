@@ -20,7 +20,9 @@ RestartSec=3
 RestartPreventExitStatus=75
 # The pre-flight probes every radar board and the NPU before the server starts.
 TimeoutStartSec=180
-WatchdogSec=30
+# A hung app restarted within ~15-20 s (30 until 2026-10-30: up to ~40 s); the voice says
+# "Guidance stopped" itself after 2 s (GUIDANCE_STALL_SAY_S). The first tick takes ~10 ms.
+WatchdogSec=15
 LimitCORE=0
 TimeoutAbortSec=10
 TimeoutStopSec=60

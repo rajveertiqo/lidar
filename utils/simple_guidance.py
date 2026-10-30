@@ -25,6 +25,7 @@ from config import (
     SIMPLE_CAMERA_RECOVER_MAX_S,
     SIMPLE_CAMERA_STARTUP_GRACE_S,
     SIMPLE_ALERT_CONFIRM_S,
+    SIMPLE_LIDAR_CONFIRM_SCANS,
     SIMPLE_ALERT_GAP_S,
     SIMPLE_BAND_MARGIN_FT,
     SIMPLE_BLOCKED_REPEAT_S,
@@ -2128,6 +2129,15 @@ def decide(
         "glass_side_ft": beside_ft,
         "object": obj,
         "front_ft": front_ft,
+        # The block as the LiDAR itself measured it, and on which scan: _World confirms it
+        # on the second different scan (SIMPLE_LIDAR_CONFIRM_SCANS).
+        "lidar_block": bool(
+            blocked
+            and fresh
+            and isinstance(laser_ft, (int, float))
+            and laser_ft < WALK_BLOCK_FT
+        ),
+        "scan_index": (lidar_state or {}).get("scan_index") if fresh else None,
         "on_line_ft": on_line_ft,
         "obstacle_ahead": obstacle_ahead,
         "obstacle_band": obstacle_band,
@@ -2239,12 +2249,29 @@ class _Hold:
         self.state, self._first, self._miss_since = False, None, None
 
 
+class _ScanRun:
+    """How many DIFFERENT LiDAR scans in a row have shown something (a tick that finds no
+    new scan neither counts nor breaks the run)."""
+
+    def __init__(self):
+        self.n, self._last = 0, None
+
+    def update(self, seen: bool, scan: Optional[int]) -> int:
+        if not seen or scan is None:
+            self.n, self._last = 0, None
+        elif scan != self._last:
+            self.n, self._last = self.n + 1, scan
+        return self.n
+
+
 class _World:
     """The raw readings of successive polls, smoothed into one steady picture."""
 
     def __init__(self):
         timing = (SIMPLE_ALERT_CONFIRM_S, SIMPLE_CLEAR_CONFIRM_S, SIMPLE_ALERT_GAP_S)
         self.blocked = _Hold(*timing)
+        self.block_scans = _ScanRun()  # SIMPLE_LIDAR_CONFIRM_SCANS
+        self.wall_scans = _ScanRun()
         self.near = _Hold(*timing)
         self.glass = _Hold(*timing)
         self.wall = _Hold(*timing)
@@ -2348,6 +2375,16 @@ class _World:
         )
         for hold in (self.blocked, self.near, self.glass):
             hold.release = release
+        # Two different LiDAR scans that both measure it confirm a block, and a wall, at once
+        # (2026-10-30). A lone reflection cannot: each scan's nearest return is a cluster of
+        # points, or held from the scan before (lidar_utils._cluster_min).
+        fast, scan = SIMPLE_LIDAR_CONFIRM_SCANS, raw.get("scan_index")
+        lidar_block = self.block_scans.update(bool(raw.get("lidar_block")), scan)
+        lidar_wall = self.wall_scans.update(bool(raw["wall"]), scan)
+        self.blocked.attack = (
+            0.0 if fast and lidar_block >= fast else SIMPLE_ALERT_CONFIRM_S
+        )
+        self.wall.attack = 0.0 if fast and lidar_wall >= fast else SIMPLE_ALERT_CONFIRM_S
         blocked = self.blocked.update(in_block, now)
         near = self.near.update(in_band, now)
         glass = self.glass.update(raw["glass"], now)
@@ -3390,7 +3427,7 @@ def guidance(
 
 
 def fault_notice(why: str, now: Optional[float] = None) -> Dict[str, Any]:
-    """The guidance step itself keeps failing (unified_guidance, GUIDANCE_FAIL_TICKS): "Guidance stopped, use your cane", every SIMPLE_OFFLINE_REPEAT_S, through the gate's status path so the phone gets a cue for it too (2026-10-21)."""
+    """The guidance step itself keeps failing (unified_guidance, GUIDANCE_FAIL_S): "Guidance stopped, use your cane", every SIMPLE_OFFLINE_REPEAT_S, through the gate's status path so the phone gets a cue for it too (2026-10-21)."""
     now = time.time() if now is None else now
     with _lock:
         last = _fault["said_at"]

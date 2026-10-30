@@ -239,7 +239,11 @@ class _LimitRequestBody:
             if replayed:
                 return await receive()  # what follows: the disconnect
             replayed = True
-            return {"type": "http.request", "body": b"".join(chunks), "more_body": False}
+            return {
+                "type": "http.request",
+                "body": b"".join(chunks),
+                "more_body": False,
+            }
 
         await self.app(scope, replay, send)
 
@@ -334,7 +338,8 @@ def health_check():
         warnings.append(
             f"The Pi voice cannot be heard ({voice.get('error') or 'no wearable audio output'})"
             + (
-                " — phone audio is ready" if voice.get("phone_usable")
+                " — phone audio is ready"
+                if voice.get("phone_usable")
                 else " — no phone audio readiness confirmed"
             )
         )
@@ -365,8 +370,14 @@ def health_check():
         "voice": {
             k: voice.get(k)
             for k in (
-                "audio_enabled", "running", "usable", "output", "error",
-                "phone_connected", "phone_usable", "delivery_available",
+                "audio_enabled",
+                "running",
+                "usable",
+                "output",
+                "error",
+                "phone_connected",
+                "phone_usable",
+                "delivery_available",
             )
         },
         "system": {
@@ -459,5 +470,3 @@ if __name__ == "__main__":
         timeout_graceful_shutdown=SERVER_GRACEFUL_SHUTDOWN_S,
         ws_max_size=SERVER_MAX_BODY_BYTES,
     )
-
-

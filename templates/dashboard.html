@@ -386,103 +386,120 @@
       // One request per poller at a time, so a slow server cannot pile them up.
       const single = (fn) => { let busy = false; return async () => { if (busy) return; busy = true; try { await fn(); } finally { busy = false; } }; };
 
-      // ------------------------------------------------------------ NOW (400 ms)
+      // ------------------------------------------------------------ NOW (pushed)
       let seenSeq = null, lastSaidAt = 0, lastSaidText = "", busyWalk = false, lastObject = null, lastVehicle = null, lastSteer = null, lastMovers = [], lastRadarMovers = [];
+      // Pushed over /guidance/walk/ws the moment a sentence is admitted (2026-10-30): the 400 ms
+      // poll held a cue back up to 0.4 s. The poll stands in while that socket is down or silent.
+      let walkWs = null, walkMsgAt = 0;
+      function connectWalk() {
+        const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/guidance/walk/ws`);
+        ws.onopen = () => { walkWs = ws; walkMsgAt = Date.now(); };
+        ws.onmessage = (ev) => {
+          walkMsgAt = Date.now();
+          try { renderWalk(JSON.parse(ev.data)); } catch (e) {} finally { renderStatus(); }
+        };
+        ws.onclose = () => { if (walkWs === ws) walkWs = null; setTimeout(connectWalk, 1500); };
+        ws.onerror = () => ws.close();
+      }
       async function pollWalk() {
+        if (walkWs && walkWs.readyState === 1) {
+          if (Date.now() - walkMsgAt < 1500) return;  // pushed: nothing to poll
+          walkWs.close();  // open but silent: a dead link the phone has not noticed
+        }
         if (busyWalk) return; busyWalk = true;
-        try {
-          const d = await getJSON("/guidance/walk");
-          walkOkAt = Date.now(); loopStale = !!(d.loop || {}).stale;
-          const p = d.path || {}, n = d.notify || {}, raw = p.raw || {};
-          const rule = p.rule || (p.instruction ? "clear" : "");
-          $("now").dataset.rule = rule;
-          $("now-rule").textContent = rule ? rule.toUpperCase() : "—";
-          $("now-text").textContent = p.instruction || "…";
-          $("now-why").textContent = p.reason || "—";
-          const ft = raw.front_ft;
-          $("now-front").textContent = ft != null ? `front ${Number(ft).toFixed(1)} ft` : "front open";
-          const chip = (label, on) => `<span class="${on ? "on" : ""}">${esc(label)}</span>`;
-          $("now-ev").innerHTML = [
-            chip(raw.wall ? "wall on path ✓" : "wall ✗", raw.wall),
-            chip(raw.glass ? "glass ahead ✓" : "glass ✗", raw.glass),
-            chip(raw.object ? `camera: ${raw.object}` : "camera: —", !!raw.object),
-            chip(raw.drift ? `drifting toward ${raw.drift} wall` : "no drift", !!raw.drift),
-            chip(raw.close ? `near ${raw.close} wall` : "not near a wall (this scan)", !!raw.close),
-            (() => {
-              const s = raw.steer;
-              if (!s) return chip("way past: —", false);
-              const how = s.kind === "between" ? (s.turn ? `between them, slightly ${s.turn}` : "straight between them")
-                : `turn slightly ${s.turn} past ${String(s.word || "").toLowerCase()} (${s.where})`;
-              return chip(`way past: ${how}`, true);
-            })(),
-            (() => {
-              const v = raw.vehicles || {};
-              if (!v.class) return chip("vehicle: —", false);
-              if (v.approaching) return chip(`${v.class} approaching from ${v.side}` +
-                (v.ttc_s != null ? ` · ~${Number(v.ttc_s).toFixed(1)} s` : ""), true);
-              // `moving` outranks `stopped`: both flags are kept on the pick.
-              if (v.moving) return chip(`${v.class} moving ahead`, true);
-              return chip(`${v.class} stopped` + (raw.user_still ? " · you still" : " · you moving"), !!raw.user_still);
-            })(),
-            ...["left", "right"].map((s) => {
-              const ft = (raw.beside || {})[s], rate = (raw.closing || {})[s];
-              if (ft == null) return chip(`${s} wall: not fitted this scan`, false);
-              const moving = rate != null && rate > 0.05 ? ` · closing ${Number(rate).toFixed(1)} ft/s` : "";
-              return chip(`${s} wall ${Number(ft).toFixed(1)} ft${moving}`, !!moving);
-            }),
-            (() => {
-              // LiDAR movers: spoken only with LIDAR_MOVERS_SPEAK; until then, "would say".
-              const m = raw.mover, n = (raw.movers || []).length + (raw.radar_movers || []).length;
-              if (!m) return chip(n ? `movers: ${n} moving, none coming at you` : "movers: —", false);
-              const from = m.mode === "toward" ? "coming at you" : m.mode === "behind" ? "from behind" : `from ${m.side}`;
-              return chip(`${m.source === "radar" ? "radar" : "LiDAR"}: ${String(m.word).toLowerCase()} ${from} · ${Number(m.distance_ft).toFixed(1)} ft · ${Number(m.ttc_s).toFixed(1)} s` +
-                (m.would_say && !m.spoken ? ` · would say “${m.would_say}” (silent)` : ""), true);
-            })(),
-            chip(d.at_crossing ? "at a crossing" : "no crossing", !!d.at_crossing),
-          ].join("");
-          lastObject = raw.object || null;
-          lastVehicle = raw.vehicles || null;
-          lastSteer = raw.steer || null;
-          lastMovers = raw.movers || [];
-          lastRadarMovers = raw.radar_movers || [];
+        try { renderWalk(await getJSON("/guidance/walk")); }
+        catch (e) { walkOkAt = 0; }  // renderStatus says "No connection"
+        finally { busyWalk = false; renderStatus(); }
+      }
+      function renderWalk(d) {
+        walkOkAt = Date.now(); loopStale = !!(d.loop || {}).stale;
+        const p = d.path || {}, n = d.notify || {}, raw = p.raw || {};
+        const rule = p.rule || (p.instruction ? "clear" : "");
+        $("now").dataset.rule = rule;
+        $("now-rule").textContent = rule ? rule.toUpperCase() : "—";
+        $("now-text").textContent = p.instruction || "…";
+        $("now-why").textContent = p.reason || "—";
+        const ft = raw.front_ft;
+        $("now-front").textContent = ft != null ? `front ${Number(ft).toFixed(1)} ft` : "front open";
+        const chip = (label, on) => `<span class="${on ? "on" : ""}">${esc(label)}</span>`;
+        $("now-ev").innerHTML = [
+          chip(raw.wall ? "wall on path ✓" : "wall ✗", raw.wall),
+          chip(raw.glass ? "glass ahead ✓" : "glass ✗", raw.glass),
+          chip(raw.object ? `camera: ${raw.object}` : "camera: —", !!raw.object),
+          chip(raw.drift ? `drifting toward ${raw.drift} wall` : "no drift", !!raw.drift),
+          chip(raw.close ? `near ${raw.close} wall` : "not near a wall (this scan)", !!raw.close),
+          (() => {
+            const s = raw.steer;
+            if (!s) return chip("way past: —", false);
+            const how = s.kind === "between" ? (s.turn ? `between them, slightly ${s.turn}` : "straight between them")
+              : `turn slightly ${s.turn} past ${String(s.word || "").toLowerCase()} (${s.where})`;
+            return chip(`way past: ${how}`, true);
+          })(),
+          (() => {
+            const v = raw.vehicles || {};
+            if (!v.class) return chip("vehicle: —", false);
+            if (v.approaching) return chip(`${v.class} approaching from ${v.side}` +
+              (v.ttc_s != null ? ` · ~${Number(v.ttc_s).toFixed(1)} s` : ""), true);
+            // `moving` outranks `stopped`: both flags are kept on the pick.
+            if (v.moving) return chip(`${v.class} moving ahead`, true);
+            return chip(`${v.class} stopped` + (raw.user_still ? " · you still" : " · you moving"), !!raw.user_still);
+          })(),
+          ...["left", "right"].map((s) => {
+            const ft = (raw.beside || {})[s], rate = (raw.closing || {})[s];
+            if (ft == null) return chip(`${s} wall: not fitted this scan`, false);
+            const moving = rate != null && rate > 0.05 ? ` · closing ${Number(rate).toFixed(1)} ft/s` : "";
+            return chip(`${s} wall ${Number(ft).toFixed(1)} ft${moving}`, !!moving);
+          }),
+          (() => {
+            // LiDAR movers: spoken only with LIDAR_MOVERS_SPEAK; until then, "would say".
+            const m = raw.mover, n = (raw.movers || []).length + (raw.radar_movers || []).length;
+            if (!m) return chip(n ? `movers: ${n} moving, none coming at you` : "movers: —", false);
+            const from = m.mode === "toward" ? "coming at you" : m.mode === "behind" ? "from behind" : `from ${m.side}`;
+            return chip(`${m.source === "radar" ? "radar" : "LiDAR"}: ${String(m.word).toLowerCase()} ${from} · ${Number(m.distance_ft).toFixed(1)} ft · ${Number(m.ttc_s).toFixed(1)} s` +
+              (m.would_say && !m.spoken ? ` · would say “${m.would_say}” (silent)` : ""), true);
+          })(),
+          chip(d.at_crossing ? "at a crossing" : "no crossing", !!d.at_crossing),
+        ].join("");
+        lastObject = raw.object || null;
+        lastVehicle = raw.vehicles || null;
+        lastSteer = raw.steer || null;
+        lastMovers = raw.movers || [];
+        lastRadarMovers = raw.radar_movers || [];
 
-          // Announce once per sequence step; the first poll only learns it.
-          const seq = n.cue_seq, pv = n.pi_voice || {};
-          if (typeof seq === "number") {
-            if (seenSeq !== null && seq > seenSeq) {
-              lastSaidAt = Date.now(); lastSaidText = n.instruction || "";
-              if (pv.audio_enabled !== false && !piHasCue(pv, seq)) { announce(lastSaidText); browserSay(lastSaidText, n.level === "urgent"); }  // audio off: shown, not spoken
-              const now = $("now"); now.classList.remove("pulse"); void now.offsetWidth; now.classList.add("pulse");
-            }
-            seenSeq = seq;
+        // Announce once per sequence step; the first poll only learns it.
+        const seq = n.cue_seq, pv = n.pi_voice || {};
+        if (typeof seq === "number") {
+          if (seenSeq !== null && seq > seenSeq) {
+            lastSaidAt = Date.now(); lastSaidText = n.instruction || "";
+            if (pv.audio_enabled !== false && !piHasCue(pv, seq)) { announce(lastSaidText); browserSay(lastSaidText, n.level === "urgent"); }  // audio off: shown, not spoken
+            const now = $("now"); now.classList.remove("pulse"); void now.offsetWidth; now.classList.add("pulse");
           }
-          const ago = lastSaidAt ? Math.round((Date.now() - lastSaidAt) / 1000) : null;
-          const fresh = ago !== null && ago < 3;
-          const v = $("now-voice");
-          v.className = fresh ? "said" : "";
-          v.textContent = fresh ? `🔊 just said “${lastSaidText}”`
-            : `🔇 quiet — ${n.quiet_reason || "nothing new to say"}` +
-              (lastSaidText ? ` · last said “${lastSaidText}” ${ago}s ago` : "");
+          seenSeq = seq;
+        }
+        const ago = lastSaidAt ? Math.round((Date.now() - lastSaidAt) / 1000) : null;
+        const fresh = ago !== null && ago < 3;
+        const v = $("now-voice");
+        v.className = fresh ? "said" : "";
+        v.textContent = fresh ? `🔊 just said “${lastSaidText}”`
+          : `🔇 quiet — ${n.quiet_reason || "nothing new to say"}` +
+            (lastSaidText ? ` · last said “${lastSaidText}” ${ago}s ago` : "");
 
-          const rd = p.readings || {};
-          const f1 = (x) => (x == null ? "—" : Number(x).toFixed(1));
-          $("dirs").innerHTML = ["left", "front", "right", "back"].map((k) => {
-            const r = rd[k] || {};
-            return `<div class="dir"><small>${k}</small><b class="mono">${r.fused_ft == null ? "—" : f1(r.fused_ft)}</b>` +
-              `<small class="mono">L ${f1(r.lidar_ft)} · R ${f1(r.radar_ft)}${r.glass ? " · glass" : ""}</small></div>`;
-          }).join("");
+        const rd = p.readings || {};
+        const f1 = (x) => (x == null ? "—" : Number(x).toFixed(1));
+        $("dirs").innerHTML = ["left", "front", "right", "back"].map((k) => {
+          const r = rd[k] || {};
+          return `<div class="dir"><small>${k}</small><b class="mono">${r.fused_ft == null ? "—" : f1(r.fused_ft)}</b>` +
+            `<small class="mono">L ${f1(r.lidar_ft)} · R ${f1(r.radar_ft)}${r.glass ? " · glass" : ""}</small></div>`;
+        }).join("");
 
-          const items = ((d.obstacles || {}).items || []).slice(0, 6);
-          $("around").innerHTML = items.length ? items.map((o) =>
-            `<div class="item"><span>${esc(o.object || "obstacle")} <span class="muted">· ${esc(o.clock ? o.clock + " o'clock" : o.sector || "")}</span></span>` +
-            `<b class="mono">${o.distance_ft == null ? "—" : Number(o.distance_ft).toFixed(1) + " ft"}</b></div>`).join("")
-            : '<div class="muted">Nothing close</div>';
-          $("m-cross").innerHTML = d.at_crossing
-            ? '<span class="warn-t">at a crossing — “Walk straight” withheld</span>'
-            : "none detected";
-        } catch (e) {
-          walkOkAt = 0;  // renderStatus says "No connection"
-        } finally { busyWalk = false; renderStatus(); }
+        const items = ((d.obstacles || {}).items || []).slice(0, 6);
+        $("around").innerHTML = items.length ? items.map((o) =>
+          `<div class="item"><span>${esc(o.object || "obstacle")} <span class="muted">· ${esc(o.clock ? o.clock + " o'clock" : o.sector || "")}</span></span>` +
+          `<b class="mono">${o.distance_ft == null ? "—" : Number(o.distance_ft).toFixed(1) + " ft"}</b></div>`).join("")
+          : '<div class="muted">Nothing close</div>';
+        $("m-cross").innerHTML = d.at_crossing
+          ? '<span class="warn-t">at a crossing — “Walk straight” withheld</span>'
+          : "none detected";
       }
 
       function piHasCue(pv, seq) {
@@ -854,7 +871,7 @@
       // ------------------------------------------------------------ go
       setCam(camView);
       const tickTest = single(pollTest), tickRadar = single(pollRadar), tickMotion = single(pollMotion), tickHealth = single(pollHealth);
-      pollWalk(); tickTest(); tickRadar(); tickMotion(); tickHealth(); pollCam(); connectScan();
+      connectWalk(); pollWalk(); tickTest(); tickRadar(); tickMotion(); tickHealth(); pollCam(); connectScan();
       setInterval(pollWalk, 400);
       setInterval(tickTest, 1000);
       setInterval(tickRadar, 1000);

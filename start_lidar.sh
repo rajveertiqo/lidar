@@ -85,7 +85,7 @@ if [ "$MODE" = background ]; then
         systemctl --user reset-failed "$UNIT" 2>/dev/null || true
         systemd-run --user --no-block --collect --unit="$UNIT" --working-directory="$SCRIPT_DIR" \
             -E SERVER_HOST="$HOST" -E SERVER_PORT="$PORT" \
-            -p Type=notify -p NotifyAccess=main -p WatchdogSec=30 -p TimeoutStartSec=180 \
+            -p Type=notify -p NotifyAccess=main -p WatchdogSec=15 -p TimeoutStartSec=180 \
             -p TimeoutStopSec=60 -p TimeoutAbortSec=10 -p LimitCORE=0 \
             -p Restart=on-failure -p RestartSec=3 -p RestartPreventExitStatus=$REFUSED \
             "$SCRIPT_DIR/start_lidar.sh"

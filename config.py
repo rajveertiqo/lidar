@@ -86,7 +86,7 @@ CAMERA_VIEW_CHECK_S = 1.0
 # unplugged sensor (measured 0.0-0.1 on 2026-10-07), or a truly dark place.
 CAMERA_DARK_LEVEL = 12.0
 CAMERA_DARK_CONFIRM_S = 3.0
-# Variance of the pictzure's Laplacian (grey, every 4th pixel) below which it is blurred:
+# Variance of the picture's Laplacian (grey, every 4th pixel) below which it is blurred:
 # a film, dirt or a loose lens. NEEDS VALIDATION on the device — a blank wall close up
 # is smooth too, hence the long confirmation; it is shown on /health, never spoken.
 CAMERA_BLUR_VAR = 20.0
@@ -260,7 +260,9 @@ RADAR_PORT_EXCLUDE = LIDAR_PORT_CANDIDATES  # resolved with realpath (F13)
 
 RADAR_BAUDRATE = 115200
 
-RADAR_START_MM = 250  # where each board's measured range starts: nearer is not measured. The
+RADAR_START_MM = (
+    250  # where each board's measured range starts: nearer is not measured. The
+)
 # LiDAR covers that, except in its blind arc (LIDAR_BLIND_ARCS_DEG, behind-left)
 RADAR_END_MM = 4000  # radar reach: 13 ft, so "Glass ahead" can start at SIMPLE_WALL_APPROACH_FT (was 3000, 2026-10-01)
 RADAR_UPDATE_RATE = 6.0
@@ -426,7 +428,9 @@ HEADING_MAX_INCIDENCE_SEC = 3.0
 HEADING_SENS_JUMP_FRACTION = 0.1
 HEADING_STATE_STALE_S = LIDAR_STALE_S
 
-GYRO_ENABLED = False  # gyro unplugged 2026-10-23; set True when it is back on the SPI bus
+GYRO_ENABLED = (
+    False  # gyro unplugged 2026-10-23; set True when it is back on the SPI bus
+)
 
 GYRO_TRANSPORT = "spi"  # "spi" or "i2c"
 GYRO_SPI_BUS = 0
@@ -875,7 +879,9 @@ CORS_ORIGINS = [
 
 ALLOWED_HOSTS_TEXT = os.environ.get("SHAPPE_ALLOWED_HOSTS", "")
 
-SERVICE_HEARTBEAT_MAX_AGE_S = 10.0
+# A required heartbeat older than this withholds systemd's watchdog ping (WatchdogSec=15 in
+# deploy/): 5 s (was 10, 2026-10-30) — the guidance loop beats every 0.1 s.
+SERVICE_HEARTBEAT_MAX_AGE_S = 5.0
 
 SHUTDOWN_TIMEOUT_S = 45.0
 SERVER_GRACEFUL_SHUTDOWN_S = 5.0
@@ -895,6 +901,11 @@ FRAME_SECTOR_LAYOUT = {  # camera quadrant mapping; do not change without a phys
 
 
 SIMPLE_ALERT_CONFIRM_S = 0.2
+# A block, and a wall, the LiDAR itself measures in this many DIFFERENT scans in a row is
+# confirmed at once (~67 ms at 15 Hz), not after SIMPLE_ALERT_CONFIRM_S, which was ~250 ms of
+# a ~320 ms reaction (2026-10-30). Radar-only (glass) and camera names keep the 0.2 s:
+# their frames come slower and can repeat between ticks. 0: off. VALIDATE on a walk.
+SIMPLE_LIDAR_CONFIRM_SCANS = 2
 SIMPLE_ALERT_GAP_S = 0.5
 SIMPLE_CLEAR_CONFIRM_S = 1.0
 SIMPLE_BAND_MARGIN_FT = 1.0
@@ -1144,10 +1155,10 @@ SIMPLE_OBJECT_RELEASE_S = 3.0
 SIMPLE_GLASS_RELEASE_S = 3.0
 # "Guidance stopped, use your cane" once neither rangefinder has reported ahead for this long.
 SIMPLE_OFFLINE_S = 3.0
-# The guidance step failing this many ticks in a row (~0.6 s at PI_VOICE_TICK_HZ) is a
-# fault: the wearer is told, and the watchdog heartbeat is withheld so systemd restarts the
-# app (2026-10-21). Doubled with the tick rate (2026-10-30), so it still means 0.6 s.
-GUIDANCE_FAIL_TICKS = 6
+# The guidance step failing tick after tick for this long is a fault: the wearer is told,
+# and the watchdog heartbeat is withheld so systemd restarts the app (2026-10-21). Seconds,
+# not ticks (3 at 5 Hz until 2026-10-30): ticks now follow the LiDAR's scans.
+GUIDANCE_FAIL_S = 0.6
 # The guidance loop finishing NO tick (a hang, not a failing step) for this long: the Pi voice
 # says "Guidance stopped, use your cane" itself, every SIMPLE_OFFLINE_REPEAT_S. Until
 # 2026-10-30 a hung loop was silent until systemd's watchdog restarted the app (~40 s).
@@ -1189,8 +1200,8 @@ CONSOLE_HEARTBEAT_S = 60.0
 # phone's AF_AUDIO_ENABLED); guidance still shown and logged, and /health says "down".
 AUDIO_ENABLED = True
 PI_VOICE_ENABLED = True
-# 10 Hz (was 5, 2026-10-30): halves the wait for the tick that first sees a change (the
-# SIMPLE_*_CONFIRM_S holds are unchanged, in seconds). A tick takes ~6 ms on the Pi 5.
+# The guidance loop ticks on every LiDAR scan as it lands (~15 Hz, 2026-10-30); this is
+# the floor when no scan comes (was a 5 Hz timer). A tick takes ~4 ms on the Pi 5.
 PI_VOICE_TICK_HZ = 10.0
 # /guidance/walk serves the loop's newest result; older than this, it says so.
 GUIDANCE_RESULT_STALE_S = 2.0

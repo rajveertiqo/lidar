@@ -28,7 +28,7 @@ _last_turn = None
 # The simple-guidance step failing tick after tick (2026-10-21): until then each failure
 # was a log line, the wearer heard nothing, and /health and the watchdog saw a live loop.
 _fail_lock = threading.Lock()
-_fail_count = 0
+_fail_since: Optional[float] = None  # monotonic: the first tick of the failing run
 _fail_error = ""
 _fallback_said_at: Optional[float] = None
 
@@ -46,25 +46,27 @@ def _current_seq() -> int:
 
 
 def _note_guidance(exc: Optional[Exception]) -> str:
-    """Count one tick of the guidance step; the fault once GUIDANCE_FAIL_TICKS fail in a row, else ""."""
-    from config import GUIDANCE_FAIL_TICKS
-
-    global _fail_count, _fail_error
+    """Note one tick of the guidance step; the fault once ticks have failed in a row for GUIDANCE_FAIL_S, else "". In seconds, not ticks, since ticks follow the LiDAR's scans (2026-10-30)."""
+    global _fail_since, _fail_error
     with _fail_lock:
         if exc is None:
-            _fail_count, _fail_error = 0, ""
+            _fail_since, _fail_error = None, ""
             return ""
-        _fail_count += 1
+        if _fail_since is None:
+            _fail_since = time.monotonic()
         _fail_error = f"{type(exc).__name__}: {exc}"
-        return _fail_error if _fail_count >= GUIDANCE_FAIL_TICKS else ""
+    return guidance_fault()
 
 
 def guidance_fault() -> str:
     """Why the guidance step is failing, or "" — for the loop's heartbeat (pi_voice) and /health."""
-    from config import GUIDANCE_FAIL_TICKS
+    from config import GUIDANCE_FAIL_S
 
     with _fail_lock:
-        return _fail_error if _fail_count >= GUIDANCE_FAIL_TICKS else ""
+        failing = _fail_since is not None and (
+            time.monotonic() - _fail_since >= GUIDANCE_FAIL_S
+        )
+        return _fail_error if failing else ""
 
 
 def _fault_result(why: str) -> Dict[str, Any]:

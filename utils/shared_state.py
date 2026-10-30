@@ -10,6 +10,9 @@ radar_lock = threading.Lock()
 camera_lock = threading.Lock()
 navigation_lock = threading.Lock()
 path_guidance_lock = threading.Lock()
+# Set each time a LiDAR scan is published: the guidance loop wakes on it rather than on a
+# timer, so a scan is decided on as it lands, not up to a tick later (2026-10-30).
+lidar_updated = threading.Event()
 
 
 def _default_lidar_state():
@@ -103,6 +106,7 @@ def update_lidar_state(
         lidar_state[RECEIVED_KEY] = received_mono(stamp)
         lidar_state["simulated"] = bool(simulated)
         lidar_state["valid_fraction"] = valid_fraction
+    lidar_updated.set()  # the guidance loop decides on this scan now (pi_voice)
 
 
 def get_lidar_state() -> Dict[str, Any]:

@@ -20,9 +20,13 @@ from config import (
 )
 
 
-_OUTPUT_CACHE_S = 5.0
+# 1 s (was 5, 2026-10-30): an earpiece dropping out left the voice on a sink nobody hears
+# for up to 5 s before the phone took over. One `wpctl inspect` costs ~15 ms.
+_OUTPUT_CACHE_S = 1.0
 _UNHEARD_SINKS = ("hdmi", "dummy", "null")
-_OUTPUT_STALE_S = 3.0 * _OUTPUT_CACHE_S
+# Older than this while the prober runs: not trusted. The probe interval plus wpctl's 2 s
+# timeout, with room to spare — not 3x the interval, which a slow wpctl would reach.
+_OUTPUT_STALE_S = 5.0
 _output_lock = threading.Lock()
 _output: Dict[str, Any] = {"name": None, "usable": False, "checked": 0.0}
 _prober: Optional[threading.Thread] = None
@@ -156,6 +160,19 @@ def flush_reports(timeout: float = 2.0) -> bool:
 
 
 _SAY_TIMEOUT_S = 8.0
+# A sentence is hung once it has played its own airtime plus this (espeak-ng starting, a
+# Bluetooth earpiece waking): ~3.7-6.1 s for the sentences there are (0.7-3.1 s, measured
+# 2026-10-30), not a flat _SAY_TIMEOUT_S that held the next sentence back up to 8 s.
+_SAY_MARGIN_S = 3.0
+
+
+def _say_timeout(text: str) -> float:
+    try:
+        from utils.simple_guidance import _airtime
+
+        return min(_SAY_TIMEOUT_S, _airtime(text) + _SAY_MARGIN_S)
+    except Exception:
+        return _SAY_TIMEOUT_S
 
 
 class _Voice:
@@ -293,10 +310,11 @@ class _Voice:
                 continue
             _report(seq, "started", text)
             try:
+                limit = _say_timeout(text)
                 try:
-                    rc = proc.wait(timeout=_SAY_TIMEOUT_S)
+                    rc = proc.wait(timeout=limit)
                 except subprocess.TimeoutExpired:
-                    self._fail(f"{PI_VOICE_CMD[0]} hung for {_SAY_TIMEOUT_S:.0f} s")
+                    self._fail(f"{PI_VOICE_CMD[0]} hung for {limit:.1f} s")
                     proc.kill()
                     try:
                         proc.wait(timeout=PI_VOICE_REAP_WAIT_S)
@@ -346,14 +364,16 @@ _tick_ok_at = 0.0
 _tick_error = ""
 _tick_done_at = 0.0  # monotonic: the loop's last FINISHED tick, good or failed
 _stall_said_at: Optional[float] = None  # monotonic: "Guidance stopped" said for a hang
+_stall_watch: Optional[threading.Thread] = None
 
 
 def _loop() -> None:
     global _tick_ok_at, _tick_error, _tick_done_at, _stall_said_at
     from utils import service
+    from utils.shared_state import lidar_updated
     from utils.unified_guidance import get_unified_guidance, guidance_fault
 
-    period = 1.0 / max(PI_VOICE_TICK_HZ, 0.5)
+    period = 1.0 / max(PI_VOICE_TICK_HZ, 0.5)  # the longest wait: no scan, still a tick
     while not _loop_stop.is_set():
         started = time.monotonic()
         if _stall_said_at is not None:
@@ -380,7 +400,10 @@ def _loop() -> None:
                 print(f"[WARN] pi_voice: guidance tick failed: {exc}")
             _tick_error = str(exc)
         _tick_done_at = time.monotonic()
-        _loop_stop.wait(max(0.0, period - (time.monotonic() - started)))
+        # The next tick as the next LiDAR scan lands (2026-10-30): on a 10 Hz timer a new scan
+        # waited up to 100 ms to be decided on. No scan within `period`: a tick anyway.
+        lidar_updated.wait(max(0.0, period - (time.monotonic() - started)))
+        lidar_updated.clear()
 
 
 def _watch_stall() -> None:
@@ -448,7 +471,7 @@ def _start_airtime_timing() -> None:
 
 def start() -> None:
     """Start the guidance loop, and the voice if enabled and espeak-ng exists."""
-    global _loop_thread, _running, _tick_done_at, _stall_said_at
+    global _loop_thread, _running, _tick_done_at, _stall_said_at, _stall_watch
     if _loop_thread and _loop_thread.is_alive():
         return
     # The voice before the loop, with a fresh sink answer, so the first tick's "Starting,
@@ -472,9 +495,10 @@ def start() -> None:
     _loop_stop.clear()
     _loop_thread = threading.Thread(target=_loop, name="guidance-loop", daemon=True)
     _loop_thread.start()
-    threading.Thread(
+    _stall_watch = threading.Thread(
         target=_watch_stall, name="guidance-stall-watch", daemon=True
-    ).start()
+    )
+    _stall_watch.start()
 
 
 def stop() -> None:

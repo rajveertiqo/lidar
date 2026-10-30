@@ -1,7 +1,7 @@
 {
  "registry": "shappe-phrases",
  "version": 1,
- "revision": 5,
+ "revision": 6,
  "sha": "e01793d26d69ca9a",
  "note": "Append-only. id 0 = no sentence; 65535 = not in this registry (use ALERT_TEXT). Generated from utils/simple_guidance.ALLOWED by ble_bridge/make_vocab.py — do not edit by hand.",
  "phrases": [
@@ -3011,7 +3011,7 @@
    "text": "Guidance stopped, use your cane",
    "action": "sensors_offline",
    "level": 2,
-   "urgent": false,
+   "urgent": true,
    "side": null,
    "obstacle": null,
    "mover": false

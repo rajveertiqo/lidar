@@ -66,8 +66,10 @@ def _describe(sg) -> List[Dict[str, Any]]:
             obstacle = sg._OBJECT_OF[text].lower()
         else:
             obstacle = None
-        # unified_guidance: urgent = rule in (blocked, vehicle_approaching, mover_approaching)
-        urgent = level == 3 or (level == 2 and text != sg.SENSORS_OFFLINE)
+        # unified_guidance: urgent = rule in (blocked, vehicle_approaching, mover_approaching,
+        # offline) — every level-2 and level-3 sentence. "Guidance stopped" too, since it cuts
+        # in (2026-10-23); this said otherwise until 2026-10-30, so the phone did not.
+        urgent = level >= 2
         out.append(
             {
                 "text": text,

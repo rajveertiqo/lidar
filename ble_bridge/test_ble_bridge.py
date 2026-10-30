@@ -213,6 +213,8 @@ class VocabTests(unittest.TestCase):
         for text, entry in vocab["by_text"].items():
             self.assertEqual(entry["level"], sg._LEVEL[text], text)
             self.assertEqual(entry["action"], sg._ACTION.get(text, "unknown"), text)
+            # As unified_guidance sends it: every level-2 and level-3 sentence is urgent.
+            self.assertEqual(entry["urgent"], sg._LEVEL[text] >= 2, text)
             self.assertNotIn(entry["id"], (P.PHRASE_NONE, P.PHRASE_UNLISTED))
 
     def test_ids_unique(self):

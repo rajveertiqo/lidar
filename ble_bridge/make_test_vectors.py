@@ -16,7 +16,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
 from ble_bridge import protocol as P  # noqa: E402
-from ble_bridge.core import Bridge, load_vocab  # noqa: E402
+from ble_bridge.core import UNREACHABLE_AFTER_S, Bridge, load_vocab  # noqa: E402
 from ble_bridge.sources import make_health, make_walk  # noqa: E402
 
 OUT = os.path.join(HERE, "contract", "test_vectors.json")
@@ -128,7 +128,9 @@ def main() -> int:
         "events_radar_lost",
         note="sensor_degraded x2 + health_changed, JSON, fragmented at MTU 23",
     )
-    clock.t += 1.0
+    # Unanswered for UNREACHABLE_AFTER_S: one slow reply is not an outage (core.py, since
+    # 701503b) — at the 1.0 s this waited before, the vector was silently not made.
+    clock.t += UNREACHABLE_AFTER_S + 0.5
     outs_to_vectors(
         b.on_unreachable("ConnectionRefusedError: [Errno 111] Connection refused"),
         "service_unreachable",

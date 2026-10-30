@@ -1078,10 +1078,19 @@ SIMPLE_OBJECT_HEIGHT_M = {
 
 # ---- How far away a detection is (sensor_fusion.detection_distance, the dashboard).
 # Each camera's 960 px quadrant is a centre crop of its 1164 px view (sensor mode
-# 1920x1080, ScalerCrop 3840x2160 of 4656x3496; measured 2026-10-08), so its field of
-# view is narrower than the lens's and is not measured: the laser is searched across
-# the bearings the box would cover for any of these.
-DETECTION_DISTANCE_HFOV_DEG = (55.0, 75.0)
+# 1920x1080, ScalerCrop 3840x2160 of 4656x3496; measured 2026-10-08): the laser is searched
+# across the bearings the box would cover for any field of view in this range. The view is
+# derived from that geometry (FUSION_CAMERA_*, 56.3 deg, as SIMPLE_CAMERA_HFOV_DEG — the voice's
+# figure), +-3 deg for the lens; until 2026-10-30 it was an unmeasured 55-75, which put the
+# dashboard's camera bearings ~4 deg further out than the voice's and searched a wider arc.
+_CAMERA_HFOV_DEG = 2.0 * math.degrees(
+    math.atan(
+        math.tan(math.radians(FUSION_CAMERA_LENS_HFOV_DEG) / 2.0)
+        * FUSION_CAMERA_CROP_PX[0]
+        / FUSION_CAMERA_SENSOR_PX[0]
+    )
+)
+DETECTION_DISTANCE_HFOV_DEG = (_CAMERA_HFOV_DEG - 3.0, _CAMERA_HFOV_DEG + 3.0)
 # The laser's range is the thing's only within these multiples of the box-size estimate.
 # A thing shorter than its class (sitting, half hidden) makes that estimate too FAR, so
 # the laser may be much nearer; hardly ever much farther (that is the wall behind it).

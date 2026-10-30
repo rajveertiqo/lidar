@@ -138,7 +138,7 @@ class TrafficLightDetector:
                 ):
                     vehicle_seen = True
 
-                if class_name == "traffic light":
+                if class_name.replace("_", " ") == "traffic light":  # either model's spelling
                     is_traffic = True
                     logging.getLogger(__name__).debug(
                         "[TRAFFIC] Found '%s' (%.0f%%) in %s camera",

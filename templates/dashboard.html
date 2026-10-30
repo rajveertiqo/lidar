@@ -360,10 +360,19 @@
       const tts = $("tts-on");
       tts.checked = store.get("sg-tts", "0") === "1";
       tts.addEventListener("change", () => store.set("sg-tts", tts.checked ? "1" : "0"));
+      // Newest wins, as on the Pi voice (2026-10-30): a sentence arriving while one plays waits
+      // in ONE slot that a newer one replaces — never in the browser's queue behind stale ones.
+      let sayNext = null;
       function browserSay(text, urgent) {
         if (!tts.checked || !("speechSynthesis" in window) || !text) return;
-        if (urgent) speechSynthesis.cancel();
-        const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; speechSynthesis.speak(u);
+        if (urgent) { sayNext = null; speechSynthesis.cancel(); }
+        else if (speechSynthesis.speaking || speechSynthesis.pending) { sayNext = text; return; }
+        const u = new SpeechSynthesisUtterance(text); u.rate = 1.05;
+        u.onend = u.onerror = () => {
+          if (sayNext === null || speechSynthesis.speaking || speechSynthesis.pending) return;
+          const next = sayNext; sayNext = null; browserSay(next, false);
+        };
+        speechSynthesis.speak(u);
       }
 
       // ------------------------------------------------------------ requests

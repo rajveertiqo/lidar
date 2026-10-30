@@ -19,7 +19,8 @@ CAMERA_CAPTURE_FPS = 2 * TARGET_FPS
 STREAM_MAX_WIDTH = 480  # px per sector feed
 STREAM_QUALITY = 50  # JPEG quality for the display stream
 STREAM_FPS = 30  # the display stream's ceiling, not a camera's rate: cycling, the front
-# camera gives ~23 fps and each side ~4; a feed is sent whenever any camera's picture
+# camera gave ~23 fps and each side ~4 with 2 front frames a cycle (measured; 4 since
+# 2026-10-30: more front, each side ~3, not yet measured); a feed is sent whenever any camera's picture
 # changes, so a side's is resent unchanged in between
 
 STREAM_STALL_TIMEOUT_S = 5.0
@@ -55,7 +56,10 @@ CAMERA_HAT_CHANNEL = {
 # are visited: switching to an empty channel stops the camera stream for good.
 # False: the 2x2 picture, with scrambled tiles skipped (CAMERA_CORRUPT_*).
 CAMERA_CYCLE = True
-CAMERA_CYCLE_FRONT_FRAMES = 2
+# 4 (was 2, 2026-10-30): only the front's detections reach the voice, and the sides' are
+# capped (DETECTION_SIDE_MIN_INTERVAL_S). Simulated at the rig's rates: front detections
+# 15 -> 20 a second, each side still re-detected within ~1.3 s (labels expire at 2 s).
+CAMERA_CYCLE_FRONT_FRAMES = 4
 
 # A camera picture whose speckle (pixels, sampled every 2nd, differing by more than 70
 # from both neighbours) exceeds this % is scrambled board data and never reaches the
@@ -82,7 +86,7 @@ CAMERA_VIEW_CHECK_S = 1.0
 # unplugged sensor (measured 0.0-0.1 on 2026-10-07), or a truly dark place.
 CAMERA_DARK_LEVEL = 12.0
 CAMERA_DARK_CONFIRM_S = 3.0
-# Variance of the picture's Laplacian (grey, every 4th pixel) below which it is blurred:
+# Variance of the pictzure's Laplacian (grey, every 4th pixel) below which it is blurred:
 # a film, dirt or a loose lens. NEEDS VALIDATION on the device — a blank wall close up
 # is smooth too, hence the long confirmation; it is shown on /health, never spoken.
 CAMERA_BLUR_VAR = 20.0
@@ -273,7 +277,8 @@ RADAR_THRESHOLD_SENSITIVITY = (
 RADAR_STALE_S = 1.5  # a sector older than this counts as offline
 
 LIDAR_STALE_S = 1.0
-# A scan whose valid returns are under this share of the packets swept is not a reading:
+# A scan whose valid returns are under this share of the packets swept — outside
+# LIDAR_BLIND_ARCS_DEG, the wearer's body (2026-10-30; it counted them before) — is not a reading:
 # the window is blinded (sun, rain, dirt) or failing, and "no return" would read as 40 ft
 # of open space (audit NEW-043). PROVISIONAL (2026-10-21): open space also returns little,
 # so set it from /lidar/reader's points_per_scan / packets_per_scan measured outdoors.
@@ -567,6 +572,10 @@ SEG_HEF_PATH = os.path.join(_APP_DIR, "model", "best.hef")
 SEG_TARGET_FPS = 10.0
 SEG_ALWAYS = False  # segmentation runs only while its debug view is open
 DETECTION_FRONT_EVERY_PASS = True
+# A side camera's detection at most this often (all three share it, the one longest undetected
+# first, so each is re-detected within ~1.3 s): only the front's detections reach the voice,
+# and a side's ~40 ms of NPU ahead of it cost the front pictures (2026-10-30). 0: every pass.
+DETECTION_SIDE_MIN_INTERVAL_S = 0.4
 SEG_VIEW_FPS = 2
 SEG_VIEW_PRIORITY = True
 
@@ -1135,9 +1144,14 @@ SIMPLE_OBJECT_RELEASE_S = 3.0
 SIMPLE_GLASS_RELEASE_S = 3.0
 # "Guidance stopped, use your cane" once neither rangefinder has reported ahead for this long.
 SIMPLE_OFFLINE_S = 3.0
-# The guidance step failing this many ticks in a row (5 Hz) is a fault: the wearer is told,
-# and the watchdog heartbeat is withheld so systemd restarts the app (2026-10-21).
-GUIDANCE_FAIL_TICKS = 3
+# The guidance step failing this many ticks in a row (~0.6 s at PI_VOICE_TICK_HZ) is a
+# fault: the wearer is told, and the watchdog heartbeat is withheld so systemd restarts the
+# app (2026-10-21). Doubled with the tick rate (2026-10-30), so it still means 0.6 s.
+GUIDANCE_FAIL_TICKS = 6
+# The guidance loop finishing NO tick (a hang, not a failing step) for this long: the Pi voice
+# says "Guidance stopped, use your cane" itself, every SIMPLE_OFFLINE_REPEAT_S. Until
+# 2026-10-30 a hung loop was silent until systemd's watchdog restarted the app (~40 s).
+GUIDANCE_STALL_SAY_S = 2.0
 
 # The Pi itself (utils/pi_health, 2026-10-21): read every PI_HEALTH_POLL_S off the guidance
 # path. "Hot" from PI_HOT_C (the Pi 5 firmware starts throttling near 80) or any throttle
@@ -1175,7 +1189,9 @@ CONSOLE_HEARTBEAT_S = 60.0
 # phone's AF_AUDIO_ENABLED); guidance still shown and logged, and /health says "down".
 AUDIO_ENABLED = True
 PI_VOICE_ENABLED = True
-PI_VOICE_TICK_HZ = 5.0
+# 10 Hz (was 5, 2026-10-30): halves the wait for the tick that first sees a change (the
+# SIMPLE_*_CONFIRM_S holds are unchanged, in seconds). A tick takes ~6 ms on the Pi 5.
+PI_VOICE_TICK_HZ = 10.0
 # /guidance/walk serves the loop's newest result; older than this, it says so.
 GUIDANCE_RESULT_STALE_S = 2.0
 PI_VOICE_REPORT_QUEUE_MAX = 256

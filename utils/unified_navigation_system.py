@@ -98,7 +98,9 @@ def detect_traffic_lights_from_detections(camera_data: Dict) -> Dict[str, Any]:
             class_name = (det.get("class_name") or "").lower().strip()
             confidence = det.get("confidence", 0)
 
-            is_traffic_light = class_name == "traffic light"
+            # Either model's spelling: COCO's "traffic light", the custom 129-class
+            # "traffic_light" (2026-10-30: that model would never have seen a crossing).
+            is_traffic_light = class_name.replace("_", " ") == "traffic light"
 
             if (
                 is_traffic_light and confidence >= 0.4

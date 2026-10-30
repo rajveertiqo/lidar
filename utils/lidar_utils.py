@@ -23,6 +23,7 @@ from config import (
     LIDAR_RPM,
     LIDAR_MAX_RPM,
     LIDAR_MIRROR,
+    LIDAR_BLIND_ARCS_DEG,
     GUIDANCE_CONE_DEG,
     GUIDANCE_CONE_CENTRES,
     GUIDANCE_CORRIDOR_HALF_WIDTH_MM,
@@ -603,6 +604,26 @@ def _mark_unswept(cones, swept):
     return out
 
 
+def _in_blind_arc(bearing: float) -> bool:
+    """Inside an arc the LiDAR cannot see from where it is worn (LIDAR_BLIND_ARCS_DEG)?"""
+    return any(
+        (bearing - lo) % 360.0 <= (hi - lo) % 360.0 for lo, hi in LIDAR_BLIND_ARCS_DEG
+    )
+
+
+def _valid_fraction(points, swept):
+    """Valid returns per packet swept, where the LiDAR can see: the wearer's body fills
+    LIDAR_BLIND_ARCS_DEG, and counting it left every scan a third short, open ground
+    under LIDAR_MIN_VALID_FRACTION and "Guidance stopped" sooner (2026-10-30)."""
+    if not swept:
+        return None
+    seen = sum(1 for a in swept if not _in_blind_arc(correct_angle(a)))
+    if not seen:
+        return None
+    valid = sum(1 for a, _d in points if not _in_blind_arc(a))
+    return round(min(1.0, valid / seen), 3)
+
+
 _SELF_BIN_DEG = 10.0
 _self_since = {}  # 10-degree slice -> first scan with a near return there, while it lasts
 
@@ -638,7 +659,7 @@ def _publish_scan(loop, scan, scan_index, hz, health, captured_at=None, swept=No
     points = [(correct_angle(angle), dist) for _q, angle, dist in scan if dist > 0]
     if not points:
         return
-    valid_fraction = round(len(points) / len(swept), 3) if swept else None
+    valid_fraction = _valid_fraction(points, swept)
     points = _drop_transient_self(points, captured_at)
     if not points:
         return

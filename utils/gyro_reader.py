@@ -538,10 +538,17 @@ class GyroReader:
                 continue
 
             now, mono = time.time(), time.monotonic()
-            self._ingest(
-                s, gyro_key, accel_key, now, last_t, mono=mono, last_mono=last_mono
-            )
-            last_t, last_mono = now, mono
+            try:
+                self._ingest(
+                    s, gyro_key, accel_key, now, last_t, mono=mono, last_mono=last_mono
+                )
+            except Exception as e:
+                # One sample that cannot be folded in is skipped — it no longer ends the
+                # gyro thread for the rest of the run (2026-10-30).
+                with self._lock:
+                    self._last_error = f"sample skipped: {type(e).__name__}: {e}"
+            else:
+                last_t, last_mono = now, mono
 
             deadline += period
             slack = deadline - time.monotonic()

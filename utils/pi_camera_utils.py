@@ -46,6 +46,7 @@ from config import (
     ENV_ANALYZE_HZ,
     SEG_ALWAYS,
     DETECTION_FRONT_EVERY_PASS,
+    DETECTION_SIDE_MIN_INTERVAL_S,
     CAMERA_FRAME_TIMEOUT_S,
     CAMERA_STOP_TIMEOUT_S,
     CAMERA_RETRY_BACKOFF_S,
@@ -1361,6 +1362,8 @@ def _detect(engine, gen):
     last_id = -1
     pass_no = 0
     detected_id = {}  # cycling: the quad_meta id each camera was last detected at
+    last_side = float("-inf")  # monotonic: the last side-camera detection
+    side_done = {}  # side camera -> monotonic of its last detection
     streak = _FailStreak(HAILO_INFER_FAIL_RESET_S)
     warn = _WarnThrottle()
     _track_streak(gen, "detector", streak)
@@ -1398,7 +1401,31 @@ def _detect(engine, gen):
                         if s in quad_meta
                         and quad_meta[s]["id"] != detected_id.get(s)
                         and (s == "front" or not seg_viewing)
-                    ][:2]
+                    ]
+                if not _single:
+                    # Front first (2026-10-30): only the front's detections reach the voice,
+                    # and a side's inference ahead of it cost the front ~40 ms and half its
+                    # rate. A side runs at most every DETECTION_SIDE_MIN_INTERVAL_S, the one
+                    # longest undetected first, so none of the three starves — and in a pass
+                    # with no new front picture (the board showing a side) unless overdue, so
+                    # a held-back side does not land just ahead of the next front picture.
+                    sides = sorted(
+                        (s for s in sectors if s != "front"),
+                        key=lambda s: side_done.get(s, float("-inf")),
+                    )
+                    front_new = "front" in sectors
+                    sectors = [s for s in sectors if s == "front"]
+                    now_m = time.monotonic()
+                    since = now_m - last_side
+                    if (
+                        sides
+                        and since >= DETECTION_SIDE_MIN_INTERVAL_S
+                        and (not front_new or since >= 2 * DETECTION_SIDE_MIN_INTERVAL_S)
+                    ):
+                        sectors.append(sides[0])
+                        last_side = side_done[sides[0]] = now_m
+                    if not sectors:
+                        continue  # no new front picture, no side due: no pass, no sleep
                 pass_no += 1
                 with _gen_lock:
                     if not _live(gen):
@@ -1411,14 +1438,9 @@ def _detect(engine, gen):
                 for sector in sectors:
                     quad = _sector_slice(mosaic, sector)  # view, free
                     # Scrambled board data (2026-10-08) never reaches the detector; this
-                    # camera's last detections just age out.
-                    if not simulated and _is_corrupt(sector, quad):
-                        # Handled too (2026-10-23): left unmarked, the same flagged picture
-                        # was judged again every pass — counted many times toward the
-                        # restart share (16% read as 63%), and re-chosen by the [:2] pick
-                        # ahead of the other cameras' new pictures, which starved them.
-                        if quad_meta:
-                            detected_id[sector] = quad_meta[sector]["id"]
+                    # camera's last detections just age out. Only the board's 4-in-1 merge
+                    # scrambles: cycling (quad_meta) skips the ~12 ms check (2026-10-30).
+                    if not simulated and not quad_meta and _is_corrupt(sector, quad):
                         continue
                     view = _view_check(sector, quad)
                     npu_started = time.monotonic()

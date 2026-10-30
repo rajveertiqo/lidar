@@ -9,12 +9,14 @@ from typing import Any, Dict, Optional
 
 from config import (
     AUDIO_ENABLED,
+    GUIDANCE_STALL_SAY_S,
     PI_VOICE_ALLOW_HDMI,
     PI_VOICE_CMD,
     PI_VOICE_ENABLED,
     PI_VOICE_REAP_WAIT_S,
     PI_VOICE_REPORT_QUEUE_MAX,
     PI_VOICE_TICK_HZ,
+    SIMPLE_OFFLINE_REPEAT_S,
 )
 
 
@@ -342,16 +344,28 @@ _loop_stop = threading.Event()
 _running = False
 _tick_ok_at = 0.0
 _tick_error = ""
+_tick_done_at = 0.0  # monotonic: the loop's last FINISHED tick, good or failed
+_stall_said_at: Optional[float] = None  # monotonic: "Guidance stopped" said for a hang
 
 
 def _loop() -> None:
-    global _tick_ok_at, _tick_error
+    global _tick_ok_at, _tick_error, _tick_done_at, _stall_said_at
     from utils import service
     from utils.unified_guidance import get_unified_guidance, guidance_fault
 
     period = 1.0 / max(PI_VOICE_TICK_HZ, 0.5)
     while not _loop_stop.is_set():
         started = time.monotonic()
+        if _stall_said_at is not None:
+            # The voice said "Guidance stopped" while this loop was stuck: what stands now
+            # is said again rather than taken as already said.
+            _stall_said_at = None
+            try:
+                from utils import simple_guidance
+
+                simple_guidance.stall_told()
+            except Exception:
+                pass
         try:
             get_unified_guidance()
             fault = guidance_fault()
@@ -365,7 +379,45 @@ def _loop() -> None:
             if str(exc) != _tick_error:
                 print(f"[WARN] pi_voice: guidance tick failed: {exc}")
             _tick_error = str(exc)
+        _tick_done_at = time.monotonic()
         _loop_stop.wait(max(0.0, period - (time.monotonic() - started)))
+
+
+def _watch_stall() -> None:
+    """Say "Guidance stopped, use your cane" while the guidance loop finishes no tick at all
+    (a hang; a failing step is fault_notice's). Off the loop's thread, and off
+    simple_guidance's lock, which a hung tick may hold (2026-10-30)."""
+    global _stall_said_at
+    from utils.simple_guidance import SENSORS_OFFLINE
+
+    while not _loop_stop.wait(0.5):
+        done = _tick_done_at
+        if not done:
+            continue  # no tick finished yet: the first one imports the pipeline
+        stalled = time.monotonic() - done
+        if stalled < GUIDANCE_STALL_SAY_S:
+            continue
+        said = _stall_said_at
+        if said is not None and time.monotonic() - said < SIMPLE_OFFLINE_REPEAT_S:
+            continue
+        _stall_said_at = time.monotonic()
+        how = speak(SENSORS_OFFLINE, urgent=True)
+        print(
+            f"[WARN] pi_voice: the guidance loop has finished no tick for {stalled:.1f}s "
+            f'— "{SENSORS_OFFLINE}" ({how})'
+        )
+        try:
+            from utils import speech_log
+
+            speech_log.say(
+                source="pi-voice",
+                text=SENSORS_OFFLINE,
+                level="urgent",
+                detail=f"the guidance loop has finished no tick for {stalled:.1f}s",
+                via="pi" if how == "queued" else "none",
+            )
+        except Exception:
+            pass
 
 
 def loop_status() -> Dict[str, Any]:
@@ -396,7 +448,7 @@ def _start_airtime_timing() -> None:
 
 def start() -> None:
     """Start the guidance loop, and the voice if enabled and espeak-ng exists."""
-    global _loop_thread, _running
+    global _loop_thread, _running, _tick_done_at, _stall_said_at
     if _loop_thread and _loop_thread.is_alive():
         return
     # The voice before the loop, with a fresh sink answer, so the first tick's "Starting,
@@ -416,9 +468,13 @@ def start() -> None:
             if not PI_VOICE_ENABLED
             else f"{PI_VOICE_CMD[0]} not found"
         )
+    _tick_done_at, _stall_said_at = 0.0, None
     _loop_stop.clear()
     _loop_thread = threading.Thread(target=_loop, name="guidance-loop", daemon=True)
     _loop_thread.start()
+    threading.Thread(
+        target=_watch_stall, name="guidance-stall-watch", daemon=True
+    ).start()
 
 
 def stop() -> None:

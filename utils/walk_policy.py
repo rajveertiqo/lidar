@@ -192,7 +192,7 @@ def fuse(
     lidar_measured: bool = True,
     radar_measured: bool = True,
 ) -> Tuple[Optional[float], str]:
-    """One clearance from two readings: the AVERAGE, except across a glass gap."""
+    """One clearance from two readings: the NEARER when both measured, else the one that did."""
     if lidar_ft is None and radar_ft is None:
         return None, "no sensor data"
     if radar_ft is None:
@@ -212,14 +212,21 @@ def fuse(
             why = "glass"
         return min(lidar_ft, radar_ft), f"nearer (sensors disagree — {why})"
 
-    how = "average"
-    if not lidar_measured and not radar_measured:
-        how = "average of both max ranges (nothing detected)"
-    elif not lidar_measured:
-        how = "average (LiDAR saw nothing, counted at its 40 ft range)"
-    elif not radar_measured:
-        how = f"average (radar saw nothing, counted at its {RADAR_NO_RETURN_FT:g} ft range)"
-    return round((lidar_ft + radar_ft) / 2.0, 2), how
+    # Not the average (2026-10-30): a radar reading 1.5 ft past the laser, and up to a frame
+    # older, put a 3.5 ft wall at 4.25 ft and held "Blocked" back to ~3 ft. Not labelled
+    # "nearer": _front_detail reads that as the sensors disagreeing across a glass gap.
+    if lidar_measured and radar_measured:
+        return min(lidar_ft, radar_ft), "closest of both readings"
+    if lidar_measured:
+        return lidar_ft, (
+            f"LiDAR (radar saw nothing within its {RADAR_NO_RETURN_FT:g} ft range)"
+        )
+    if radar_measured:
+        return radar_ft, "radar (LiDAR saw nothing)"
+    return (
+        round((lidar_ft + radar_ft) / 2.0, 2),
+        "average of both max ranges (nothing detected)",
+    )
 
 
 def _centred_echo(radar_state: Dict[str, Any], direction: str) -> bool:

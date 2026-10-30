@@ -1580,6 +1580,17 @@ def _sentence(
     # A pane on the path outranks a wall beside you, which a 4 ft near-wall band makes common (2026-10-01).
     if near and glass:
         return GLASS_AHEAD
+    # So does everything else on the path (2026-10-30): below the side sentences, a wall
+    # 3 ft beside the user held "Wall ahead" back until the 4 ft block (~1.8 s at walking pace).
+    if near and wall:
+        return WALL_AHEAD
+    past = _steer_text(steer, False)
+    if past:
+        return past
+    if near and obj in OBJECT_AHEAD:
+        return OBJECT_AHEAD[obj]
+    if obstacle:
+        return OBSTACLE_AHEAD
     # Never "move" toward glass beside you (2026-10-22): with a wall near on the other side
     # the glass is the one to keep clear of — glass_side is only set when that side has room.
     if glass_side and close and close != glass_side:
@@ -1590,15 +1601,6 @@ def _sentence(
         return GLASS_LEFT if glass_side == "left" else GLASS_RIGHT
     if drift:
         return DRIFT_LEFT if drift == "left" else DRIFT_RIGHT
-    if near and wall:
-        return WALL_AHEAD
-    past = _steer_text(steer, False)
-    if past:
-        return past
-    if near and obj in OBJECT_AHEAD:
-        return OBJECT_AHEAD[obj]
-    if obstacle:
-        return OBSTACLE_AHEAD
     return WALK_STRAIGHT
 
 
@@ -2194,7 +2196,7 @@ def decide(
 
 
 # A hold's times are counted in ticks, which arrive a few ms early or late: with no slack
-# the 0.2 s confirm (one tick) took two ticks, 0.4 s, whenever a tick came early.
+# a 0.2 s confirm took one tick more (0.4 s at the old 5 Hz) whenever a tick came early.
 _TICK_SLACK_S = 0.25 / PI_VOICE_TICK_HZ
 
 
@@ -3413,6 +3415,14 @@ def fault_notice(why: str, now: Optional[float] = None) -> Dict[str, Any]:
         "quiet_reason": quiet,
         "announced": announced,
     }
+
+
+def stall_told(now: Optional[float] = None) -> None:
+    """The Pi voice said "Guidance stopped" itself while the guidance loop was hung
+    (pi_voice): once ticks run again, what stands is said again, as after fault_notice.
+    Called from the loop's own thread — the voice must not wait on this lock (2026-10-30)."""
+    with _lock:
+        _fault["said_at"] = time.time() if now is None else now
 
 
 def voice_failed(seq: int, text: str) -> bool:

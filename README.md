@@ -96,7 +96,7 @@ How it decides, in one paragraph each:
   more urgent (a name flickering, the side flipping, a step back) must hold 6 s.
   Blocked sentences repeat after 30 s, 60 s, then every 2 min.
 - **The Pi speaks for itself** (`utils/pi_voice.py`): the guidance loop runs on
-  the device at 5 Hz, and every sentence is spoken with `espeak-ng` through the
+  the device at 10 Hz (`PI_VOICE_TICK_HZ`; 5 Hz until 2026-10-30), and every sentence is spoken with `espeak-ng` through the
   default audio output — plug in or pair an earpiece and it follows. While no
   earpiece is connected (HDMI does not count), the dashboard's screen-reader
   banner is the voice instead; never both.
@@ -146,19 +146,20 @@ This is the part worth reading before any code.
   sensor wire and inside the geometry (body radius, surface fitting); the
   conversion happens once, at `walk_policy._mm_to_ft`. A device that mixes feet
   and metres invites a 2-metre gap being acted on as 2 feet.
-- **The two rangefinders are averaged, except across a glass gap.** Two
-  instruments of different physics looking at the same wall disagree by inches,
-  and averaging smooths that. But a glass door reads ~1 ft on radar and ~30 ft
-  on LiDAR, because the laser goes through it and ranges the room beyond —
-  average those and you get _15.5 ft, walk on_, straight into the door. So when
-  the two disagree by `WALK_GLASS_GAP_FT` or more, the **nearer** reading wins
-  instead. (`utils/walk_policy.fuse`)
+- **The nearer of the two rangefinders wins.** Until 2026-10-30 they were
+  averaged when within `WALK_GLASS_GAP_FT` of each other — but a radar reading
+  1.5 ft past the laser (and up to a frame older) put a 3.5 ft wall at 4.25 ft,
+  and "Blocked" came at ~3 ft instead of 4. A glass door reads ~1 ft on radar
+  and ~30 ft on LiDAR, because the laser goes through it and ranges the room
+  beyond; that disagreement (`WALK_GLASS_GAP_FT` or more) is what names the
+  glass. When only one sensor measured anything, its reading is used.
+  (`utils/walk_policy.fuse`)
 - For the same reason, blocking is never decided on the two sensors
   **agreeing**: that would let a glass wall — which only the radar sees — pass
   as clear.
 - **No return means "clear to my range", not unknown.** A silent sensor
   contributes its own reach — LiDAR **40 ft**, radar **13.1 ft** (9.8 ft until 2026-10-01) — and that
-  figure is averaged and displayed like any other. Treating it as "unknown →
+  figure is displayed like any other (both silent: their average). Treating it as "unknown →
   stop" would freeze the user in an empty corridor.
 - **A dead sensor is NOT a silent one**, and the difference is safety-critical.
   An offline radar board also reports no distance; substituting 13.1 ft there
@@ -557,7 +558,7 @@ config.py               Every threshold, in one place — the single source of t
 utils/
   simple_guidance.py        THE ONE SPEAKER: the closed vocabulary, warn-fast /
                             clear-slowly smoothing, and the gate that decides what is said
-  pi_voice.py               The 5 Hz guidance loop and espeak-ng, so the device talks
+  pi_voice.py               The 10 Hz guidance loop and espeak-ng, so the device talks
                             without a browser; hands the voice to the phone when no
                             earpiece is connected
   startup_gate.py           Silent until the sensors have settled ("scan before you speak")
@@ -581,7 +582,7 @@ utils/
   walkable_guidance.py      Which segmentation classes are walkable ground (the
                             segmentation view draws them bright)
   walk_policy.py            THE decision, in FEET: walk straight unless blocked;
-                            averages LiDAR+radar, nearer wins across a glass gap
+                            the nearer of LiDAR and radar wins; a gap names glass
   heading_tracker.py        Yaw, walking speed and sideways slip. Speed from
                             scan matching; yaw fused with the gyro below
   gyro_reader.py            MPU-6500 on SPI — yaw rate at 100 Hz, gait from the
@@ -630,10 +631,12 @@ model/                  yolo26m.hef (detection), best.hef (segmentation), metada
 Four independent loops, so a slow one cannot stall the others:
 
 1. **Capture** — pulls raw mosaic frames from Picamera2 (~30 FPS).
-2. **Detection** — the FRONT quadrant on every pass, published at once, then
-   one of the other three in rotation (`DETECTION_FRONT_EVERY_PASS`). Guidance
-   only reads the front; all four every pass made it wait for the other three.
-   Letterboxed straight from the camera's array with OpenCV, not via PIL.
+2. **Detection** — the FRONT camera on every new picture, published at once; a
+   side camera at most every `DETECTION_SIDE_MIN_INTERVAL_S` (0.4 s, the one
+   longest undetected first, preferably while the board shows a side), so each
+   side is re-detected within ~1.3 s. Guidance only reads the front: a side's
+   ~40 ms ahead of it cost the front pictures (2026-10-30; it was one side every
+   pass). Letterboxed straight from the camera's array with OpenCV, not via PIL.
 3. **Segmentation** — its own thread, and only while its front view is open
    (`SEG_ALWAYS`): its cue no longer reaches the voice, and the NPU time it
    took came out of detection.
@@ -1038,7 +1041,7 @@ label sizes are set for that capped width; changing the cap needs them revisited
 
 | Endpoint                | Returns                                                                                                                                                                                                                                 |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /guidance/walk`    | **The one merged instruction.** Obstacle avoidance + surface steering + crossing, in safety-first priority order. `notify.speak` / `notify.cue_seq` is the _only_ field that means "announce this"; everything else is state to display. It is the 5 Hz guidance loop's newest result (`loop.age_s`): a request never runs the pipeline, so no page decides or commits what is said. Older than `GUIDANCE_RESULT_STALE_S`, it reports rule `unavailable` and why |
+| `GET /guidance/walk`    | **The one merged instruction.** Obstacle avoidance + surface steering + crossing, in safety-first priority order. `notify.speak` / `notify.cue_seq` is the _only_ field that means "announce this"; everything else is state to display. It is the 10 Hz guidance loop's newest result (`loop.age_s`): a request never runs the pipeline, so no page decides or commits what is said. Older than `GUIDANCE_RESULT_STALE_S`, it reports rule `unavailable` and why |
 | `GET /guidance/policy`  | The straight-walk decision on its own, in feet — the guidance loop's last one (`loop.age_s`), never re-run by the request                                                                                                                |
 | `GET /guidance/gyro`    | IMU health, yaw bias and whether it is trusted, tilt, gait. `/guidance/heading`'s `yaw_source` says which sensor is steering; this says why |
 | `GET /guidance/drift`   | Collision course + veer: what you will walk into, when, and the smallest correction                                                                                                                                                     |
@@ -1099,8 +1102,8 @@ Everything lives in `config.py`, grouped by subsystem. The values worth knowing:
 | `GUIDANCE_WARNING_MM` = 1500        | Close — caution                                                                                      |
 | `WALK_BLOCK_FT` = 4.0               | Front nearer than this is blocked (6.5 until 2026-10-01)                                             |
 | `WALK_MIN_TURN_FT` = 2.0            | Room a turn target must have, else stop                                                              |
-| `WALK_GLASS_GAP_FT` = 2.0           | Sensors disagreeing by this ⇒ glass, take the nearer                                                 |
-| `WALK_FUSION_GLASS_OVERRIDE` = True | False averages unconditionally — makes glass undetectable                                            |
+| `WALK_GLASS_GAP_FT` = 2.0           | Sensors disagreeing by this ⇒ glass (the nearer wins either way, since 2026-10-30)                   |
+| `WALK_FUSION_GLASS_OVERRIDE` = True | False drops the "sensors disagree" explanation; the nearer still wins (it averaged until 2026-10-30) |
 | `WALK_TURN_MARGIN_FT` = 1.5         | A turn must beat the forward clearance by this, else keep going                                      |
 | `LIDAR_NO_RETURN_FT` = 40           | Silent LiDAR counts as this much clear                                                               |
 | `RADAR_NO_RETURN_FT` = 13.1         | Silent radar counts as this much clear (= `RADAR_END_MM`, 4 m since 2026-10-01; was 9.8)                                                               |

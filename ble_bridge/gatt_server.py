@@ -51,7 +51,7 @@ APP_PATH = "/org/shappe/ble"
 ADV_PATH = APP_PATH + "/advertisement0"
 AGENT_PATH = APP_PATH + "/agent"
 
-POLL_S = 0.1  # /guidance/walk: the loop ticks at 5 Hz; polling at 10 Hz adds <=100 ms
+POLL_S = 0.1  # /guidance/walk: the loop ticks at 10 Hz; polling at 10 Hz adds <=100 ms
 HEALTH_S = 1.0  # /health, /guidance/status and the Pi's thermals
 
 # Characteristic flags per security level (BlueZ org.bluez.GattCharacteristic1 "Flags").

@@ -335,6 +335,13 @@ GLASS_SAME_ECHO_MM = (
     60.0  # two front boards ranging within this of each other heard the same thing
 )
 GLASS_GRAZING_DEG = 75.0  # a surface the laser sees more edge-on than this sends the radar next to nothing back, so it cannot explain an echo
+# A front board's FARTHER echoes count too, not only its nearest (2026-11-02): in a narrow
+# corridor the nearest is the side wall at the beam's edge, which the laser explains, and the
+# pane behind it was never looked at — "Walk straight" with glass 3 ft ahead. False: nearest only.
+WALK_GLASS_ALL_ECHOES = True
+# A farther echo at twice the range of one this board's laser explains, within this, is that
+# surface's double bounce, not a pane.
+GLASS_GHOST_TOL_MM = 150.0
 
 RADAR_GLASS_GAP_MM = 600
 
@@ -393,6 +400,15 @@ WALK_TURN_HYSTERESIS_FT = 0.8
 
 
 WALK_TURN_HOLD_S = 4.0
+
+# Room enough both ways (each side at least this): the turn goes AWAY from the side the laser
+# measured the obstacle on (2026-11-02). It was the fixed order / the both-sensors side, so in
+# open space the rig always said "Turn right", even with the obstacle on the right — and a
+# wearer who veers rather than pivots veered into it. Not within WALK_TURN_AWAY_MIN_DEG of
+# dead ahead, nor for a block only the radar measured (no bearing). A turn being held is kept.
+WALK_TURN_AWAY_FROM_OBSTACLE = True
+WALK_TURN_AMPLE_FT = 6.0
+WALK_TURN_AWAY_MIN_DEG = 3.0
 
 WALK_MEASURED_MEMORY_S = 3.0
 

@@ -11,6 +11,7 @@ from config import (
     GLASS_BOARD_VIEW_MARGIN_DEG,
     GLASS_DOOR_MAX_BEARING_DEG,
     GLASS_DOOR_WALL_DEPTH_MM,
+    GLASS_GHOST_TOL_MM,
     GLASS_GRAZING_DEG,
     GLASS_LASER_BEYOND_MM,
     GLASS_SAME_ECHO_MM,
@@ -26,12 +27,16 @@ from config import (
     RADAR_SECTORS,
     WALK_BLOCK_FT,
     WALK_FUSION_GLASS_OVERRIDE,
+    WALK_GLASS_ALL_ECHOES,
     WALK_GLASS_GAP_FT,
     WALK_MIN_TURN_FT,
     WALK_TURN_MARGIN_FT,
     WALK_TURN_ORDER,
     WALK_TURN_HYSTERESIS_FT,
     WALK_TURN_HOLD_S,
+    WALK_TURN_AWAY_FROM_OBSTACLE,
+    WALK_TURN_AMPLE_FT,
+    WALK_TURN_AWAY_MIN_DEG,
     WALK_MEASURED_MEMORY_S,
 )
 
@@ -243,10 +248,23 @@ def _centred_echo(radar_state: Dict[str, Any], direction: str) -> bool:
     return max(dists) - min(dists) <= RADAR_AGREE_MM
 
 
+def _laser_points(lidar_state: Dict[str, Any]) -> Tuple[List[float], List[float]]:
+    """The scan's (angles, distances), only the pairs that are both finite numbers, so the two
+    lists stay the same length: one None angle, or a shorter list, raised out of the glass
+    checks and made the whole walk decision "unknown" (fuzz, 2026-10-30)."""
+    pts = lidar_state.get("points") or {}
+    good = [
+        (float(a), float(d))
+        for a, d in zip(pts.get("angles") or [], pts.get("distances") or [])
+        if isinstance(a, (int, float)) and not isinstance(a, bool) and math.isfinite(a)
+        and isinstance(d, (int, float)) and not isinstance(d, bool) and math.isfinite(d)
+    ]
+    return [a for a, _ in good], [d for _, d in good]
+
+
 def _matches_ahead(lidar_state: Dict[str, Any], radar_ft: float) -> bool:
     """Laser returns at the echo's range lie within GLASS_DOOR_MAX_BEARING_DEG of ahead, and none beyond it (side walls)."""
-    pts = lidar_state.get("points") or {}
-    angles, dists = pts.get("angles") or [], pts.get("distances") or []
+    angles, dists = _laser_points(lidar_state)
     echo_mm = radar_ft * MM_PER_FT
     ahead = beside = False
     for a, d in zip(angles, dists):
@@ -268,25 +286,28 @@ def _matches_ahead(lidar_state: Dict[str, Any], radar_ft: float) -> bool:
 _BOARD_KEY = re.compile(r"^deg(\d{3})$")
 
 
+def _echo_mm(d: Any) -> Optional[float]:
+    if isinstance(d, (int, float)) and not isinstance(d, bool) and math.isfinite(d) and d > 0:
+        return float(d)
+    return None
+
+
 def _board_echoes(
-    radar_state: Dict[str, Any], direction: str
+    radar_state: Dict[str, Any], direction: str, all_peaks: bool = False
 ) -> List[Tuple[float, float]]:
-    """(bearing, echo mm) for each live board of this cardinal that hears something."""
+    """(bearing, echo mm) for each live board of this cardinal that hears something: its
+    nearest echo, or with `all_peaks` every echo it lists (peaks_mm)."""
     secs = radar_state.get("sectors") or {}
     out = []
     for key in (secs.get(direction) or {}).get("sources") or ():
         row = secs.get(key) or {}
         m = _BOARD_KEY.match(str(key))
-        d = row.get("min_dist")
-        if (
-            m
-            and row.get("online")
-            and not row.get("degraded")
-            and isinstance(d, (int, float))
-            and not isinstance(d, bool)
-            and d > 0
-        ):
-            out.append((float(m.group(1)), float(d)))
+        if not (m and row.get("online") and not row.get("degraded")):
+            continue
+        echoes = {e for e in [_echo_mm(row.get("min_dist"))] if e is not None}
+        if all_peaks:
+            echoes |= {e for e in map(_echo_mm, row.get("peaks_mm") or ()) if e is not None}
+        out.extend((float(m.group(1)), e) for e in sorted(echoes))
     return out
 
 
@@ -321,12 +342,11 @@ def _grazing(angles: List[Any], dists: List[Any], i: int) -> bool:
 
 
 def _laser_explains(
-    lidar_state: Dict[str, Any], bearing: float, echo_mm: float
+    lidar_state: Dict[str, Any], bearing: float, echo_mm: float, widen_deg: float = 0.0
 ) -> bool:
-    """Does the laser see, inside this board's view, something the echo could have come off — at its range, or nearer, and not seen edge-on?"""
-    pts = lidar_state.get("points") or {}
-    angles, dists = pts.get("angles") or [], pts.get("distances") or []
-    half = RADAR_BEAM_H_DEG / 2.0 + GLASS_BOARD_VIEW_MARGIN_DEG
+    """Does the laser see, inside this board's view (widened by `widen_deg`), something the echo could have come off — at its range, or nearer, and not seen edge-on?"""
+    angles, dists = _laser_points(lidar_state)
+    half = RADAR_BEAM_H_DEG / 2.0 + GLASS_BOARD_VIEW_MARGIN_DEG + widen_deg
     for i, (a, d) in enumerate(zip(angles, dists)):
         if (
             isinstance(d, (int, float))
@@ -341,17 +361,27 @@ def _laser_explains(
 def _single_board_glass_ft(
     lidar_state: Dict[str, Any], radar_state: Dict[str, Any], direction: str
 ) -> Optional[float]:
-    """The nearest echo one board heard off something the laser sees nothing of in that board's view, in feet, or None."""
-    echoes = [
-        (e, _laser_explains(lidar_state, b, e))
-        for b, e in _board_echoes(radar_state, direction)
+    """The nearest echo one board heard off something the laser sees nothing of in that board's view, in feet, or None. Every echo a board lists, with WALK_GLASS_ALL_ECHOES — not only its nearest, which in a narrow corridor is the side wall (2026-11-02)."""
+    judged = [
+        (b, e, _laser_explains(lidar_state, b, e))
+        for b, e in _board_echoes(radar_state, direction, all_peaks=WALK_GLASS_ALL_ECHOES)
     ]
-    explained = [e for e, ok in echoes if ok]
-    unexplained = [
-        e
-        for e, ok in echoes
-        if not ok and not any(abs(e - x) <= GLASS_SAME_ECHO_MM for x in explained)
-    ]
+    explained = [(b, e) for b, e, ok in judged if ok]
+    unexplained = []
+    for b, e, ok in judged:
+        if ok:
+            continue
+        # The same thing another board explained, at the same range — only if the laser sees
+        # something there this board could hear too, its beam spilling over (until 2026-11-02
+        # any range match: a post beside one board hid the pane the other heard).
+        if any(abs(e - x) <= GLASS_SAME_ECHO_MM for _bx, x in explained) and _laser_explains(
+            lidar_state, b, e, widen_deg=GLASS_BOARD_VIEW_MARGIN_DEG
+        ):
+            continue
+        # A double bounce off a surface this board ranges: its ghost, not a pane.
+        if any(abs(e - 2.0 * x) <= GLASS_GHOST_TOL_MM for bx, x in explained if bx == b):
+            continue
+        unexplained.append(e)
     return _mm_to_ft(min(unexplained)) if unexplained else None
 
 
@@ -567,12 +597,33 @@ def _remember_turn(direction: Optional[str], now: float) -> None:
         _last_turn["at"] = now if direction else 0.0
 
 
+def _front_obstacle_deg(
+    lidar_state: Dict[str, Any], front: Dict[str, Any]
+) -> Optional[float]:
+    """Signed bearing (degrees, + right) of the laser return the front block was measured on,
+    or None when the laser did not measure it (a pane: the radar gives no bearing)."""
+    cone = ((lidar_state or {}).get("cones") or {}).get("front") or {}
+    dist, angle = cone.get("min_dist"), cone.get("min_angle")
+    if not (
+        front.get("lidar_measured")
+        and isinstance(front.get("distance_ft"), (int, float))
+        and isinstance(dist, (int, float))
+        and isinstance(angle, (int, float))
+    ):
+        return None
+    if abs(dist / MM_PER_FT - front["distance_ft"]) > 0.5:
+        return None  # the block is another reading's (the radar's), not this return
+    return (float(angle) + 180.0) % 360.0 - 180.0
+
+
 def choose_turn(
     views: Dict[str, Dict[str, Any]],
     front_ft: Optional[float] = None,
     incumbent: Optional[str] = None,
+    obstacle_deg: Optional[float] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Pick a way out when straight ahead is blocked (rules 4 and 5)."""
+    """Pick a way out when straight ahead is blocked (rules 4 and 5). `obstacle_deg`: where
+    the laser measured the block (_front_obstacle_deg), for WALK_TURN_AWAY_FROM_OBSTACLE."""
     if front_ft is None:
         return None  # open ahead — never turn away from it
 
@@ -588,6 +639,18 @@ def choose_turn(
     ]
     if not candidates:
         return None
+
+    # Room enough both ways: where the obstacle is decides, not a few more feet (2026-11-02).
+    sides = {v["direction"]: v for v in candidates if v["direction"] in ("left", "right")}
+    if (
+        WALK_TURN_AWAY_FROM_OBSTACLE
+        and len(sides) == 2
+        and all(_room_ft(v) >= WALK_TURN_AMPLE_FT for v in sides.values())
+    ):
+        if incumbent in sides:
+            return sides[incumbent]  # held: a bearing jittering about ahead cannot flip it
+        if obstacle_deg is not None and abs(obstacle_deg) >= WALK_TURN_AWAY_MIN_DEG:
+            return sides["left" if obstacle_deg > 0 else "right"]
 
     # Room only one sensor can vouch for ranks behind room both can: a silent radar misses
     # thin poles, and the LiDAR's blind arc is the wearer's body.
@@ -658,7 +721,12 @@ def decide(
     obstacle = "Glass wall" if front["glass"] else "Obstacle"
     detail = f"{obstacle.lower()} {_front_detail(front)}"
     now = time.time()
-    turn = choose_turn(views, front["distance_ft"], incumbent=_incumbent(now))
+    turn = choose_turn(
+        views,
+        front["distance_ft"],
+        incumbent=_incumbent(now),
+        obstacle_deg=_front_obstacle_deg(lidar_state, front),
+    )
 
     if turn is None:
         # Nothing beats the way ahead. Two very different situations:

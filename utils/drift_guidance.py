@@ -156,7 +156,11 @@ def fit_surfaces(points: Sequence[Tuple[float, float]]) -> List[Dict[str, Any]]:
     current = [ordered[0]]
     for angle, dist in ordered[1:]:
         prev_angle, prev_dist = current[-1]
-        gap_limit = max(DRIFT_SURFACE_GAP_MM, 0.25 * prev_dist)
+        # Against the NEARER of the two (2026-10-30): against the previous one, a post seen
+        # after the wall behind it (sweeping toward it) merged into that wall — a 0.22 m
+        # post 6 ft ahead read as "Wall ahead" — and seen before it, did not: the scan's
+        # direction, so which side of the path it stood, decided it.
+        gap_limit = max(DRIFT_SURFACE_GAP_MM, 0.25 * min(prev_dist, dist))
         if (angle - prev_angle) > 3.0 or abs(dist - prev_dist) > gap_limit:
             runs.append(current)
             current = [(angle, dist)]

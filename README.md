@@ -30,7 +30,7 @@ closed vocabulary:
 | Path clear | `Walk straight` — said once, never repeated |
 | Closing on a wall / glass (within ~12 ft) | `Wall ahead` / `Glass ahead` |
 | Front blocked (under 4 ft — was 6.5 ft until 2026-10-01) by a wall / glass | `Blocked by wall` / `Blocked by glass` |
-| Front blocked by something unnamed | `Turn left` / `Turn right`, toward more room |
+| Front blocked by something unnamed | `Turn left` / `Turn right`, toward more room — with room both ways (`WALK_TURN_AMPLE_FT`), away from the side the obstacle is on (2026-11-02; it was a fixed order, so the rig said "Turn right" even with the obstacle on the right) |
 | Walking toward a wall beside you that is under 5 ft away (only while actually moving toward it; 2.5 ft on 2026-09-30, 5 ft since 2026-10-01). Inside 4 ft the near-wall sentence below takes over | `Drifting toward right wall, turn slightly left` (and the mirror) |
 | Already within 4 ft of a wall beside you (moving or not; 1.5 ft until 2026-10-01) | `Near right wall, move left` (and the mirror) |
 | Glass only one front radar board hears, within 4 ft, and room to step away (added 2026-10-01) | `Glass on right, move left` (and the mirror) |
@@ -456,7 +456,7 @@ already works from.
 | Consumer | Does | Cannot |
 | --- | --- | --- |
 | `sensor_fusion.build_hazards` | Replaces "obstacle" with **wall** / **post** where the grid resolved that same return. Carried as a `shape` field even when the camera's label wins the name, so a post-shaped "chair" reports both | Create, remove, rank or escalate a hazard. Identical inputs with and without a shape produce identical urgencies |
-| `spatial_scan` -> `simple_guidance.safer_side` | Breaks a tie between "Turn left" and "Turn right" toward the side with a doorway or open space | Pick a side the rangefinders give less than `WALK_MIN_TURN_FT` of room |
+| `spatial_scan` -> `simple_guidance.safer_side` | Breaks a tie between "Turn left" and "Turn right" toward the side with a doorway or open space — only when the walk policy chose no side itself (it does whenever a side has room: see `WALK_TURN_AWAY_FROM_OBSTACLE`) | Pick a side the rangefinders give less than `WALK_MIN_TURN_FT` of room |
 
 `body`-sized clusters are deliberately **not** promoted to a spoken word: the
 grid can tell person-sized from wall-sized, but not a person from a wheelie

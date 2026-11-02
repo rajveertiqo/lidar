@@ -1279,7 +1279,7 @@
         const v = $("now-voice");
         v.className = fresh ? "said" : "";
         v.textContent = fresh
-          ? `🔊       just said “${lastSaidText}”`
+          ? `🔊 just said “${lastSaidText}”`
           : `🔇 quiet — ${n.quiet_reason || "nothing new to say"}` +
             (lastSaidText ? ` · last said “${lastSaidText}” ${ago}s ago` : "");
 

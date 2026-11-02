@@ -2214,7 +2214,7 @@
           const ago = saidAt ? Math.round((Date.now() - saidAt) / 1000) : null;
           const voiceEl = document.getElementById("walk-voice");
           voiceEl.textContent = n.speak
-            ? `🔊       saying “${n.instruction}”`
+            ? `🔊 saying “${n.instruction}”`
             : `🔇 quiet — ${n.quiet_reason || "nothing new to say"}` +
               (saidText ? ` · last said “${saidText}” ${ago}s ago` : "") +
               (saidCount ? ` · ${saidCount} this session` : "");
@@ -2241,7 +2241,7 @@
 
           const gbVoice = document.getElementById("gb-voice");
           gbVoice.textContent = n.speak
-            ? `🔊       announcing “${n.instruction}”`
+            ? `🔊 announcing “${n.instruction}”`
             : `🔇 quiet — ${n.quiet_reason || "nothing new to say"}` +
               (saidText ? ` · last “${saidText}” ${ago}s ago` : "");
           gbVoice.style.color = n.speak ? "var(--gb-accent)" : "var(--muted)";

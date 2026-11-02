@@ -10,7 +10,7 @@ import time
 import types
 import warnings
 from collections import deque
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from config import (
     RADAR_MIN_RATE_FRACTION,
@@ -339,10 +339,17 @@ def _publish(board_key: str, payload: Dict[str, Any]) -> None:
             update_radar_sector(cardinal, _derive_cardinal(sources, secs))
 
 
+def _echoes_of(row: Dict[str, Any]) -> List[Tuple[float, Optional[float]]]:
+    """(mm, dB) of each echo a board row lists; None for a strength it does not give."""
+    db = list(row.get("peaks_db") or [])
+    return [(d, db[i] if i < len(db) else None) for i, d in enumerate(row.get("peaks_mm") or [])]
+
+
 def _derive_cardinal(sources, secs: Dict[str, Any]) -> Dict[str, Any]:
     """One cardinal's row from its source boards' rows (see _publish)."""
     rows = [secs.get(k) or {} for k in sources]
     live = [r for r in rows if r.get("online")]
+    echoes = sorted((e for r in live for e in _echoes_of(r)), key=lambda e: e[0])
     dists = [
         r["min_dist"]
         for r in live
@@ -350,7 +357,8 @@ def _derive_cardinal(sources, secs: Dict[str, Any]) -> Dict[str, Any]:
     ]
     return {
         "min_dist": round(min(dists), 1) if dists else None,
-        "peaks_mm": sorted(d for r in live for d in (r.get("peaks_mm") or [])),
+        "peaks_mm": [d for d, _db in echoes],
+        "peaks_db": [db for _d, db in echoes],  # in the same order
         "online": bool(live),
         "lag_s": max((r.get("lag_s") or 0.0) for r in live) if live else None,
         "degraded": any(r.get("degraded") for r in live),
@@ -390,6 +398,7 @@ def _tombstone(phase: str, error: str) -> Dict[str, Any]:
     return {
         "min_dist": None,
         "peaks_mm": [],
+        "peaks_db": [],
         "online": False,
         "degraded": False,
         "lag_s": None,
@@ -542,6 +551,7 @@ def _run_board(entry: Dict[str, Any], stop: threading.Event) -> None:
                 {
                     "min_dist": None,
                     "peaks_mm": [],
+                    "peaks_db": [],
                     "online": False,
                     "phase": "reconnecting",
                     "measured_hz": None,
@@ -726,6 +736,9 @@ def _stream_board(entry: Dict[str, Any], stop: threading.Event) -> None:
                     if distances
                     else None,
                     "peaks_mm": [round(d, 1) for d in distances],
+                    # Each echo's strength, in the same order (2026-11-02; only the nearest's
+                    # was kept): what tells a pane facing the boards from a corridor's walls.
+                    "peaks_db": [round(s, 2) for s in strengths],
                     "temperature": int(result.temperature),
                     "near_edge": bool(result.near_edge_status),
                     "lag_s": round(max(lag, 0.0), 3),
@@ -949,6 +962,7 @@ def _startup(allow_provisional: bool = False) -> Dict[str, Any]:
                 "online": False,
                 "min_dist": None,
                 "peaks_mm": [],
+                "peaks_db": [],
                 "reconnects": 0,
                 "error": None,
             },
@@ -1177,6 +1191,7 @@ def _late_join_once(stop: threading.Event) -> List[str]:
                     "online": False,
                     "min_dist": None,
                     "peaks_mm": [],
+                    "peaks_db": [],
                     "reconnects": 0,
                     "error": None,
                 },

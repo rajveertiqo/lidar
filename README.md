@@ -676,7 +676,14 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 ./start_lidar.sh          # http://<pi-ip>:8000
+
+./run_tests.sh            # before a push: every test, hardware-free, ~30 s
+./run_tests.sh --full     # and the desk simulators and tools/scene_hunt.py, ~5 min
 ```
+
+The tests include the web pages (`tools/test_templates.py`): every inline script must parse
+(`node --check`, when node is installed) and no stray character may sit in a page's code —
+an editor once dropped a "🔊" into the /map page's script and the 3D view silently died.
 
 The app still STARTS on a machine with no LiDAR, camera or NPU: a missing
 device publishes nothing and health reports it down. Only with

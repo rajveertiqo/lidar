@@ -113,5 +113,37 @@ class GlassBehindNearerEchoTests(unittest.TestCase):
         self.assertNotIn(self.said(corridor, ghosts=1.0), ("Glass ahead", "Blocked by glass"))
 
 
+class RadarEchoStrengthTests(unittest.TestCase):
+    """Every echo a board lists keeps its own strength (peaks_db, same order as peaks_mm), from
+    the board's row through the cardinal's (2026-11-02; only the nearest's was kept)."""
+
+    def tearDown(self):
+        from utils.shared_state import reset_all_states
+
+        reset_all_states()
+
+    def test_strengths_stay_with_their_echoes(self):
+        from utils import radar_utils as ru
+        from utils.shared_state import get_radar_state
+
+        ru._publish("deg330", {"min_dist": 900.0, "peaks_mm": [900.0, 2400.0],
+                               "peaks_db": [18.5, 31.0], "online": True, "degraded": False})
+        ru._publish("deg030", {"min_dist": 1200.0, "peaks_mm": [1200.0, 3100.0],
+                               "peaks_db": [12.0, 9.0], "online": True, "degraded": False})
+        front = get_radar_state()["sectors"]["front"]
+        self.assertEqual(list(zip(front["peaks_mm"], front["peaks_db"])),
+                         [(900.0, 18.5), (1200.0, 12.0), (2400.0, 31.0), (3100.0, 9.0)])
+
+    def test_a_row_without_strengths_does_not_shift_them(self):
+        from utils import radar_utils as ru
+        from utils.shared_state import get_radar_state
+
+        ru._publish("deg330", {"min_dist": 900.0, "peaks_mm": [900.0], "online": True, "degraded": False})
+        ru._publish("deg030", {"min_dist": 1200.0, "peaks_mm": [1200.0], "peaks_db": [12.0],
+                               "online": True, "degraded": False})
+        front = get_radar_state()["sectors"]["front"]
+        self.assertEqual(list(zip(front["peaks_mm"], front["peaks_db"])), [(900.0, None), (1200.0, 12.0)])
+
+
 if __name__ == "__main__":
     unittest.main()

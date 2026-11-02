@@ -29,7 +29,7 @@ def _default_lidar_state():
 
 def _default_radar_state():
     return {
-        "sectors": {},  # position -> {min_dist, strength_db, peaks_mm, online, last_update}
+        "sectors": {},  # position -> {min_dist, strength_db, peaks_mm, peaks_db, online, last_update}
         "boards": [],  # discovery result: device / serial / hub_port / position / assumed
         "missing": [],  # configured boards that did not answer discovery
         "last_update": 0,

@@ -415,6 +415,7 @@ def _refused_boards(discovered, streaming):
             ),
             "reconnects": 0,
             "peaks_mm": [],
+            "peaks_db": [],
         }
         for e in discovered
         if e.get("serial") not in streaming
@@ -448,6 +449,7 @@ def _board_rows():
             "mm": sec.get("min_dist"),
             "ft": _mm_to_ft(sec.get("min_dist")),
             "peaks_mm": list(sec.get("peaks_mm") or []),
+            "peaks_db": list(sec.get("peaks_db") or []),
             "strength_db": sec.get("strength_db"),
             "temperature_c": sec.get("temperature"),
             "near_edge": sec.get("near_edge"),

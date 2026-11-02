@@ -462,8 +462,11 @@ class UrgentToneTests(unittest.TestCase):
         import sys
         import tempfile
 
-        log = tempfile.NamedTemporaryFile("r", suffix=".log", delete=False)
-        stamp = f"open({log.name!r}, 'a').write"
+        from pathlib import Path
+
+        log = Path(tempfile.mkdtemp()) / "voice.log"  # the stand-in commands append here
+        self.addCleanup(lambda: (log.unlink(missing_ok=True), log.parent.rmdir()))
+        stamp = f"open({str(log)!r}, 'a').write"
         tone = [sys.executable, "-c", "import sys, time; sys.stdin.buffer.read(); "
                 f"{stamp}(f'tone {{time.monotonic()}}\\n'); time.sleep(0.15)"]
         say = [sys.executable, "-c", f"import sys, time; {stamp}("
@@ -479,7 +482,7 @@ class UrgentToneTests(unittest.TestCase):
                 time.sleep(gap)
             time.sleep(1.5)
             voice.stop()
-        rows = [line.split() for line in open(log.name).read().splitlines()]
+        rows = [line.split() for line in log.read_text().splitlines()]
         return [(r[0], " ".join(r[1:-1]), float(r[-1])) for r in rows]
 
     def test_tone_then_words_for_urgent_only(self):

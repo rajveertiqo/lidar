@@ -167,7 +167,9 @@ class SettingsAgreeTests(unittest.TestCase):
         from ble_bridge import core as ble, gatt_server
         from utils import mobile_delivery
 
-        unit = open("deploy/shappe-guide.service").read()
+        from pathlib import Path
+
+        unit = Path(__file__).resolve().parent.parent.joinpath("deploy", "shappe-guide.service").read_text()
         watchdog = float(re.search(r"^WatchdogSec=(\d+)", unit, re.M).group(1))
         scan, radar = 60.0 / c.LIDAR_RPM, 1.0 / c.RADAR_UPDATE_RATE
         front_cam, side_cam = 0.05, 3 * c.DETECTION_SIDE_MIN_INTERVAL_S

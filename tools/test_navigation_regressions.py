@@ -23,20 +23,34 @@ class HeadingMotionTests(unittest.TestCase):
             ("backward", -70, 0),
             ("sideways", 0, 40),
         ):
-            with self.subTest(motion=name), patch.object(heading_tracker, "GYRO_ENABLED", False):
+            with (
+                self.subTest(motion=name),
+                patch.object(heading_tracker, "GYRO_ENABLED", False),
+            ):
                 np.random.seed(42)
                 tracker = heading_tracker.HeadingTracker()
                 now = time.time()
                 for i in range(25):
                     scan = ray_cast(
-                        i * dx, i * dy, 0, 2000,
-                        length_mm=6500, back_mm=-6500, noise_mm=2,
+                        i * dx,
+                        i * dy,
+                        0,
+                        2000,
+                        length_mm=6500,
+                        back_mm=-6500,
+                        noise_mm=2,
                     )
                     state = tracker.update(scan, now + i * 0.1)
                 self.assertTrue(state["speed_observable"])
                 self.assertEqual(state["confidently_still"], name == "standing")
-                self.assertEqual(state["motion_direction"], name if name != "standing" and name != "sideways"
-                                 else "still" if name == "standing" else "right")
+                self.assertEqual(
+                    state["motion_direction"],
+                    name
+                    if name != "standing" and name != "sideways"
+                    else "still"
+                    if name == "standing"
+                    else "right",
+                )
                 if name == "backward":
                     self.assertLess(state["speed_mps"], -0.5)
                 if name == "sideways":
@@ -50,9 +64,7 @@ class NavigationTests(unittest.IsolatedAsyncioTestCase):
         self.lidar = {
             "last_update": now,
             "valid_fraction": 1.0,
-            "sectors": {
-                s: {"min_dist": 6000, "count": 20} for s in LIDAR_SECTOR_ORDER
-            },
+            "sectors": {s: {"min_dist": 6000, "count": 20} for s in LIDAR_SECTOR_ORDER},
             "cones": {
                 s: {"min_dist": 6000} for s in ("front", "left", "right", "back")
             },
@@ -65,13 +77,15 @@ class NavigationTests(unittest.IsolatedAsyncioTestCase):
             mock = patch.object(navigation, name, return_value=value)
             mock.start()
             self.addCleanup(mock.stop)
-        mock = patch.object(navigation, "update_navigation_state")
+        mock = patch.object(navigation, "update_navigation_stayte")
         mock.start()
         self.addCleanup(mock.stop)
 
     async def test_invalid_scans_never_authorize_forward_motion(self):
         for scan in (
-            [], [{}], [{"distance_mm": 6000}],
+            [],
+            [{}],
+            [{"distance_mm": 6000}],
             [{"angle_deg": 0, "distance_mm": -1}],
             [{"angle_deg": 0, "distance_mm": float("nan")}],
             [{"angle_deg": float("inf"), "distance_mm": 6000}],
@@ -87,10 +101,13 @@ class NavigationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_valid_measurement_survives_mixed_invalid_input(self):
         result = await navigation.make_navigation_decision(
-            navigation.NavigationRequest(scan_data=[
-                {}, {"angle_deg": 0, "distance_mm": 6000},
-                {"angle_deg": 90, "distance_mm": float("nan")},
-            ])
+            navigation.NavigationRequest(
+                scan_data=[
+                    {},
+                    {"angle_deg": 0, "distance_mm": 6000},
+                    {"angle_deg": 90, "distance_mm": float("nan")},
+                ]
+            )
         )
         self.assertEqual(result["action"], "go_forward")
         self.assertEqual(result["sensor_health"]["lidar_points"], 1)
@@ -115,7 +132,9 @@ class NavigationTests(unittest.IsolatedAsyncioTestCase):
                 }
                 result = await navigation.make_navigation_decision_from_state()
                 self.assertEqual(result["crossing_mode"], crossing)
-                self.assertEqual(result["action"], "wait_for_signal" if crossing else "go_forward")
+                self.assertEqual(
+                    result["action"], "wait_for_signal" if crossing else "go_forward"
+                )
 
     async def test_websocket_rejects_invalid_scan(self):
         class Socket:

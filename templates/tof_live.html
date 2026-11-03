@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>ToF depth — live</title>
+    <!-- The ToF's live view (from ~/tof/tof_live.py, 2026-11-03). /tof/ws sends each frame's raw
+         depth and confidence and this page colours them, so the crosshair reads any pixel and
+         the confidence cut moves without touching the guidance. The range is fixed by config
+         TOF_RANGE_MM: the 2 m mode reads things past 2 m as near, so the page can't switch it. -->
+    <style>
+      :root {
+        --bg: #0a0e14; --fg: #e5e9f0; --muted: #8892a0; --card: #141921;
+        --alert: #e53e3e; --warning: #ed8936; --success: #48bb78;
+        --info: #4299e1; --border: #1e2633; --accent: #667eea;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--fg);
+        font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      header {
+        display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+        padding: 14px 16px; border-bottom: 1px solid var(--border);
+      }
+      h1 { font-size: 17px; margin: 0 8px 0 0; font-weight: 650; }
+      h2 { font-size: 14px; margin: 0 0 6px; font-weight: 600; }
+      .pill {
+        font-size: 12px; padding: 3px 10px; border-radius: 999px;
+        border: 1px solid var(--border); color: var(--muted); background: var(--card);
+      }
+      .pill.ok { color: var(--success); border-color: #2c5b40; }
+      .pill.bad { color: var(--alert); border-color: #5b2c2c; }
+      .pill.warn { color: var(--warning); border-color: #5b452c; }
+      a.nav { font-size: 12px; color: var(--info); text-decoration: none; }
+      a.nav:hover { text-decoration: underline; }
+      .spacer { flex: 1; }
+      main { max-width: 960px; margin: 0 auto; padding: 12px 16px 32px; }
+      #info, .note { color: var(--muted); font-size: 12px; }
+      .view { position: relative; margin-top: 4px; }
+      canvas {
+        width: 100%; display: block; image-rendering: pixelated; background: #000;
+        touch-action: none; cursor: crosshair; border-radius: 6px;
+      }
+      /* crosshair: four arms around a gap about the size of the 3x3 pixels it reads */
+      #cross {
+        position: absolute; left: 50%; top: 50%; width: 36px; height: 36px;
+        margin: -18px 0 0 -18px; pointer-events: none;
+        background: linear-gradient(#fff, #fff) left center / 13px 2px no-repeat,
+                    linear-gradient(#fff, #fff) right center / 13px 2px no-repeat,
+                    linear-gradient(#fff, #fff) center top / 2px 13px no-repeat,
+                    linear-gradient(#fff, #fff) center bottom / 2px 13px no-repeat;
+        filter: drop-shadow(0 0 1px #000) drop-shadow(0 0 1px #000);
+      }
+      #cross-label {
+        position: absolute; left: 50%; top: 50%; pointer-events: none; white-space: nowrap;
+        transform: translate(12px, calc(-100% - 12px)); background: #000000c0; color: #fff;
+        padding: 1px 7px; border-radius: 4px; font-weight: 600; font-variant-numeric: tabular-nums;
+      }
+      #cross-label:empty { display: none; }
+      #cross-label.flip-x { transform: translate(calc(-100% - 12px), calc(-100% - 12px)); }
+      #cross-label.flip-y { transform: translate(12px, 12px); }
+      #cross-label.flip-x.flip-y { transform: translate(calc(-100% - 12px), 12px); }
+      #legend { height: 10px; margin-top: 6px; border-radius: 2px; }
+      .scale { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; }
+      .stats {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        gap: 8px; margin-top: 10px;
+      }
+      .stats div {
+        background: var(--card); border: 1px solid var(--border); padding: 6px 10px;
+        border-radius: 8px; color: var(--muted); font-size: 12px;
+      }
+      .stats b {
+        display: block; font-size: 20px; color: var(--fg); font-variant-numeric: tabular-nums;
+      }
+      .stats small { font-variant-numeric: tabular-nums; }
+      .controls {
+        display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-top: 12px;
+      }
+      button {
+        font: inherit; font-size: 12px; padding: 5px 12px; border-radius: 8px;
+        background: var(--card); color: var(--fg); border: 1px solid var(--border);
+        cursor: pointer;
+      }
+      button:hover { border-color: var(--accent); }
+      button.on { border-color: var(--accent); background: #1f2647; }
+      input[type="range"] { vertical-align: middle; width: 160px; max-width: 40vw; }
+      section.card {
+        margin-top: 18px; background: var(--card); border: 1px solid var(--border);
+        border-radius: 10px; padding: 12px;
+      }
+      #overlay { width: 100%; display: block; border-radius: 6px; margin-top: 8px; }
+      #overlay[hidden] { display: none; }
+      #overlay-msg:empty { display: none; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>ToF depth camera</h1>
+      <span id="status" class="pill">connecting…</span>
+      <span id="calib" class="pill"></span>
+      <div class="spacer"></div>
+      <a class="nav" href="/tof/status">status JSON</a>
+      <a class="nav" href="/">dashboard</a>
+    </header>
+    <main>
+      <div id="info"></div>
+      <div class="view">
+        <canvas id="cv" width="240" height="180"></canvas>
+        <div id="cross"></div>
+        <div id="cross-label"></div>
+      </div>
+      <div id="legend"></div>
+      <div class="scale"><span>0 ft · near</span><span id="mid"></span><span id="max"></span></div>
+      <div class="stats">
+        <div>crosshair<b id="s-cross">–</b><small id="s-cross-sub">tap or drag on the picture to aim</small></div>
+        <div>nearest<b id="s-near">–</b><small>1st percentile of valid pixels</small></div>
+        <div>valid pixels<b id="s-valid">–</b></div>
+        <div>frames / s<b id="s-fps">–</b><small id="s-fps-sub"></small></div>
+      </div>
+      <div class="controls">
+        <span>view <button data-view="depth" class="on">depth</button> <button data-view="conf">confidence</button></span>
+        <button id="recentre">re-centre crosshair</button>
+        <label>min confidence <input id="thr" type="range" min="0" max="500" value="30" /> <span id="thr-v">30</span></label>
+      </div>
+      <p class="note">
+        The confidence slider changes this picture only; the guidance keeps
+        <code>TOF_MIN_CONFIDENCE</code> (<span id="cfg-thr">–</span>). The page shows at most
+        <code>TOF_LIVE_MAX_FPS</code> frames a second.
+      </p>
+
+      <section class="card">
+        <h2>On the front camera</h2>
+        <div class="note">
+          Each depth pixel drawn where its own distance places it, red near to blue far: with a
+          correct calibration a table's dots sit on the table and the floor's on the floor.
+          <button id="ov-toggle" class="on">on</button>
+        </div>
+        <div id="overlay-msg" class="note"></div>
+        <img id="overlay" alt="Front camera picture with the ToF depth dots drawn on it" hidden />
+      </section>
+    </main>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const cv = $("cv"), ctx = cv.getContext("2d");
+      const MM_PER_FT = 304.8;
+      // aim: the crosshair's pixel, null = centre. cut: what counts as a valid pixel.
+      let view = "depth", thr = 30, thrSet = false, frame = null, aim = null, img = null;
+      let cut = { minMm: 150, maxMm: 4000 }, status = null;
+
+      // near = red, far = blue: the same colours as /tof/depth.jpg and the overlay
+      const LUT = new Uint8Array(256 * 3);
+      for (let i = 0; i < 256; i++)
+        [1, 2, 3].forEach((k, c) => (LUT[i * 3 + c] = 255 * Math.min(1, Math.max(0, 1.5 - Math.abs((4 * i) / 255 - k)))));
+      const stops = [];
+      for (let i = 0; i <= 10; i++) {
+        const j = Math.round(i * 25.5) * 3;
+        stops.push(`rgb(${LUT[j]},${LUT[j + 1]},${LUT[j + 2]}) ${i * 10}%`);
+      }
+      $("legend").style.background = `linear-gradient(to right, ${stops.join(",")})`;
+
+      const ft = (mm) => (mm == null ? "–" : `${(mm / MM_PER_FT).toFixed(1)} ft`);
+      const isValid = (d, c, range) => c >= thr && d >= cut.minMm && d <= Math.min(range, cut.maxMm);
+
+      function connect() {
+        const sock = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/tof/ws`);
+        sock.binaryType = "arraybuffer";
+        sock.onmessage = (e) => (typeof e.data === "string" ? showStatus(JSON.parse(e.data)) : onFrame(e.data));
+        sock.onclose = () => {
+          setStatus("disconnected — retrying", "bad");
+          setTimeout(connect, 1000);
+        };
+      }
+
+      function setStatus(text, kind) {
+        $("status").textContent = text;
+        $("status").className = `pill ${kind || ""}`;
+      }
+
+      function showStatus(s) {
+        status = s;
+        if (s.enabled === false) {
+          setStatus("off — config TOF_ENABLED", "warn");
+          return;
+        }
+        const live = s.ok && s.age_s != null && s.age_s < 1.0;
+        setStatus(live ? "streaming" : s.error || (s.running ? "starting…" : "stopped"), live ? "ok" : "bad");
+        $("info").textContent = [s.sensor, s.device, s.sdk, s.restarts ? `${s.restarts} restarts` : ""]
+          .filter(Boolean).join(" · ");
+        const cal = s.calibration || {};
+        $("calib").textContent = `calibration: ${cal.source || "?"}`;
+        $("calib").className = `pill ${cal.source === "bench" ? "ok" : "warn"}`;
+        $("calib").title = cal.note || "";
+        cut = { minMm: s.min_mm ?? cut.minMm, maxMm: s.max_mm ?? cut.maxMm };
+        $("cfg-thr").textContent = s.min_confidence ?? "–";
+        if (!thrSet && s.min_confidence != null) {
+          thr = s.min_confidence;
+          $("thr").value = thr;
+          $("thr-v").textContent = thr;
+          thrSet = true;
+        }
+        const range = s.range_mm || 4000;
+        $("mid").textContent = ft(range / 2);
+        $("max").textContent = `${ft(range)} · far`;
+        $("s-fps-sub").textContent = s.fps != null ? `sensor ${s.fps.toFixed(1)}` : "";
+        if (!live) $("s-fps").textContent = "0";
+      }
+
+      // Layout from utils/tof_camera._HEADER: <dHHHH> capture time, width, height, range mm,
+      // has confidence; then depth uint16[w*h] (mm), then confidence uint16[w*h] if it has one.
+      let arrivals = [];
+      function onFrame(buf) {
+        const h = new DataView(buf);
+        const w = h.getUint16(8, true), ht = h.getUint16(10, true), n = w * ht;
+        frame = {
+          w, h: ht, range: h.getUint16(12, true),
+          depth: new Uint16Array(buf, 16, n),
+          conf: h.getUint16(14, true) ? new Uint16Array(buf, 16 + 2 * n, n) : null,
+        };
+        const now = performance.now();
+        arrivals.push(now);
+        arrivals = arrivals.filter((t) => now - t < 2000);
+        draw();
+      }
+
+      function draw() {
+        const { w, h, range, depth, conf } = frame, n = w * h;
+        if (!img || cv.width !== w || cv.height !== h) {
+          cv.width = w; cv.height = h; img = ctx.createImageData(w, h);
+        }
+        const px = img.data, hist = new Uint32Array(Math.ceil(range / 10) + 1);
+        let valid = 0;
+        for (let i = 0, o = 0; i < n; i++, o += 4) {
+          const d = depth[i], c = conf ? conf[i] : Infinity, ok = isValid(d, c, range);
+          if (ok) { valid++; hist[(d / 10) | 0]++; }
+          if (view === "conf") {
+            px[o] = px[o + 1] = px[o + 2] = conf ? Math.min(255, conf[i]) : 255;
+          } else if (ok) {
+            const j = Math.min(255, ((d * 255) / range) | 0) * 3;
+            px[o] = LUT[j]; px[o + 1] = LUT[j + 1]; px[o + 2] = LUT[j + 2];
+          } else {
+            px[o] = px[o + 1] = px[o + 2] = 0;
+          }
+          px[o + 3] = 255;
+        }
+        ctx.putImageData(img, 0, 0);
+
+        // nearest = 1st percentile of the valid depths, so a few noisy pixels don't count
+        let near = null;
+        if (valid >= 20) {
+          const need = Math.max(20, valid * 0.01);
+          for (let b = 0, acc = 0; b < hist.length; b++) if ((acc += hist[b]) >= need) { near = b * 10 + 5; break; }
+        }
+        $("s-near").textContent = ft(near);
+        $("s-valid").textContent = `${Math.round((100 * valid) / n)}%`;
+        const span = arrivals.length > 1 ? (arrivals[arrivals.length - 1] - arrivals[0]) / 1000 : 0;
+        $("s-fps").textContent = span > 0 ? ((arrivals.length - 1) / span).toFixed(1) : "–";
+        showCross();
+      }
+
+      // Distance at the crosshair: median of the valid pixels in the 3x3 around it, so one
+      // speckle doesn't decide it. The exact pixel's raw reading is shown underneath.
+      function showCross() {
+        const { w, h, range, depth, conf } = frame;
+        const x = Math.min(w - 1, aim ? aim[0] : w >> 1), y = Math.min(h - 1, aim ? aim[1] : h >> 1);
+        const vals = [];
+        for (let yy = Math.max(0, y - 1); yy <= Math.min(h - 1, y + 1); yy++)
+          for (let xx = Math.max(0, x - 1); xx <= Math.min(w - 1, x + 1); xx++) {
+            const i = yy * w + xx;
+            if (isValid(depth[i], conf ? conf[i] : Infinity, range)) vals.push(depth[i]);
+          }
+        vals.sort((a, b) => a - b);
+        const text = vals.length ? ft(vals[vals.length >> 1]) : "no reading", i = y * w + x;
+        $("s-cross").textContent = text;
+        $("s-cross-sub").textContent =
+          `pixel (${x}, ${y}): ${depth[i]} mm` + (conf ? `, confidence ${conf[i]}` : "");
+
+        const label = $("cross-label");
+        for (const el of [$("cross"), label]) {
+          el.style.left = `${((x + 0.5) / w) * 100}%`;
+          el.style.top = `${((y + 0.5) / h) * 100}%`;
+        }
+        label.textContent = text;
+        label.classList.toggle("flip-x", x > w * 0.75); // keep the label inside the picture
+        label.classList.toggle("flip-y", y < h * 0.15);
+      }
+
+      function aimAt(e) {
+        const r = cv.getBoundingClientRect();
+        aim = [
+          Math.min(cv.width - 1, Math.max(0, Math.floor(((e.clientX - r.left) / r.width) * cv.width))),
+          Math.min(cv.height - 1, Math.max(0, Math.floor(((e.clientY - r.top) / r.height) * cv.height))),
+        ];
+        if (frame) showCross();
+      }
+
+      cv.addEventListener("pointerdown", (e) => { cv.setPointerCapture(e.pointerId); aimAt(e); });
+      cv.addEventListener("pointermove", (e) => { if (cv.hasPointerCapture(e.pointerId)) aimAt(e); });
+      $("recentre").onclick = () => { aim = null; if (frame) showCross(); };
+      document.querySelectorAll("[data-view]").forEach((b) => (b.onclick = () => {
+        view = b.dataset.view;
+        document.querySelectorAll("[data-view]").forEach((x) => x.classList.toggle("on", x === b));
+        if (frame) draw();
+      }));
+      $("thr").oninput = (e) => {
+        thr = +e.target.value; thrSet = true;
+        $("thr-v").textContent = thr;
+        if (frame) draw();
+      };
+
+      // The overlay is drawn on the Pi (/tof/overlay.jpg), so it is fetched once a second,
+      // only while it is switched on and the page is in view.
+      let overlayOn = true;
+      $("ov-toggle").onclick = () => {
+        overlayOn = !overlayOn;
+        $("ov-toggle").textContent = overlayOn ? "on" : "off";
+        $("ov-toggle").classList.toggle("on", overlayOn);
+        if (!overlayOn) { $("overlay").hidden = true; $("overlay-msg").textContent = ""; }
+      };
+      async function refreshOverlay() {
+        if (overlayOn && !document.hidden && status && status.enabled !== false) {
+          try {
+            const r = await fetch(`/tof/overlay.jpg?t=${Date.now()}`, { cache: "no-store" });
+            if (r.ok) {
+              const url = URL.createObjectURL(await r.blob());
+              const im = $("overlay");
+              im.onload = () => URL.revokeObjectURL(url);
+              im.src = url;
+              im.hidden = false;
+              $("overlay-msg").textContent = "";
+            } else {
+              const j = await r.json().catch(() => ({}));
+              $("overlay").hidden = true;
+              $("overlay-msg").textContent = j.detail || `HTTP ${r.status}`;
+            }
+          } catch (e) {
+            $("overlay-msg").textContent = "no reply from the Pi";
+          }
+        }
+        setTimeout(refreshOverlay, 1000);
+      }
+
+      connect();
+      refreshOverlay();
+    </script>
+  </body>
+</html>

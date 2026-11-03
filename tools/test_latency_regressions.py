@@ -354,10 +354,12 @@ class GyroSampleTests(unittest.TestCase):
 
 
 class FrontFirstDetectionTests(unittest.TestCase):
-    """Cycling cameras: the front on every new picture; the sides capped, none starved."""
+    """All four cameras in every picture (the 2x2, ~16 a second): the front detected on most of
+    them, a side at most every DETECTION_SIDE_MIN_INTERVAL_S, each side again before its
+    labels expire (SIMPLE_CAMERA_FRESH_S)."""
 
     def test_schedule(self):
-        log, stored, cur = [], {}, {}
+        log, cur = [], {}
 
         class Engine:
             def infer_array(self, quad, bgr=False):
@@ -373,25 +375,20 @@ class FrontFirstDetectionTests(unittest.TestCase):
             return real_slice(m, s)
 
         real_slice = pc._sector_slice
-        quad = np.zeros((pc._QUAD[1], pc._QUAD[0], 3), np.uint8)
-        order = [(s, n) for side in ("right", "left", "back")
-                 for s, n in (("front", config.CAMERA_CYCLE_FRONT_FRAMES), (side, 1))]
-        stop = threading.Event()
+        mosaic = np.zeros((config.CAMERA_HEIGHT, config.CAMERA_WIDTH, 3), np.uint8)
+        stop, pictures = threading.Event(), [0]
 
-        def camera():
-            i = 0
+        def camera():  # the capture thread: a new 2x2 picture 15.7 times a second
             while not stop.is_set():
-                sector, n = order[i % len(order)]
-                i += 1
-                time.sleep(1 / 30)  # a frame lost to the switch
-                for _ in range(n):
-                    time.sleep(1 / 30)  # 30 fps: every front picture fits a 40 ms NPU
-                    stored.setdefault(sector, []).append(time.monotonic())
-                    pc._store_quad(sector, quad)
+                time.sleep(1 / 15.7)
+                with pc.frame_lock:
+                    pc.current_frame = mosaic
+                    pc.current_frame_id += 1
+                    pc.current_frame_t = time.time()
+                    pc.current_frame_simulated = False
+                pictures[0] += 1
 
-        with patch.object(pc, "_single", None), patch.object(
-            pc, "_sector_slice", slice_
-        ), patch.object(pc, "_view_check", lambda s, q: {
+        with patch.object(pc, "_sector_slice", slice_), patch.object(pc, "_view_check", lambda s, q: {
             "brightness": 100, "sharpness": 100, "dark": False, "blurred": False
         }), patch.object(pc, "update_camera_state", lambda d: None):
             cam = threading.Thread(target=camera, daemon=True)
@@ -404,10 +401,10 @@ class FrontFirstDetectionTests(unittest.TestCase):
             stop.set()
             det.join(2)
             cam.join(1)
-        pc.current_frame, pc.current_quad_meta = None, {}
+        pc.current_frame = None
 
         fronts = [t for s, t in log if s == "front"]
-        self.assertGreater(len(fronts), 0.8 * len(stored["front"]))  # ~every picture
+        self.assertGreater(len(fronts), 0.6 * pictures[0])  # most pictures, NPU-bound
         for side in ("right", "left", "back"):
             ts = [t for s, t in log if s == side]
             with self.subTest(side=side):
@@ -416,9 +413,155 @@ class FrontFirstDetectionTests(unittest.TestCase):
                 self.assertLess(max(gaps, default=0.0), config.SIMPLE_CAMERA_FRESH_S)
         sides = sorted(t for s, t in log if s != "front")
         gaps = [b - a for a, b in zip(sides, sides[1:])]
-        self.assertGreaterEqual(
-            min(gaps), config.DETECTION_SIDE_MIN_INTERVAL_S - 0.05
-        )
+        self.assertGreaterEqual(min(gaps), config.DETECTION_SIDE_MIN_INTERVAL_S - 0.05)
+
+
+class LivePictureTests(unittest.TestCase):
+    """/camera/live: the newest picture, never one the viewer already has, encoded once."""
+
+    def setUp(self):
+        self.mosaic = np.zeros((config.CAMERA_HEIGHT, config.CAMERA_WIDTH, 3), np.uint8)
+        pc._live_cache.clear()
+
+    def tearDown(self):
+        pc.current_frame = None
+        pc._live_cache.clear()
+
+    def store(self):
+        with pc.frame_lock:
+            pc.current_frame = self.mosaic
+            pc.current_frame_id += 1
+            pc.current_frame_t = time.time()
+            pc.current_frame_simulated = False
+        with pc._new_frame:
+            pc._new_frame.notify_all()
+        return pc.current_frame_id
+
+    def test_newest_then_waits_for_a_newer_one(self):
+        fid = self.store()
+        jpeg, got, _shot, _sim = pc.live_jpeg("front", after=-1, wait_s=0.0)
+        self.assertEqual(got, fid)
+        self.assertEqual(jpeg[:2], b"\xff\xd8")  # a JPEG
+        self.assertIsNone(pc.live_jpeg("front", after=fid, wait_s=0.1))  # nothing newer
+        later = threading.Timer(0.1, self.store)
+        later.start()
+        t0 = time.monotonic()
+        _jpeg, got2, _shot, _sim = pc.live_jpeg("front", after=fid, wait_s=2.0)
+        self.assertEqual(got2, fid + 1)
+        self.assertLess(time.monotonic() - t0, 0.5)  # answered as the picture came, not at 2 s
+        later.join()
+
+    def test_encoded_once_and_grid_is_all_four(self):
+        self.store()
+        with patch.object(pc, "_encode_jpeg_stream", wraps=pc._encode_jpeg_stream) as enc:
+            a = pc.live_jpeg("grid", width=720)
+            b = pc.live_jpeg("grid", width=720)
+        self.assertEqual(enc.call_count, 1)
+        self.assertEqual(a[0], b[0])
+        from PIL import Image
+        import io
+
+        w, h = Image.open(io.BytesIO(a[0])).size
+        self.assertEqual(w, 720)
+        self.assertAlmostEqual(w / h, config.CAMERA_WIDTH / config.CAMERA_HEIGHT, places=2)
+
+
+class LiveBoxesTests(unittest.TestCase):
+    """/camera/live?boxes=1: the boxes drawn on a picture are the ones found in it — the
+    front's waited for, a side camera's aged, and old ones dropped."""
+
+    def setUp(self):
+        self.saved = {c: dict(pc.detection_stats[c]) for c in pc._VALID}
+        self.patches = [patch.object(pc, "running", True), patch.object(pc, "hailo_ready", True)]
+        for p in self.patches:
+            p.start()
+
+    def tearDown(self):
+        for p in self.patches:
+            p.stop()
+        for c, entry in self.saved.items():
+            pc.detection_stats[c] = entry
+
+    @staticmethod
+    def publish(cam, fid, t, dets=None):
+        pc.detection_stats[cam] = {
+            "detections": dets or [{"class_name": "person", "confidence": 0.9, "bbox": [1, 2, 3, 4]}],
+            "num_objects": 1,
+            "frame_time": t,
+            "frame_id": fid,
+        }
+        with pc._new_detection:
+            pc._new_detection.notify_all()
+
+    def test_front_waits_for_its_own_picture(self):
+        self.publish("front", 9, time.time())
+        later = threading.Timer(0.05, self.publish, ("front", 10, time.time()))
+        later.start()
+        t0 = time.monotonic()
+        got = pc.live_detections("front", 10, wait_s=1.0)
+        self.assertEqual(got["front"]["frame_id"], 10)
+        self.assertLess(time.monotonic() - t0, 0.4)  # as soon as they came, not at 1 s
+        later.join()
+
+    def test_front_gives_up_and_no_detector_no_wait(self):
+        self.publish("front", 9, time.time())
+        t0 = time.monotonic()
+        self.assertEqual(pc.live_detections("front", 10, wait_s=0.1)["front"]["frame_id"], 9)
+        self.assertLess(time.monotonic() - t0, 0.3)
+        with patch.object(pc, "hailo_ready", False):
+            t0 = time.monotonic()
+            pc.live_detections("front", 10, wait_s=1.0)
+            self.assertLess(time.monotonic() - t0, 0.05)  # nothing would come
+
+    def test_side_boxes_aged_old_ones_dropped_header_small(self):
+        from routers import pi_camera_router as r
+
+        now = time.time()
+        many = [
+            {"class_name": "chair", "confidence": 0.5 + i / 100, "bbox": [i, i, i + 9.6, i + 9.4]}
+            for i in range(40)
+        ]
+        self.publish("front", 10, now, many)
+        self.publish("left", 7, now - 1.0)
+        self.publish("right", 5, now - (r.LIVE_BOXES_MAX_AGE_S + 1))
+        self.publish("back", 8, now - 0.5)
+        with patch("utils.sensor_fusion.get_lidar_state", lambda: {}):
+            got = r._live_boxes("grid", 10, now)
+        self.assertEqual(got["front"]["age_ms"], 0)
+        self.assertEqual(len(got["front"]["detections"]), r.LIVE_BOXES_PER_CAMERA)
+        self.assertTrue(all(isinstance(v, int) for v in got["front"]["detections"][0]["bbox"]))
+        self.assertEqual(got["left"]["age_ms"], 1000)
+        self.assertNotIn("right", got)  # too old to draw
+        header = __import__("json").dumps(got, separators=(",", ":"))
+        self.assertTrue(header.isascii())
+        self.assertLess(len(header), 8000)
+
+
+class LensFocusTests(unittest.TestCase):
+    """The lens is set on its driver at camera start (libcamera's LensPosition never reached
+    it: every camera blurred, 2026-11-02)."""
+
+    def test_ioctl_number_is_vidioc_s_ctrl(self):
+        # _IOWR('V', 28, 8 bytes): read|write << 30, size << 16, type << 8, number.
+        self.assertEqual(pc._VIDIOC_S_CTRL, (3 << 30) | (8 << 16) | (ord("V") << 8) | 28)
+
+    def test_lens_found_by_name_and_failure_reported(self):
+        import tempfile, os
+
+        with tempfile.TemporaryDirectory() as sysfs:
+            for n, name in enumerate(("csi2", "imx519 11-001a", "ak7375 11-000c")):
+                os.mkdir(os.path.join(sysfs, f"v4l-subdev{n}"))
+                with open(os.path.join(sysfs, f"v4l-subdev{n}", "name"), "w") as f:
+                    f.write(name + "\n")
+            self.assertEqual(pc._lens_device(sysfs), "/dev/v4l-subdev2")
+            with patch.object(pc, "CAMERA_LENS_DRIVER", "dw9807"):
+                self.assertIsNone(pc._lens_device(sysfs))
+        with tempfile.NamedTemporaryFile() as not_a_lens:  # the ioctl fails on a file
+            with patch.object(pc, "_lens_device", lambda: not_a_lens.name):
+                self.assertFalse(pc._set_focus())
+        self.assertIsNone(pc._focus_code)  # never claimed as set
+        with patch.object(pc, "CAMERA_FOCUS_CODE", None):
+            self.assertFalse(pc._set_focus())
 
 
 class VoiceHangTimeoutTests(unittest.TestCase):

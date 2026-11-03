@@ -425,8 +425,8 @@ def front_camera_coverage(
 ) -> Dict[str, Any]:
     """Can the front camera name what is ahead right now? {"ok", "reason", "settling"} —
     the definition the voice's "Camera off" notice uses. Judged from the camera state
-    alone: fresh front detections (so a lost feed, a stopped detector or pictures all
-    skipped as corrupted all count), from a real picture that is not black."""
+    alone: fresh front detections (so a lost feed or a stopped detector counts), from a
+    real picture that is not black."""
     from utils.freshness import is_fresh
 
     now = time.time() if now is None else now
@@ -444,7 +444,7 @@ def front_camera_coverage(
             "ok": False,
             "settling": False,
             "reason": "no new front camera pictures (feed lost, detector stopped or "
-            "every picture corrupted)",
+            "the camera stream stalled)",
         }
     if (front.get("view") or {}).get("dark"):
         return {
@@ -1019,16 +1019,6 @@ def get_system_health() -> Dict[str, Any]:
                 "Side and back object detection paused — a "
                 "segmentation debug view is open"
             )
-        bad = sorted(
-            s
-            for s, c in (_pc.corruption() or {}).items()
-            if c.get("pictures", 0) >= 5 and c.get("share", 0.0) >= 0.2
-        )
-        if bad:
-            warnings.append(
-                f"Camera picture corrupted ({', '.join(bad)}) — those frames "
-                f"are skipped; the camera board's 4-in-1 merge is faulty"
-            )
         views = _pc.camera_views() or {}
         now = time.time()
         looked = {
@@ -1054,30 +1044,6 @@ def get_system_health() -> Dict[str, Any]:
             warnings.append(
                 f"Camera picture blurred ({', '.join(blurred)}) — lens dirty, "
                 f"covered or out of focus; objects may not be named"
-            )
-        if cover.get("reason") == "cameras_missing":
-            detection_reduced = cover["reason"]
-            missing = [
-                c
-                for c in ("front", "right", "left", "back")
-                if c not in (cover.get("sectors_detected") or [])
-            ]
-            warnings.append(
-                f"No camera connected: {', '.join(missing)} — no object "
-                f"detection {'there' if len(missing) == 1 else 'in those directions'}"
-            )
-        elif cover.get("reason") == "camera_fallback":
-            detection_reduced = cover["reason"]
-            warnings.append(
-                "The 4-camera picture stayed corrupted — only the front camera "
-                "is in use (automatic fallback until the app restarts)"
-            )
-        elif cover.get("reason") == "single_camera":
-            detection_reduced = cover["reason"]
-            only = ", ".join(cover.get("sectors_detected") or []) or "one"
-            warnings.append(
-                f"Only the {only} camera is in use (CAMERA_SINGLE_CHANNEL) — "
-                f"no object detection anywhere else"
             )
     except Exception:
         pass

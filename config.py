@@ -8,20 +8,27 @@ _APP_DIR = os.path.dirname(os.path.abspath(__file__))
 HEF_PATH = os.path.join(_APP_DIR, "model", "yolo26m.hef")  # compiled YOLO detector
 
 # ============== CAMERA CONFIGURATION ==============
-CAMERA_WIDTH = 1920
-CAMERA_HEIGHT = 1080
+# The 2x2 picture of all four cameras (the CamArray board's 4-in-1 mode), in the IMX519's
+# full-view mode: 2328 x 1748 is the whole 4656 x 3496 sensor binned 2x2, so each camera
+# gives its full 66 deg view at 1164 x 874 (2026-11-02, new cameras). The sensor runs at
+# 30 fps; the board's 4-in-1 picture comes at half that: 15.7 a second, measured (the
+# cropped 1920 x 1080 mode gave 30.7, at 56 deg and 960 x 540 — full view was chosen).
+# Until then 1920 x 1080, cycled one camera at a time.
+CAMERA_WIDTH = 2328
+CAMERA_HEIGHT = 1748
 JPEG_QUALITY = 80
 TARGET_FPS = 30  # desired pipeline / display FPS
 FRAME_INTERVAL = 1.0 / TARGET_FPS
 
-CAMERA_CAPTURE_FPS = 2 * TARGET_FPS
+CAMERA_CAPTURE_FPS = (
+    TARGET_FPS  # the sensor's, the 2328 x 1748 mode's most (60 was for cycling)
+)
 
 STREAM_MAX_WIDTH = 480  # px per sector feed
 STREAM_QUALITY = 50  # JPEG quality for the display stream
-STREAM_FPS = 30  # the display stream's ceiling, not a camera's rate: cycling, the front
-# camera gave ~23 fps and each side ~4 with 2 front frames a cycle (measured; 4 since
-# 2026-10-30: more front, each side ~3, not yet measured); a feed is sent whenever any camera's picture
-# changes, so a side's is resent unchanged in between
+STREAM_FPS = (
+    30  # the display stream's ceiling: every camera's picture is new each frame
+)
 
 STREAM_STALL_TIMEOUT_S = 5.0
 
@@ -31,52 +38,21 @@ CAMERA_STOP_TIMEOUT_S = 5.0
 
 CAMERA_RETRY_BACKOFF_S = (2.0, 5.0, 10.0)
 
-# The camera board (CamArray HAT): register 0x24 of controller 0x24 on I2C bus 11, set
-# at every camera start (it forgets it on a power cycle). None: all four cameras merged
-# into the 2x2 mosaic (0x00). A sector name: only that camera (0x02 + 0x10 x channel),
-# put in its own quadrant with the other three black — same field of view as in the
-# mosaic (both crop 3840 of the sensor's 4656 px), halved to the quadrant's size.
-# "front" is the fallback if the board's 4-in-1 merge stays corrupted (2026-10-08: it
-# comes and goes; every camera alone is clean). In 4-in-1, pictures are checked instead.
-CAMERA_SINGLE_CHANNEL = None
+# The camera board (CamArray HAT): register 0x24 of controller 0x24 on I2C bus 11, set to
+# 0x00 (all four cameras in the 2x2 picture) at every camera start — it forgets it on a
+# power cycle. The old board's 4-in-1 picture came scrambled, and was worked round by
+# cycling one camera at a time, checking every picture and falling back to the front
+# camera alone; all removed with the new cameras (2026-11-02).
 CAMERA_HAT_I2C_BUS = 11
 CAMERA_HAT_ADDRESS = 0x24
-CAMERA_HAT_CHANNEL = {
-    "right": 0,
-    "front": 1,
-    "left": 2,
-    "back": 3,
-}  # measured 2026-10-08
-
-# Cycle through the cameras one at a time (when CAMERA_SINGLE_CHANNEL is None): the
-# board's one-camera path is clean even while its 4-in-1 merge is not. It switches camera
-# between frames, and a frame is the new camera's when its sensor timestamp is after the
-# switch (72/72 frames at 60 fps, 2026-10-09). The front gets CAMERA_CYCLE_FRONT_FRAMES
-# frames before each other camera's one. Only cameras seen at start (in the 2x2 picture)
-# are visited: switching to an empty channel stops the camera stream for good.
-# False: the 2x2 picture, with scrambled tiles skipped (CAMERA_CORRUPT_*).
-CAMERA_CYCLE = True
-# 4 (was 2, 2026-10-30): only the front's detections reach the voice, and the sides' are
-# capped (DETECTION_SIDE_MIN_INTERVAL_S). Simulated at the rig's rates: front detections
-# 15 -> 20 a second, each side still re-detected within ~1.3 s (labels expire at 2 s).
-CAMERA_CYCLE_FRONT_FRAMES = 4
-
-# A camera picture whose speckle (pixels, sampled every 2nd, differing by more than 70
-# from both neighbours) exceeds this % is scrambled board data and never reaches the
-# detector. Measured 2026-10-08: corrupted >= 0.51%, clean mostly < 0.25%; a clean one
-# skipped costs one pass, a corrupted one let through costs phantom objects.
-CAMERA_CORRUPT_PCT = 0.25
-# A camera corrupted in at least this share of its pictures over the window restarts the
-# camera stream (which often clears it), no more than once per CAMERA_CORRUPT_RESTART_S.
-CAMERA_CORRUPT_WINDOW_S = 5.0
-CAMERA_CORRUPT_RESTART_SHARE = 0.5
-CAMERA_CORRUPT_RESTART_S = 60.0
-CAMERA_FRONT_RESTART_S = 10.0  # the front camera: its pictures are lost anyway
-# The front camera needing this many restarts inside the window (the first pictures
-# after a restart are often clean, then it scrambles again): fall back to it alone
-# (CAMERA_SINGLE_CHANNEL "front") until the app restarts, which tries 4-in-1 again.
-CAMERA_FALLBACK_RESTARTS = 3
-CAMERA_FALLBACK_WINDOW_S = 60.0
+# Lens focus of all four cameras, set straight on their lens driver (focus_absolute,
+# 0..4095; higher is nearer) at every camera start: libcamera's LensPosition never reaches
+# it on this board, so the lens sat at 0 — past infinity — and every camera blurred
+# (2026-11-02: sharpness 2-3x up on the side cameras at 1000). 1000 was the sharpest on a
+# ceiling ~2 m away, so ~1 m to far is sharp enough to detect. NEEDS VALIDATION outdoors.
+# None leaves the lens alone.
+CAMERA_FOCUS_CODE = 1000
+CAMERA_LENS_DRIVER = "ak7375"  # its name in /sys/class/video4linux/v4l-subdev*/name
 
 # Can each camera actually see? Checked on the detector's pictures, at most once per
 # CAMERA_VIEW_CHECK_S per camera (2026-10-07: the right and back cameras gave black
@@ -797,13 +773,21 @@ LIDAR_BLIND_ARCS_DEG = ((170.0, 290.0),)
 # Then every front detection takes the distance of the nearest surface inside its box.
 # Off: nothing starts and nothing changes. The ToF goes on the Pi 5's CAM0 port (the
 # CamArray is on CAM1): /boot/firmware/config.txt needs dtoverlay=arducam-pivariety,cam0
-# there instead of dtoverlay=imx519,cam0, and the SDK: pip install ArducamDepthCamera.
-TOF_ENABLED = False
+# there instead of dtoverlay=imx519,cam0, and the SDK: pip install --no-deps
+# ArducamDepthCamera==0.1.24 (its metadata asks for numpy<2; it runs on 2.2.4, 2026-11-03).
+# On since 2026-11-03 (the sensor in CAM0 streams 31 fps: tools/tof_check.py). It runs in
+# its own process; live view at /tof/live. Nothing the user hears changes until
+# TOF_USE_DISTANCE, which waits for the bench calibration (tools/tof_calibrate.py).
+TOF_ENABLED = True
 TOF_USE_DISTANCE = (
     False  # False: the ToF's distance is only shown beside the box-size one
 )
-TOF_CSI_PORT = 0
-TOF_RANGE_MM = 4000  # the SDK's range setting (2000 or 4000)
+# The /dev/videoN the SDK opens (not the CSI port number). None: the node media-ctl links
+# to the arducam-pivariety sensor, which moves with probe order once both ports are in use.
+TOF_VIDEO_INDEX = None
+TOF_RANGE_MM = (
+    4000  # the SDK's range setting (2000 or 4000: beyond 2 m that one wraps to near)
+)
 TOF_FRAME_TIMEOUT_MS = 500
 TOF_RETRY_BACKOFF_S = (2.0, 5.0, 10.0)
 TOF_MIN_CONFIDENCE = (
@@ -818,18 +802,20 @@ TOF_PAIR_MAX_S = (
     0.06  # a camera picture uses the ToF frame captured nearest it, within this
 )
 TOF_BUFFER_FRAMES = 8
+TOF_LIVE_MAX_FPS = 15  # /tof/live: at most this many frames a second (~170 KB each)
 # Until tools/tof_calibrate.py writes TOF_CALIBRATION_FILE (checkerboard on the bench),
 # both lenses are taken as ideal and placed as in the 3D design ("aimed apart").
 TOF_CALIBRATION_FILE = os.path.join(_APP_DIR, "calibration", "tof_calibration.json")
 TOF_CALIBRATION_PAIRS_DIR = os.path.join(_APP_DIR, "calibration", "tof_pairs")
 TOF_SIZE_PX = (240, 180)
 TOF_DIAGONAL_FOV_DEG = 70.0  # Arducam's figure; on the 4:3 sensor about 58.5 x 45.6 deg
-# The detector's front picture: the IMX519's 66 deg across all 4656 px, centre-cropped to
-# 3840 x 2160 (ScalerCrop, measured 2026-10-08) and halved twice to the 960 x 540 quadrant:
-# about 56.4 x 33.5 deg. (SIMPLE_CAMERA_HFOV_DEG, below, is derived from these.)
+# The detector's front picture: the IMX519's 66 deg across all 4656 px, the whole sensor
+# (the 2328 x 1748 mode: no crop) halved twice to the 1164 x 874 quadrant: about 66 x 51 deg.
+# Until 2026-11-02 a 3840 x 2160 centre crop (ScalerCrop, measured 2026-10-08): 56.3 x 33.5
+# deg on a 960 x 540 quadrant. (SIMPLE_CAMERA_HFOV_DEG, below, is derived from these.)
 FUSION_CAMERA_LENS_HFOV_DEG = 66.0
 FUSION_CAMERA_SENSOR_PX = (4656, 3496)
-FUSION_CAMERA_CROP_PX = (3840, 2160)
+FUSION_CAMERA_CROP_PX = (4656, 3496)
 # Where the ToF sits against the camera, in the camera's frame (x right, y down, z ahead):
 FUSION_TOF_OFFSET_M = (0.0, 0.038, 0.006)  # 3.8 cm below, 6 mm ahead
 FUSION_TOF_DOWN_DEG = 20.0  # aimed this much further down (camera 10, ToF 30)
@@ -908,6 +894,20 @@ SERVER_MAX_BODY_BYTES = 1_048_576
 
 FRAME_GRID_ROWS = 2
 FRAME_GRID_COLS = 2
+
+# The picture fractions below (SIMPLE_OBJECT_CENTRE_BAND, the *_HEIGHT_FRAC sizes, the steering
+# and vehicle margins) were set on the old 960 x 540 picture of a 3840 px crop. Scaled by these
+# they keep the same size in pixels at the same focal length — the same angle and distance —
+# on whatever picture the camera gives (2026-11-02: 1164 x 874 of the whole sensor; the focal
+# length, ~896 px, is the same, so a threshold is just a smaller share of a bigger picture).
+_CAMERA_QUAD_PX = (CAMERA_WIDTH / FRAME_GRID_COLS, CAMERA_HEIGHT / FRAME_GRID_ROWS)
+_LENS_TAN = math.tan(math.radians(FUSION_CAMERA_LENS_HFOV_DEG) / 2.0)
+_CAMERA_FOCAL_PX = (_CAMERA_QUAD_PX[0] / 2.0) / (
+    _LENS_TAN * FUSION_CAMERA_CROP_PX[0] / FUSION_CAMERA_SENSOR_PX[0]
+)
+_WAS_FOCAL_PX = 480.0 / (_LENS_TAN * 3840.0 / 4656.0)
+_PER_W = 960.0 / _CAMERA_QUAD_PX[0] * _CAMERA_FOCAL_PX / _WAS_FOCAL_PX
+_PER_H = 540.0 / _CAMERA_QUAD_PX[1] * _CAMERA_FOCAL_PX / _WAS_FOCAL_PX
 FRAME_SECTOR_LAYOUT = {  # camera quadrant mapping; do not change without a physical check
     "front": (0, 1),  # top-right quadrant     (was bottom-right until 2026-09-22)
     "right": (0, 0),  # top-left quadrant      (unchanged)
@@ -923,8 +923,8 @@ SIMPLE_ALERT_CONFIRM_S = 0.2
 # their frames come slower and can repeat between ticks. 0: off. VALIDATE on a walk.
 SIMPLE_LIDAR_CONFIRM_SCANS = 2
 # The same for what the FRONT CAMERA names (a person, a vehicle in front) and a vehicle its
-# tracker judges approaching: this many DIFFERENT detected frames in a row (~50-100 ms at
-# ~20 a second), not SIMPLE_ALERT_CONFIRM_S — "Person in front" waited ~0.25 s, and held a
+# tracker judges approaching: this many DIFFERENT detected frames in a row (~65-130 ms at
+# the full-view camera's ~16 a second), not SIMPLE_ALERT_CONFIRM_S — "Person in front" waited ~0.25 s, and held a
 # LiDAR-confirmed block back while it did (2026-10-30). 0: off. VALIDATE on a walk.
 SIMPLE_CAMERA_CONFIRM_FRAMES = 2
 SIMPLE_ALERT_GAP_S = 0.5
@@ -1050,8 +1050,8 @@ DETECTION_CLASSES = frozenset(SIMPLE_NAMED_OBJECTS)
 
 SIMPLE_STEER_RANGE_M = 5.0
 SIMPLE_STEER_GAP_M = 0.8
-SIMPLE_STEER_STICKY = 0.10  # 0.05 flipped sides on 1% box jitter, dead ahead
-SIMPLE_STEER_DEAD_BAND = 0.03
+SIMPLE_STEER_STICKY = 0.10 * _PER_W  # 0.05 flipped sides on 1% box jitter, dead ahead
+SIMPLE_STEER_DEAD_BAND = 0.03 * _PER_W
 SIMPLE_STEER_SIDE_MIN_FT = 2.0
 SIMPLE_OBJECT_HEIGHT_M = {
     "person": 1.7,
@@ -1093,12 +1093,10 @@ SIMPLE_OBJECT_HEIGHT_M = {
 }
 
 # ---- How far away a detection is (sensor_fusion.detection_distance, the dashboard).
-# Each camera's 960 px quadrant is a centre crop of its 1164 px view (sensor mode
-# 1920x1080, ScalerCrop 3840x2160 of 4656x3496; measured 2026-10-08): the laser is searched
-# across the bearings the box would cover for any field of view in this range. The view is
-# derived from that geometry (FUSION_CAMERA_*, 56.3 deg, as SIMPLE_CAMERA_HFOV_DEG — the voice's
-# figure), +-3 deg for the lens; until 2026-10-30 it was an unmeasured 55-75, which put the
-# dashboard's camera bearings ~4 deg further out than the voice's and searched a wider arc.
+# The laser is searched across the bearings a box would cover for any field of view in this
+# range: the camera's (FUSION_CAMERA_*, 66 deg since 2026-11-02, as SIMPLE_CAMERA_HFOV_DEG —
+# the voice's figure), +-3 deg for the lens. Until 2026-10-30 an unmeasured 55-75, which put
+# the dashboard's camera bearings ~4 deg further out than the voice's.
 _CAMERA_HFOV_DEG = 2.0 * math.degrees(
     math.atan(
         math.tan(math.radians(FUSION_CAMERA_LENS_HFOV_DEG) / 2.0)
@@ -1118,8 +1116,8 @@ DETECTION_SEATED_HEIGHT_M = 1.3
 
 SIMPLE_CAMERA_FRESH_S = 2.0
 SIMPLE_OBJECT_MIN_CONF = 0.5
-SIMPLE_OBJECT_CENTRE_BAND = 0.5
-SIMPLE_OBJECT_MIN_HEIGHT_FRAC = 0.25
+SIMPLE_OBJECT_CENTRE_BAND = 0.5 * _PER_W  # the middle ~30 deg
+SIMPLE_OBJECT_MIN_HEIGHT_FRAC = 0.25 * _PER_H
 
 SIMPLE_VEHICLE_HEIGHT_M = {
     "car": 1.5,
@@ -1148,10 +1146,10 @@ SIMPLE_VEHICLE_HEIGHT_M = {
 }
 SIMPLE_VEHICLE_CLASSES = tuple(SIMPLE_VEHICLE_HEIGHT_M)
 SIMPLE_VEHICLE_MIN_CONF = 0.45
-SIMPLE_VEHICLE_MIN_HEIGHT_FRAC = 0.06  # ~32 px: a car ~30 m out
+SIMPLE_VEHICLE_MIN_HEIGHT_FRAC = 0.06 * _PER_H  # ~32 px: a car ~30 m out
 SIMPLE_VEHICLE_WINDOW_S = 1.0
-# 0.4 s (was 0.6, 2026-10-30): the front camera is detected ~20 times a second now (was ~9),
-# so 0.4 s holds more frames than 0.6 s did. VALIDATE on a walk: a parked car walked toward.
+# 0.4 s (was 0.6, 2026-10-30): the front camera is detected ~16 times a second (full view,
+# 2026-11-02; ~9 when cycled), so 0.4 s holds ~6 frames, more than 0.6 s did. VALIDATE on a walk: a parked car walked toward.
 SIMPLE_VEHICLE_MIN_SPAN_S = 0.4
 SIMPLE_VEHICLE_LOST_S = 1.0  # a track unseen this long is dropped
 SIMPLE_VEHICLE_APPROACH_RATE = 0.12
@@ -1162,10 +1160,9 @@ SIMPLE_VEHICLE_EGO_MARGIN = 1.5
 # the car approaching. The cost: a user who IS standing still there is warned of a slowly
 # creeping vehicle later (it must close ~1.8 m/s faster). 0.0 restores the old behaviour.
 SIMPLE_VEHICLE_PACE_UNKNOWN_MPS = HEADING_NOMINAL_SPEED_MPS
-# Drives every camera range and bearing estimate. From the measured geometry above
-# (FUSION_CAMERA_*: the IMX519's 66 deg across 4656 px, centre-cropped to 3840 px) = 56.3 deg,
-# not the 70 assumed until 2026-10-23, which put every box-size range ~23% too near and
-# side bearings up to ~7 deg too far out.
+# Drives every camera range and bearing estimate. From the geometry above (FUSION_CAMERA_*:
+# the IMX519's 66 deg across all 4656 px, uncropped since 2026-11-02; 56.3 deg on the old
+# 3840 px crop, and 70 assumed until 2026-10-23, which put box-size ranges ~23% too near).
 SIMPLE_CAMERA_HFOV_DEG = 2.0 * math.degrees(
     math.atan(
         math.tan(math.radians(FUSION_CAMERA_LENS_HFOV_DEG) / 2.0)
@@ -1175,12 +1172,12 @@ SIMPLE_CAMERA_HFOV_DEG = 2.0 * math.degrees(
 )
 SIMPLE_VEHICLE_MISS_M = 2.0
 SIMPLE_VEHICLE_IDLE_RATE = 0.05
-SIMPLE_VEHICLE_IDLE_SLIDE = 0.05
+SIMPLE_VEHICLE_IDLE_SLIDE = 0.05 * _PER_W
 
-SIMPLE_VEHICLE_CAREFUL_HEIGHT_FRAC = 0.12
+SIMPLE_VEHICLE_CAREFUL_HEIGHT_FRAC = 0.12 * _PER_H
 SIMPLE_VEHICLE_CAREFUL_MISS_M = 3.0
 SIMPLE_VEHICLE_RANGE_MATCH = 2.0
-SIMPLE_VEHICLE_SIDE_MARGIN = 0.05
+SIMPLE_VEHICLE_SIDE_MARGIN = 0.05 * _PER_W
 
 SIMPLE_SETTLE_S = 6.0
 SIMPLE_OBJECT_RELEASE_S = 3.0

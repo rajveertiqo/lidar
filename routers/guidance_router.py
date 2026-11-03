@@ -371,6 +371,10 @@ def _geometry():
         "cone_deg": c.GUIDANCE_CONE_DEG,
         # The front camera's box: objects and vehicles only count inside it.
         "camera_band": c.SIMPLE_OBJECT_CENTRE_BAND,
+        # One camera's picture, width x height px: what the detection boxes are drawn on.
+        "camera_px": [c.CAMERA_WIDTH // c.FRAME_GRID_COLS, c.CAMERA_HEIGHT // c.FRAME_GRID_ROWS],
+        # Where each camera sits in the 2x2 picture (/camera/live/grid): [row, column].
+        "camera_layout": {s: list(rc) for s, rc in c.FRAME_SECTOR_LAYOUT.items()},
         "named_objects": c.SIMPLE_NAMED_OBJECTS,
         "vehicle_classes": list(c.SIMPLE_VEHICLE_CLASSES),
     }

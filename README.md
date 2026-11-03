@@ -101,7 +101,8 @@ How it decides, in one paragraph each:
   scans is warned of at once (`SIMPLE_LIDAR_CONFIRM_SCANS`): an obstacle appearing 3 ft ahead
   is warned of in ~90 ms, not ~320 (simulated). What the front camera names, and its way past,
   on two different frames (`SIMPLE_CAMERA_CONFIRM_FRAMES`): "Person in front, turn left" in
-  ~120 ms, not ~235; "Vehicle approaching" ~0.65 s, not ~1.0. Every sentence is spoken with `espeak-ng` through the
+  ~120 ms, not ~235; "Vehicle approaching" ~0.65 s, not ~1.0 (simulated at ~20 camera
+  pictures a second; the full-view camera gives ~16, so ~30 ms more). Every sentence is spoken with `espeak-ng` through the
   default audio output — plug in or pair an earpiece and it follows. While no
   earpiece is connected (HDMI does not count), the dashboard's screen-reader
   banner is the voice instead; never both.
@@ -119,9 +120,10 @@ Every threshold is a `SIMPLE_*` / `PI_VOICE_*` constant in `config.py`.
 | Raspberry Pi 5            | Host                                                      |
 | Hailo-10H NPU             | Runs both neural models (object detection + segmentation) |
 | RPLIDAR A2M12             | 360° distance and direction, ~15 Hz at 900 RPM            |
-| UC-512 kit (4× IMX519)    | Four camera directions, delivered as one 2×2 mosaic frame |
+| UC-512 kit (4× IMX519)    | Four camera directions in one 2×2 frame: each its full 66° view, 1164×874, ~16 pictures/s (new cameras, 2026-11-02) |
 | 6× Acconeer A121 (60 GHz) | Radar, every 60° straddling the cardinals, on a USB hub  |
 | MPU-6500 IMU (SPI0 CE0)   | Yaw rate, gait and tilt — heading, not position            |
+| Arducam ToF (CAM/DISP 0)  | 240×180 distances to 4 m, ~30 frames/s: measures what the front camera names (since 2026-11-03; [below](#tof-depth-camera--toflive-added-2026-11-03)) |
 
 ---
 
@@ -636,12 +638,11 @@ model/                  yolo26m.hef (detection), best.hef (segmentation), metada
 Four independent loops, so a slow one cannot stall the others:
 
 1. **Capture** — pulls raw mosaic frames from Picamera2 (~30 FPS).
-2. **Detection** — the FRONT camera on every new picture, published at once; a
-   side camera at most every `DETECTION_SIDE_MIN_INTERVAL_S` (0.4 s, the one
-   longest undetected first, preferably while the board shows a side), so each
-   side is re-detected within ~1.3 s. Guidance only reads the front: a side's
-   ~40 ms ahead of it cost the front pictures (2026-10-30; it was one side every
-   pass). Letterboxed straight from the camera's array with OpenCV, not via PIL.
+2. **Detection** — every picture holds all four cameras: the FRONT on each, published
+   at once, and a side camera at most every `DETECTION_SIDE_MIN_INTERVAL_S` (0.4 s, the
+   one longest undetected first), so each side is re-detected within ~1.2 s. Guidance
+   only reads the front: a side's ~40 ms ahead of it costs the front pictures.
+   Letterboxed straight from the camera's array with OpenCV, not via PIL.
 3. **Segmentation** — its own thread, and only while its front view is open
    (`SEG_ALWAYS`): its cue no longer reaches the voice, and the NPU time it
    took came out of detection.
@@ -852,6 +853,43 @@ A board reports in one of three conditions, because they need different repairs:
 The header's last pill is the one that matters: **blind cardinals**. Six
 streaming boards with no bearings leave every direction without radar, and that
 reads as a perfectly healthy array everywhere else on the page.
+
+### ToF depth camera — `/tof/live` (added 2026-11-03)
+
+The Arducam ToF (240 × 180 distances, to 4 m, ~30 frames/s) sits in **CAM/DISP 0**;
+the CamArray is in CAM/DISP 1. The ToF code written on 2026-10-13, before the sensor
+was here, now runs it, with what `~/tof` (`test_tof.py`, `tof_live.py`) learned on the
+real sensor:
+
+- **Its own process.** The SDK holds Python's GIL while it waits for a frame: beside it
+  a 1 ms timer thread ran once every 32 ms. In the app that would stall the LiDAR
+  reader and the guidance loop, so `utils/tof_camera.py` runs the SDK in a spawned
+  child, as `tof_live.py` does, and frames come up a pipe. With it the same timer
+  runs every 1.05 ms. A sensor that stops sending is reopened; a child that dies or
+  says nothing for 30 s is restarted (`restarts` in `/tof/status`).
+- **Found, not numbered.** The SDK opens `/dev/videoN`, and N moves with probe order
+  once both ports carry a camera. The app uses the node media-ctl links to the
+  `arducam-pivariety` sensor (`TOF_VIDEO_INDEX = None`); set it only to pin one.
+- **`/tof/live`** (the dashboard's *depth* chip): the live depth picture, red near to
+  blue far, in feet. Tap or drag to read the distance under the crosshair (the median
+  of the 3×3 around it); the confidence slider changes the picture only. Below it,
+  `/tof/overlay.jpg` once a second: every depth pixel drawn on the front camera's
+  picture where its own distance places it — the calibration check. The range stays
+  `TOF_RANGE_MM` (4 m): the 2 m mode reads anything past 2 m as near, so the page
+  cannot switch it.
+- **What the user hears does not change yet.** Each front detection gets a measured
+  `depth` (the nearest surface in its box, `utils/depth_fusion.py`), shown beside the
+  box-size distance (`tof_ft`). It replaces it only with `TOF_USE_DISTANCE`, after the
+  bench calibration (`tools/tof_calibrate.py`: capture 15–25 checkerboard pairs with
+  `POST /tof/calibrate/capture`, `solve`, then `POST /tof/calibrate/reload`). Until
+  then `/health` says "Depth camera not calibrated".
+- **One owner.** The app holds the sensor while `TOF_ENABLED`. Stop it before
+  `tools/tof_check.py` (the hardware walk-through from `~/tof/test_tof.py`: boot
+  config, driver, video node, SDK, frames) or `~/tof/tof_live.py`.
+
+SDK: `./venv/bin/pip install --no-deps ArducamDepthCamera==0.1.24`. Its metadata asks
+for numpy < 2, and a plain install swaps the app's numpy 2.2.4 for 1.26; it runs on
+2.2.4 (checked 2026-11-03, 31 frames/s).
 
 ### Models
 
@@ -1099,10 +1137,16 @@ label sizes are set for that capped width; changing the cap needs them revisited
 | `GET /radar/diagnostics`      | Per-board hardware telemetry — measured Hz, lag, reconnects   |
 | `GET /radar/health`           | One-line verdict: every board streaming, every cardinal live  |
 | `POST /radar/rediscover`      | Stop every reader and rediscover, after replugging a cable    |
-| `GET /camera/stream/{sector}` | MJPEG per sector (`front`/`right`/`left`/`back`)              |
+| `GET /camera/live/{camera}`   | The newest picture of one camera, or `grid` (all four), as one small JPEG; `?after=<X-Frame-Id>` waits up to 1 s for a newer one. Pulled one at a time by the dashboard, so it cannot fall behind (2026-11-02: the MJPEG stream did, ~12 s after 10 s on a slow link). `?boxes=1` adds `X-Detections`: what the detector found in that very picture (the front's, waited for, ~55 ms) or a side camera's last (`age_ms` older) |
+| `GET /camera/stream/{sector}` | MJPEG per sector (`front`/`right`/`left`/`back`) — used by `/classic` only; it falls behind on a slow link |
 | `GET /camera/seg/{sector}`    | Colorized segmentation debug view                             |
 | `GET /camera/stats`           | capture / detection / segmentation FPS, per-sector detections — each with `distance_ft`: of the things the laser ranges in the box's bearings, the one that fits the box's size (`distance_source` `lidar`), else the box-size estimate (`camera`; `camera_cut` = at most) |
 | `GET /camera/distances`       | Why each detection's distance is what it is: bearings searched, every laser range there, the size estimate (a wide person box = sitting), the choice, and the lens angle it implies (`implied_hfov_deg`) |
+| `GET /tof/live`               | The ToF's live depth page (dashboard: *depth*)                |
+| `WS  /tof/ws`                 | Its frames, raw depth + confidence (at most `TOF_LIVE_MAX_FPS`), and `/tof/status` twice a second |
+| `GET /tof/status`             | Is the ToF delivering: fps, frame age, device, restarts, which calibration places its dots |
+| `GET /tof/depth.jpg`          | The newest depth frame as a picture                           |
+| `GET /tof/overlay.jpg`        | The front camera's picture with the depth dots drawn on: the calibration check |
 | `GET /environment/status`     | Fog / rain / low light / visibility                           |
 
 **Navigation & crossing**
@@ -1214,20 +1258,20 @@ run for the absence of a *veer* cue, not for the absence of output.
 
 ## Known limits
 
-- **The camera board's 4-camera merge can scramble the picture** (seen 2026-10-08:
-  every camera clean on its own, the 2x2 picture corrupted on and off). So by default
-  the app CYCLES the cameras (`CAMERA_CYCLE`): the board shows one camera at a time
-  and is switched between frames; a frame is the new camera's when its sensor
-  timestamp is after the switch. The front gets 2 frames to each other camera's 1
-  (~24 fps front, ~6 fps each other with three cameras). Only cameras found at start
-  are visited — switching to an empty channel stops the stream for good — and a
-  missing one is reported by `/health`. Each quadrant carries its own capture time.
-  With `CAMERA_CYCLE = False` the 2x2 picture is used, each camera picture checked
-  first (`CAMERA_CORRUPT_PCT`) and a scrambled one skipped; the stream restarts when
-  one stays corrupted, and the front camera alone is fallen back to if that fails.
-  `CAMERA_SINGLE_CHANNEL = "front"` forces front-only. One auto-exposure serves every
-  camera, so a bright view on one can darken the others. `/camera/stats` gives
-  `camera_mode`, `camera_fps` and each camera's `corrupt` share.
+- **The camera picture (2026-11-02, new cameras).** The board shows all four cameras in
+  one 2x2 frame in the IMX519's full-view mode (2328x1748): each camera its whole 66 deg
+  view at 1164x874, 15.7 pictures a second (the board halves the sensor's 30 fps; the
+  cropped 1920x1080 mode gives 30.7, at 56 deg and 960x540 — full view was chosen). The old board scrambled that frame, so until then the cameras
+  were cycled one at a time on a 16:9 crop (56 deg, 960x540, sides ~3 pictures a second),
+  each picture was checked for scrambling, and the front camera alone was fallen back to:
+  all removed. A camera that is unplugged or covered shows as black ("Camera sees only
+  black" on `/health`). The detector still takes 640x640, so the wider view makes each
+  thing ~18% smaller to it: the farthest small objects are named a little later. One
+  auto-exposure serves every camera, so a bright view on one can darken the others.
+  One lens setting serves every camera too (`CAMERA_FOCUS_CODE`, set on the lens driver at
+  each start: libcamera's focus never reached it, and until 2026-11-02 every lens rested
+  past infinity, blurred). 1000 was the sharpest on a ceiling ~2 m away, and should hold
+  from about a metre out to far — an estimate, not yet checked on people or outdoors.
 - **Traffic-light colour cannot be read.** The stock COCO detector emits only
   the class `traffic light` with no colour, and a bounding box cannot tell you
   which lamp is lit. Colour is reported as `unknown` rather than guessed. The

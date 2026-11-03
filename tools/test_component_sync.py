@@ -172,7 +172,8 @@ class SettingsAgreeTests(unittest.TestCase):
         unit = Path(__file__).resolve().parent.parent.joinpath("deploy", "shappe-guide.service").read_text()
         watchdog = float(re.search(r"^WatchdogSec=(\d+)", unit, re.M).group(1))
         scan, radar = 60.0 / c.LIDAR_RPM, 1.0 / c.RADAR_UPDATE_RATE
-        front_cam, side_cam = 0.05, 3 * c.DETECTION_SIDE_MIN_INTERVAL_S
+        # The 4-in-1 board's full-view picture: 15.7 a second, measured 2026-11-02.
+        front_cam, side_cam = 1.0 / 15.7, 3 * c.DETECTION_SIDE_MIN_INTERVAL_S
         checks = {
             "distance bands in order": c.WALK_MIN_TURN_FT < c.WALK_BLOCK_FT
             < c.SIMPLE_OBSTACLE_AHEAD_FT < c.SIMPLE_WALL_APPROACH_FT,

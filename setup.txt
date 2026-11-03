@@ -15,13 +15,16 @@ chmod +x install_pivariety_pkgs.sh
 ------------------------------------------
 camera_auto_detect=0
 dtoverlay=imx519,cam1
+dtoverlay=arducam-pivariety,cam0   # ToF depth camera in CAM/DISP 0. One camera per port:
+                                   # no imx519,cam0, and no bare arducam-pivariety (= cam1)
 dtparam=i2c_arm=on
 dtparam=spi=on          # MPU-6500 on SPI0 CE0 -> /dev/spidev0.0
 
 3. System packages (apt — these are NOT on PyPI in a usable form)
 -----------------------------------------------------------------
 sudo apt update
-sudo apt install -y python3-picamera2 python3-libcamera libcamera-apps libcap-dev espeak-ng i2c-tools
+sudo apt install -y python3-picamera2 python3-libcamera libcamera-apps libcap-dev espeak-ng i2c-tools v4l-utils
+# (v4l-utils gives media-ctl: how the app finds the ToF's /dev/videoN)
 # Hailo-10H runtime: install h10-hailort (5.1.1 on the rig) per Hailo's instructions.
 
 The user needs these groups (log out and in after adding):
@@ -35,6 +38,9 @@ cd lidar
 python3 -m venv --system-site-packages venv    # REQUIRED: picamera2 and hailo come from apt
 ./venv/bin/pip install --upgrade pip
 ./venv/bin/pip install -r requirements.txt     # pinned; do not add numpy==1.25 on top
+./venv/bin/pip install --no-deps ArducamDepthCamera==0.1.24
+                                               # ToF SDK. --no-deps: it asks for numpy<2 and
+                                               # would replace numpy 2.2.4; it runs on 2.2.4
 # The models (model/*.hef + model/metadata.yaml) come with the checkout today.
 
 5. Run it
@@ -47,6 +53,7 @@ python3 -m venv --system-site-packages venv    # REQUIRED: picamera2 and hailo c
 python -m rplidar /dev/ttyUSB0 256000          # LiDAR (stop the app first: one owner per port)
 ./venv/bin/python -m utils.radar_utils --check # radar boards present / measured
 ./venv/bin/python -m utils.gyro_reader --check # IMU: turn right, yaw must go POSITIVE
+./venv/bin/python -m tools.tof_check           # ToF depth camera, step by step (stop the app first)
 hailortcli scan                                # NPU
 rpicam-hello --list-cameras                    # camera and its sensor modes
 

@@ -63,6 +63,11 @@ already_running() {
     fi
     echo -e "${YELLOW}  Stop it first: Ctrl+C in the terminal running it, or${NC}"
     echo -e "${YELLOW}    systemctl --user stop shappe-guide shappe-guide-manual${NC}"
+    # Started some other way (another shell, a tool, a lost SSH session): neither of the
+    # above reaches it, and the message used to end there (2026-11-02).
+    if [ -n "$pids" ]; then
+        echo -e "${YELLOW}  or, started any other way:  kill $(echo $pids)${NC}"
+    fi
     return 0
 }
 

@@ -1,19 +1,25 @@
 """ToF depth camera routes (2026-10-13): its status, a depth preview, the depth dots placed on
-the front camera's picture (the calibration check), and the bench calibration's captures."""
+the front camera's picture (the calibration check), and the bench calibration's captures.
+Since 2026-11-03 also the live view, /tof/live (from ~/tof/tof_live.py), fed by /tof/ws."""
 
+import asyncio
 import json
 import os
 import time
+from pathlib import Path
 
 import numpy as np
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import Response
+from fastapi.responses import HTMLResponse, Response
 
-from config import TOF_CALIBRATION_PAIRS_DIR, TOF_ENABLED, TOF_MAX_MM
+from config import TOF_CALIBRATION_PAIRS_DIR, TOF_ENABLED, TOF_LIVE_MAX_FPS, TOF_MAX_MM
 from utils.access import require_admin
 
 router = APIRouter(prefix="/tof", tags=["ToF depth"])
+
+_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+_STATUS_S = 0.5  # /tof/ws: the status this often, between the frames
 
 
 def _need_tof():
@@ -28,12 +34,11 @@ def _front_picture():
     from utils import pi_camera_utils as pc
 
     with pc.frame_lock:
-        mosaic, t, meta = pc.current_frame, pc.current_frame_t, pc.current_quad_meta
+        mosaic, t = pc.current_frame, pc.current_frame_t
         if mosaic is None:
             return None, 0.0
         quad = pc._sector_slice(mosaic, "front").copy()
-        t = float((meta.get("front") or {}).get("t") or t) if meta else float(t)
-    return pc._to_bgr(quad), t
+    return pc._to_bgr(quad), float(t)
 
 
 def _jpeg(img) -> Response:
@@ -57,6 +62,48 @@ def status():
     from utils.tof_camera import tof_status
 
     return tof_status()
+
+
+@router.get("/live", response_class=HTMLResponse)
+async def live_page():
+    """The live depth picture (templates/tof_live.html): tap it to read a distance; below
+    it, the depth dots on the front camera's picture. Read fresh from disk like the others."""
+    f = _TEMPLATES_DIR / "tof_live.html"
+    if not f.exists():
+        return HTMLResponse("<h1>tof_live.html missing</h1>", status_code=404)
+    return HTMLResponse(f.read_text(encoding="utf-8"))
+
+
+@router.websocket("/ws")
+async def live_websocket(websocket: WebSocket):
+    """Stream /tof/live each new frame as it came up from the capture process (at most
+    TOF_LIVE_MAX_FPS; layout in utils/tof_camera._HEADER), and /tof/status between them."""
+    await websocket.accept()
+    try:
+        if not TOF_ENABLED:
+            await websocket.send_json({"enabled": False})
+            await websocket.close()
+            return
+        from utils.tof_camera import latest_packet, tof_status
+
+        seq, status_at, sent_at = 0, 0.0, 0.0
+        gap = 1.0 / TOF_LIVE_MAX_FPS
+        while True:
+            now = time.monotonic()
+            if now - status_at >= _STATUS_S:  # first, or the frames would starve it
+                status_at = now
+                await websocket.send_json(await run_in_threadpool(tof_status))
+                continue
+            n, packet = latest_packet()
+            if n != seq and packet is not None and now - sent_at >= gap:
+                seq, sent_at = n, now
+                await websocket.send_bytes(packet)
+            else:
+                await asyncio.sleep(max(0.01, gap - (now - sent_at)))
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        print(f"[WARN] ToF WebSocket error: {e}")
 
 
 @router.get("/depth.jpg")

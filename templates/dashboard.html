@@ -509,7 +509,7 @@
         border-radius: 14px;
         overflow: hidden;
         background: #000;
-        aspect-ratio: 16 / 9;
+        aspect-ratio: 4 / 3;
       }
       .cam img {
         width: 100%;
@@ -522,6 +522,18 @@
         inset: 0;
         width: 100%;
         height: 100%;
+        pointer-events: none;
+      }
+      .cam .fps {
+        position: absolute;
+        right: 8px;
+        top: 8px;
+        z-index: 2;
+        padding: 3px 9px;
+        border-radius: 999px;
+        background: rgba(0, 0, 0, 0.6);
+        color: #fff;
+        font: 600 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
         pointer-events: none;
       }
       .cam .off {
@@ -703,6 +715,12 @@
           title="Live 3D map of what the LiDAR, radar and cameras see"
           >map</a
         >
+        <a
+          class="chip"
+          href="/tof/live"
+          title="The ToF depth camera, live: tap to read a distance"
+          >depth</a
+        >
         <a class="chip" href="/classic" title="The previous dashboard"
           >classic</a
         >
@@ -812,9 +830,10 @@
             <img id="cam-img" alt="Camera feed" />
             <svg
               id="cam-svg"
-              viewBox="0 0 960 540"
+              viewBox="0 0 1164 874"
               preserveAspectRatio="none"
             ></svg>
+            <div class="fps" id="cam-fps" hidden></div>
             <div class="off" id="cam-off" hidden>camera stream unavailable</div>
           </div>
           <div id="cam-all" class="cam-grid" hidden></div>
@@ -958,6 +977,7 @@
         corridor_half_mm: 300,
         corridor_max_mm: 2500,
         cone_deg: 10,
+        camera_px: [1164, 874],
       };
 
       // ------------------------------------------------------------ theme + clock
@@ -1489,7 +1509,10 @@
 
       // ------------------------------------------------------------ camera
       let camView = store.get("sg-cam", "front"),
-        camDets = {};
+        camDets = {},
+        // The detector's boxes for the picture on screen, sent with it by /camera/live:
+        // {fid: that picture, cams: {camera: {frame_id, age_ms, detections}}}.
+        liveBoxes = null;
       function setCam(view) {
         camView = view;
         store.set("sg-cam", view);
@@ -1502,63 +1525,190 @@
         $("cam-single").hidden = all;
         $("cam-all").hidden = !all;
         $("cam-note").hidden = view !== "front";
-        // A browser allows ~6 connections to the device and each stream holds one for good:
-        // four streams (more with a second tab) left the polls queued behind them. "All"
-        // is one short request a second; the single stream stops while the tab is hidden.
+        liveBoxes = null; // the last view's, until this view's first picture
         if (all) {
           $("cam-img").removeAttribute("src");
+          // One picture of all four cameras (/camera/live/grid), each tile showing its
+          // own quarter of it: [row, column] as the camera board lays them out.
+          const lay = geom.camera_layout || {
+            right: [0, 0],
+            front: [0, 1],
+            left: [1, 0],
+            back: [1, 1],
+          };
+          const [W, H] = (geom.camera_px || [1164, 874]).map(Number);
           $("cam-all").innerHTML = ["front", "right", "left", "back"]
-            .map(
-              (c) =>
-                `<div class="cam"><img id="cam-all-${c}" alt="${c} camera" /><div class="chip" style="position:absolute;left:8px;top:8px">${c}</div></div>`,
-            )
+            .map((c) => {
+              const [r, k] = (lay[c] || [0, 0]).map(Number);
+              return `<div class="cam" id="cam-all-${c}" role="img" aria-label="${c} camera" style="background-size:200% 200%;background-position:${k * 100}% ${r * 100}%"><svg id="cam-all-svg-${c}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"></svg><div class="chip" style="position:absolute;left:8px;top:8px">${c}<span id="cam-all-fps-${c}"></span></div></div>`;
+            })
             .join("");
-          pollAllCams();
         } else {
           $("cam-all").innerHTML = "";
           $("cam-off").hidden = true;
-          if (document.hidden) $("cam-img").removeAttribute("src");
-          else $("cam-img").src = `/camera/stream/${view}?t=${Date.now()}`;
+          $("cam-img").removeAttribute("src");
         }
+        startLive(view);
         drawCamOverlay();
       }
-      const pollAllCams = single(async () => {
-        if (camView !== "all" || document.hidden) return;
-        try {
-          const frames =
-            (await getJSON("/camera/frames/all", 4000)).frames || {};
-          for (const [c, f] of Object.entries(frames)) {
-            const img = $(`cam-all-${c}`);
-            if (img && f.frame) img.src = `data:image/jpeg;base64,${f.frame}`;
+      // The live picture is PULLED, one at a time (2026-11-02): the next is asked for only
+      // once this one is on screen, so nothing queues on the way and it cannot fall behind —
+      // the MJPEG stream it replaces did, over Wi-Fi, and "All 4" was a picture a second.
+      // One request at a time, too: the browser's ~6 connections to the device stay free.
+      let liveRun = 0;
+      function startLive(view) {
+        const run = ++liveRun; // a newer start (a tab, a view) ends this loop
+        if (document.hidden) return;
+        const grid = view === "all";
+        let after = -1,
+          shown = null;
+        const times = []; // when each of the last pictures went on screen, ms
+        $("cam-fps").hidden = true;
+        // Pictures a second ON THIS SCREEN over the last ~2 s, and the shown picture's age —
+        // what the viewer sees, Wi-Fi included (2026-11-02).
+        const label = (age) => {
+          const now = performance.now();
+          times.push(now);
+          while (times.length > 2 && now - times[0] > 2000) times.shift();
+          const fps =
+            times.length > 1
+              ? ((times.length - 1) * 1000) / (now - times[0])
+              : 0;
+          const text = `${fps.toFixed(1)} fps`;
+          if (grid) {
+            for (const c of ["front", "right", "left", "back"]) {
+              const el = $(`cam-all-fps-${c}`);
+              if (el) el.textContent = ` · ${text}`;
+            }
+          } else {
+            const el = $("cam-fps");
+            el.textContent = Number.isFinite(age) ? `${text} · ${age} ms` : text;
+            el.hidden = false;
           }
-        } catch (e) {}
-      });
+        };
+        const show = (url) => {
+          if (grid) {
+            for (const c of ["front", "right", "left", "back"]) {
+              const tile = $(`cam-all-${c}`);
+              if (tile) tile.style.backgroundImage = `url(${url})`;
+            }
+          } else $("cam-img").src = url;
+          if (shown) URL.revokeObjectURL(shown);
+          shown = url;
+        };
+        (async () => {
+          while (run === liveRun) {
+            try {
+              const r = await fetch(
+                `/camera/live/${grid ? "grid" : view}?after=${after}&width=${grid ? 720 : 480}&boxes=1`,
+                { cache: "no-store" },
+              );
+              if (run !== liveRun) break;
+              if (r.status === 204) continue; // no newer picture within 1 s: ask again
+              if (!r.ok) throw new Error(String(r.status));
+              after = Number(r.headers.get("X-Frame-Id"));
+              const sentAt = performance.now(),
+                sentAge = Number(r.headers.get("X-Frame-Age-Ms"));
+              let cams = {};
+              try {
+                cams = JSON.parse(r.headers.get("X-Detections") || "{}") || {};
+              } catch (e) {}
+              const url = URL.createObjectURL(await r.blob());
+              const img = new Image();
+              img.src = url;
+              await img.decode(); // on screen at once, then the next is asked for
+              if (run !== liveRun) {
+                URL.revokeObjectURL(url);
+                break;
+              }
+              show(url);
+              liveBoxes = { fid: after, cams }; // drawn with the picture they came with
+              drawCamOverlay();
+              // Its age on screen: old when sent, plus the transfer and the decode.
+              label(Math.round(sentAge + (performance.now() - sentAt)));
+              $("cam-off").hidden = true;
+            } catch (e) {
+              if (run !== liveRun) break;
+              if (!grid) $("cam-off").hidden = false;
+              $("cam-fps").hidden = true; // no rate to show while nothing comes
+              await new Promise((res) => setTimeout(res, 1500));
+            }
+          }
+        })();
+      }
       document.addEventListener("visibilitychange", () => setCam(camView));
-      const camCheck = () => {
-        $("cam-off").hidden =
-          $("cam-img").naturalWidth > 0 || camView === "all";
-      };
-      $("cam-img").addEventListener("error", () =>
-        setTimeout(() => {
-          camCheck();
-          if (camView !== "all" && !document.hidden)
-            $("cam-img").src = `/camera/stream/${camView}?t=${Date.now()}`; // reconnect
-        }, 2500),
-      );
       document
         .querySelectorAll("#cam-tabs button")
         .forEach((b) =>
           b.addEventListener("click", () => setCam(b.dataset.cam)),
         );
 
+      // A camera's boxes on the picture on screen (liveBoxes): those found in this very
+      // picture solid; a side camera's, detected every ~1.2 s, from its last picture —
+      // dashed, faded and aged ("1.1 s ago"). `k` scales lines and labels for a small tile.
+      const boxesOld = (e) => liveBoxes && e.frame_id < liveBoxes.fid;
+      function boxesSvg(cam, W, k) {
+        const e = liveBoxes && liveBoxes.cams[cam];
+        if (!e) return "";
+        const old = boxesOld(e);
+        let out = "";
+        for (const det of e.detections || []) {
+          // Coerced: these land in SVG attributes, and a box is only numbers.
+          const [x1, y1, x2, y2] = Array.from(det.bbox || [0, 0, 0, 0], Number);
+          const named =
+            cam === "front" &&
+            lastObject &&
+            lastObject.toLowerCase() ===
+              String(spoken(det.class_name) || "").toLowerCase();
+          const ignored = !spoken(det.class_name);
+          const colour = named ? "#2dd4bf" : ignored ? "#94a3b8" : "#fbbf24";
+          const dist = distText(det);
+          const label = `${det.class_name} ${Math.round((det.confidence || 0) * 100)}%${dist ? " · " + dist : ""}${old ? " · " + ago(e) : ""}`;
+          const lw = Math.min(W, (18 + 12 * label.length) * k),
+            lx = Math.max(0, Math.min(x1, W - lw)), // kept inside the frame
+            ly = Math.max(0, y1 - 30 * k);
+          out +=
+            `<g${old ? ' opacity="0.7"' : ""}><rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" fill="none" stroke="${colour}" stroke-width="${(named ? 5 : ignored ? 2 : 3) * k}"${ignored || old ? ` stroke-dasharray="${8 * k} ${6 * k}"` : ""}/>` +
+            `<rect x="${lx}" y="${ly}" width="${lw}" height="${28 * k}" fill="${colour}"/>` +
+            `<text x="${lx + 8 * k}" y="${ly + 20 * k}" font-size="${20 * k}" font-weight="700" fill="#04121a">${esc(label)}</text></g>`;
+        }
+        return out;
+      }
       function drawCamOverlay() {
         const svg = $("cam-svg");
+        // One camera's picture, as the server sends it (1164 x 874 since 2026-11-02).
+        const [W, H] = (geom.camera_px || [1164, 874]).map(Number);
+        const cams =
+          camView === "all" ? ["front", "right", "left", "back"] : [camView];
         if (camView === "all") {
           svg.innerHTML = "";
-          return;
-        }
-        const W = 960,
-          H = 540;
+          // A tile is ~2.2x smaller than the single view: its labels are drawn bigger.
+          for (const c of cams) {
+            const tile = $(`cam-all-svg-${c}`);
+            if (tile) tile.innerHTML = boxesSvg(c, W, 2.2);
+          }
+        } else drawCamSingle(svg, W, H);
+        const list = cams.flatMap((c) => {
+          const e = liveBoxes && liveBoxes.cams[c];
+          return e ? (e.detections || []).map((dt) => ({ c, dt, e })) : [];
+        });
+        $("cam-dets").innerHTML = list.length
+          ? list
+              .map(({ c, dt, e }) => {
+                const named =
+                  c === "front" &&
+                  lastObject &&
+                  lastObject.toLowerCase() ===
+                    String(spoken(dt.class_name) || "").toLowerCase();
+                const ignored = !spoken(dt.class_name);
+                const dist = distText(dt);
+                return `<span class="${named ? "named" : ignored ? "ignored" : ""}" title="${ignored ? "not a hazard class — never named" : "can be named: " + esc(spoken(dt.class_name))}">${camView === "all" ? esc(c) + ": " : ""}${esc(dt.class_name)} ${Math.round((dt.confidence || 0) * 100)}%${dist ? " · " + esc(dist) : ""}${boxesOld(e) ? " · " + esc(ago(e)) : ""}${named ? " · named" : ""}</span>`;
+              })
+              .join("")
+          : "<span>no detections</span>";
+      }
+      function drawCamSingle(svg, W, H) {
+        svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
         let out = "";
         if (camView === "front") {
           const band = geom.camera_band || 0.5,
@@ -1570,26 +1720,7 @@
             `<text x="${W / 2 - 14}" y="${H - 14}" text-anchor="end" font-size="22" font-weight="700" fill="rgba(255,255,255,.85)">L</text>` +
             `<text x="${W / 2 + 14}" y="${H - 14}" font-size="22" font-weight="700" fill="rgba(255,255,255,.85)">R</text>`;
         }
-        const dets = (camDets[camView] || {}).detections || [];
-        for (const det of dets) {
-          // Coerced: these land in SVG attributes, and a box is only numbers.
-          const [x1, y1, x2, y2] = Array.from(det.bbox || [0, 0, 0, 0], Number);
-          const named =
-            camView === "front" &&
-            lastObject &&
-            lastObject.toLowerCase() ===
-              String(spoken(det.class_name) || "").toLowerCase();
-          const ignored = !spoken(det.class_name);
-          const colour = named ? "#2dd4bf" : ignored ? "#94a3b8" : "#fbbf24";
-          const dist = distText(det);
-          const label = `${det.class_name} ${Math.round((det.confidence || 0) * 100)}%${dist ? " · " + dist : ""}`;
-          const lw = Math.min(W, 18 + 12 * label.length),
-            lx = Math.max(0, Math.min(x1, W - lw)); // kept inside the frame
-          out +=
-            `<rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" fill="none" stroke="${colour}" stroke-width="${named ? 5 : ignored ? 2 : 3}"${ignored ? ' stroke-dasharray="8 6"' : ""}/>` +
-            `<rect x="${lx}" y="${Math.max(0, y1 - 30)}" width="${lw}" height="28" fill="${colour}"/>` +
-            `<text x="${lx + 8}" y="${Math.max(0, y1 - 30) + 20}" font-size="20" font-weight="700" fill="#04121a">${esc(label)}</text>`;
-        }
+        out += boxesSvg(camView, W, 1);
         // Where the guide is steering the user past what is in the way.
         const st = lastSteer;
         if (camView === "front" && st && typeof st.target === "number") {
@@ -1627,25 +1758,6 @@
             `<text x="${x1 + 8}" y="${Math.min(H - 30, y2 + 2) + 20}" font-size="20" font-weight="800" fill="#fff">${esc(label)}</text>`;
         }
         svg.innerHTML = out;
-        const list = (
-          camView === "all" ? ["front", "right", "left", "back"] : [camView]
-        ).flatMap((c) =>
-          ((camDets[c] || {}).detections || []).map((dt) => ({ c, dt })),
-        );
-        $("cam-dets").innerHTML = list.length
-          ? list
-              .map(({ c, dt }) => {
-                const named =
-                  c === "front" &&
-                  lastObject &&
-                  lastObject.toLowerCase() ===
-                    String(spoken(dt.class_name) || "").toLowerCase();
-                const ignored = !spoken(dt.class_name);
-                const dist = distText(dt);
-                return `<span class="${named ? "named" : ignored ? "ignored" : ""}" title="${ignored ? "not a hazard class — never named" : "can be named: " + esc(spoken(dt.class_name))}">${camView === "all" ? esc(c) + ": " : ""}${esc(dt.class_name)} ${Math.round((dt.confidence || 0) * 100)}%${dist ? " · " + esc(dist) : ""}${named ? " · named" : ""}</span>`;
-              })
-              .join("")
-          : "<span>no detections</span>";
       }
       // How far away a detection is: "12.3 ft" from the LiDAR or the ToF, "≈15 ft" from the
       // box's size (the lens is assumed), "≤15 ft" when the frame cuts the box off. While
@@ -1661,6 +1773,7 @@
             ? `${Number(d.distance_ft).toFixed(1)} ft${d.distance_source === "tof" ? " ToF" : ""}${tof}`
             : `${d.distance_source === "camera_cut" ? "≤" : "≈"}${Math.round(Number(d.distance_ft))} ft est.${tof}`;
       };
+      const ago = (e) => `${(Number(e.age_ms) / 1000 || 0).toFixed(1)} s ago`;
       const spoken = (c) =>
         (geom.named_objects || {})[String(c || "").toLowerCase()] || null;
 
@@ -1675,7 +1788,6 @@
               ? `· ${Number(camDets.capture_fps).toFixed(1)} fps · ${camDets.total_objects || 0} objects`
               : "";
           drawCamOverlay();
-          camCheck();
         } catch (e) {
         } finally {
           busyCam = false;
@@ -1956,7 +2068,6 @@
       setInterval(tickMotion, 1000);
       setInterval(tickHealth, 1000);
       setInterval(pollCam, 700);
-      setInterval(pollAllCams, 1000);
       setInterval(drawScan, 200);
     </script>
   </body>

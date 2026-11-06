@@ -120,8 +120,10 @@ LIDAR_BAUD = 256000
 LIDAR_MAX_DISTANCE = 12000  # mm
 LIDAR_WARNING_DISTANCE = 500  # mm
 
-LIDAR_RPM = 900  # Target motor speed in RPM (15 Hz, top of A2M12 range)
-LIDAR_MAX_RPM = 1380  # this unit's measured speed at full PWM (see above)
+LIDAR_MAX_RPM = 1380  # this unit's measured speed at full PWM (~23 Hz)
+# Target motor speed: full PWM since 2026-11-05 (was 900 RPM / 15 Hz, the top of the
+# A2M12's rated 5-15 Hz). Faster scans, but fewer points per turn at the same sample rate.
+LIDAR_RPM = LIDAR_MAX_RPM
 
 LIDAR_ANGLE_OFFSET = 0  # degrees to add to raw angles
 
@@ -311,6 +313,11 @@ GLASS_SAME_ECHO_MM = (
     60.0  # two front boards ranging within this of each other heard the same thing
 )
 GLASS_GRAZING_DEG = 75.0  # a surface the laser sees more edge-on than this sends the radar next to nothing back, so it cannot explain an echo
+# A glass door at the end of a corridor (walk_policy._door_in_wall_ft, 2026-11-06): an echo
+# both front boards hear is explained only by a surface the laser sees within this of
+# square-on — what faces the sensor echoes; a corridor's walls seen obliquely do not. 40, not
+# 45: a 1.2 m corridor's walls lie at 40-45 deg close to its door and broke the door's wall.
+GLASS_FACING_DEG = 40.0
 # A front board's FARTHER echoes count too, not only its nearest (2026-11-02): in a narrow
 # corridor the nearest is the side wall at the beam's edge, which the laser explains, and the
 # pane behind it was never looked at — "Walk straight" with glass 3 ft ahead. False: nearest only.
@@ -650,8 +657,7 @@ BEV_EXTRACT_HZ = 5.0
 LIDAR_MOVERS_ENABLED = True
 LIDAR_MOVERS_SPEAK = False  # False: shown and logged as "would say", not spoken
 LIDAR_MOVERS_MIN_RANGE_MM = 300  # nearer is the wearer's own arm or cane
-LIDAR_MOVERS_MAX_RANGE_MM = 8000
-# Neighbouring returns farther apart than BREAK_MM + BREAK_PER_M x range are two things.
+LIDAR_MOVERS_MAX_RANGE_MM = 8000  # Neighbouring returns farther apart than BREAK_MM + BREAK_PER_M x range are two things.
 LIDAR_MOVERS_BREAK_MM = 200.0
 LIDAR_MOVERS_BREAK_PER_M = 0.06
 LIDAR_MOVERS_MAX_GAP_DEG = 3.0  # an angular gap wider than this also splits
@@ -830,9 +836,72 @@ TOF_BOX_TRIM = (0.15, 0.10, 0.20)
 TOF_BOX_GROUP_M = 0.30
 TOF_BOX_MIN_POINTS = 6
 TOF_BOX_MIN_SHARE = 0.20
+# The depth picture aligned to the camera's (DepthFrame.depth_map, /tof/rgbd.jpg,
+# /tof/aligned.npy): one distance per block of this many x this many camera pixels. A ToF
+# pixel spans ~4.3 camera pixels (1164 px over 66 deg against 240 px over 58.5 deg), so 4
+# keeps all its detail; a block between ones that got a reading takes the nearest of theirs.
+TOF_ALIGNED_CELL_PX = 4
 TOF_RANGE_SD_M = 0.05  # how far off a ToF distance is (1 sigma), plus...
 TOF_RANGE_SD_FRAC = (
     0.02  # ...this much of it (the motion tracker's camera error ellipse)
+)
+
+# ---- Hazards on the ground ahead, from the ToF, confirmed by the front camera
+# (utils/ground_hazards.py, 2026-11-06): stairs up and down, single steps (kerbs), drops,
+# holes, poles, low obstacles under the LiDAR's plane and overhanging ones a cane passes
+# under. Found and shown with TOF_HAZARDS_ENABLED (/tof/hazards, /tof/rgbd.jpg); SPOKEN
+# only with TOF_HAZARDS_SPEAK — until a test walk has judged them they are logged as
+# "would say", as the LiDAR movers are.
+TOF_HAZARDS_ENABLED = True
+TOF_HAZARDS_SPEAK = False  # False: shown and logged as "would say", not spoken
+TOF_HAZARD_HZ = 10.0  # analyses a second (each on the newest ToF frame; ~15 ms each)
+TOF_HAZARD_FRESH_S = 0.5  # the guidance uses an analysis no older than this
+# The ground, fitted on every frame: these only steer the fit, it measures the rest.
+TOF_MOUNT_HEIGHT_M = 1.45  # the front camera above the ground when worn
+TOF_MOUNT_HEIGHT_TOL_M = (
+    0.45  # a level surface further from that is not taken as the ground
+)
+TOF_GROUND_MAX_TILT_DEG = 15.0  # the body's sway and the mount's error, at most
+TOF_GROUND_INLIER_M = 0.03  # a point this near the plane is on it
+TOF_GROUND_MIN_POINTS = 300  # fewer on the plane: no ground seen
+# The walking corridor: half the body's width and a margin, either side of straight ahead.
+TOF_CORRIDOR_HALF_M = 0.40
+# The ground's height along the corridor, every BIN ahead, out to PROFILE_MAX (the ToF reads
+# to 4 m; past ~3.6 m the floor is at a grazing angle and thin).
+TOF_PROFILE_BIN_M = 0.05
+TOF_PROFILE_MIN_POINTS = 6
+TOF_PROFILE_MAX_M = 3.6
+TOF_PROFILE_JUMP_M = 0.035  # neighbouring bins further apart than this: a new surface
+# A step: a sharp change in the ground's height of at least MIN and at most MAX (more is a
+# drop down, or an obstacle up). Stairs: two or more steps of a stair's rise and run.
+TOF_STEP_MIN_M = 0.07
+TOF_STEP_MAX_M = 0.25
+TOF_STAIR_RISE_M = (0.10, 0.23)
+TOF_STAIR_RUN_M = (0.18, 0.60)
+# Above the ground by this: part of an obstacle (5 cm cells, joined).
+TOF_OBSTACLE_MIN_H_M = 0.08
+TOF_OBSTACLE_MIN_POINTS = 20
+TOF_LOW_MAX_H_M = 0.60  # an obstacle no taller: "low" (under the LiDAR's plane)
+TOF_OVERHANG_MIN_H_M = (
+    0.50  # nothing of it lower than this: overhanging (the cane passes under)
+)
+TOF_POLE_MAX_WIDTH_M = 0.30  # a pole: this narrow, from the ground up...
+TOF_POLE_MIN_H_M = 0.80  # ...this high or out of the top of the ToF's view
+# Said from WARN_M; a drop or stairs down within STOP_M is said as "..., stop" (level 2).
+# The ToF sees the ground from ~1.1 m ahead (its view starts 7 deg below level, 30 deg
+# down at its centre), so STOP_M is the last distance at which the edge is still seen.
+TOF_HAZARD_WARN_M = 3.5
+TOF_HAZARD_STOP_M = 1.6
+TOF_HAZARD_CONFIRM = (3, 5)  # seen in 3 of the last 5 analyses (~0.3 s)
+# With the camera looking and seeing nothing there, a fall (drop, stairs or step down,
+# hole) at least this deep is still said, on the ToF alone; anything else is not.
+TOF_FALL_ALONE_M = 0.15
+# The camera's confirmation: its picture within MAX_AGE_S of the ToF frame, searched this
+# far around where the hazard lands on it (the design calibration is ~26 px off).
+TOF_CAMERA_MAX_AGE_S = 0.3
+TOF_CAMERA_MARGIN_PX = 40
+TOF_CAMERA_EDGE_DENSITY = (
+    0.04  # edge pixels, as a share of the area: an outline is there
 )
 
 TRAFFIC_SIGN_STALE_S = 5.0
@@ -909,10 +978,10 @@ _WAS_FOCAL_PX = 480.0 / (_LENS_TAN * 3840.0 / 4656.0)
 _PER_W = 960.0 / _CAMERA_QUAD_PX[0] * _CAMERA_FOCAL_PX / _WAS_FOCAL_PX
 _PER_H = 540.0 / _CAMERA_QUAD_PX[1] * _CAMERA_FOCAL_PX / _WAS_FOCAL_PX
 FRAME_SECTOR_LAYOUT = {  # camera quadrant mapping; do not change without a physical check
-    "front": (0, 1),  # top-right quadrant     (was bottom-right until 2026-09-22)
+    "front": (1, 1),  # bottom-right quadrant  (top-right 2026-09-22 to 2026-11-05)
     "right": (0, 0),  # top-left quadrant      (unchanged)
-    "back": (1, 1),  # bottom-right quadrant   (was top-right until 2026-09-22)
-    "left": (1, 0),  # bottom-left quadrant    (unchanged)
+    "back": (1, 0),  # bottom-left quadrant    (bottom-right 2026-09-22 to 2026-11-05)
+    "left": (0, 1),  # top-right quadrant      (bottom-left until 2026-11-05)
 }
 
 
@@ -1143,6 +1212,33 @@ SIMPLE_VEHICLE_HEIGHT_M = {
     "bus_": 3.2,
     "bus_l": 3.2,
     "small_bu": 2.6,
+}
+# Typical widths (m): where a vehicle will pass is judged from its nearest front corner and
+# its width (simple_guidance._Vehicles, 2026-11-06). Classes not listed: 1.8.
+SIMPLE_VEHICLE_WIDTH_M = {
+    "car": 1.8,
+    "sedan": 1.8,
+    "suv": 1.9,
+    "pickup": 1.9,
+    "vehicle": 1.8,
+    "truck": 2.5,
+    "big_truck": 2.5,
+    "mid_truck": 2.4,
+    "small_truck": 2.0,
+    "truck_": 2.5,
+    "truck_l": 2.5,
+    "truck_m": 2.4,
+    "truck_xl": 2.55,
+    "bus": 2.55,
+    "big_bu": 2.55,
+    "bus_": 2.55,
+    "bus_l": 2.55,
+    "small_bu": 2.3,
+    "train": 3.0,
+    "forklift": 1.2,
+    "motorcycle": 0.8,
+    "bicycle": 0.6,
+    "cyclist": 0.6,
 }
 SIMPLE_VEHICLE_CLASSES = tuple(SIMPLE_VEHICLE_HEIGHT_M)
 SIMPLE_VEHICLE_MIN_CONF = 0.45

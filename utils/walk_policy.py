@@ -21,6 +21,7 @@ from config import (
     LIDAR_NO_RETURN_FT,
     RADAR_AGREE_MM,
     RADAR_BEAM_H_DEG,
+    RADAR_BEARING_OFFSET_DEG,
     RADAR_CARDINAL_ARC_SECTORS,
     RADAR_CONE_TRUST_MM,
     RADAR_NO_RETURN_FT,
@@ -28,6 +29,7 @@ from config import (
     WALK_BLOCK_FT,
     WALK_FUSION_GLASS_OVERRIDE,
     WALK_GLASS_ALL_ECHOES,
+    GLASS_FACING_DEG,
     WALK_GLASS_GAP_FT,
     WALK_MIN_TURN_FT,
     WALK_TURN_MARGIN_FT,
@@ -341,6 +343,32 @@ def _grazing(angles: List[Any], dists: List[Any], i: int) -> bool:
     return bool(slopes) and min(slopes) >= _GRAZING_TAN
 
 
+_FACING_TAN = math.tan(math.radians(GLASS_FACING_DEG))
+# How far round the front boards hear between them (each 30 deg off ahead, its beam half-width
+# and the margin a board hears past it): a facing surface there may be what they echoed off.
+_FRONT_VIEW_DEG = RADAR_BEARING_OFFSET_DEG + RADAR_BEAM_H_DEG / 2.0 + GLASS_BOARD_VIEW_MARGIN_DEG
+
+
+def _facing(angles: List[Any], dists: List[Any], i: int) -> bool:
+    """Is return i on a surface turned toward the sensor (seen within GLASS_FACING_DEG of
+    square-on), one that sends a radar echo straight back? A lone return (a thin pole) is."""
+    n, r = len(dists), float(dists[i])
+    if r <= 0.0:
+        return False
+    slopes = []
+    for j in (i - 1, (i + 1) % n):
+        d = dists[j]
+        if j == i or not isinstance(d, (int, float)) or d <= 0:
+            continue
+        dth = math.radians(abs((float(angles[j]) - float(angles[i]) + 180.0) % 360.0 - 180.0))
+        if not 0.0 < dth <= math.radians(4.0):
+            continue
+        t = abs(float(d) - r) / (r * dth)
+        if t <= _JUMP_TAN:  # a depth jump is another surface, not this one's slope
+            slopes.append(t)
+    return not slopes or min(slopes) <= _FACING_TAN
+
+
 def _laser_explains(
     lidar_state: Dict[str, Any], bearing: float, echo_mm: float, widen_deg: float = 0.0
 ) -> bool:
@@ -383,6 +411,93 @@ def _single_board_glass_ft(
             continue
         unexplained.append(e)
     return _mm_to_ft(min(unexplained)) if unexplained else None
+
+
+def _door_in_wall_ft(
+    lidar_state: Dict[str, Any],
+    radar_state: Dict[str, Any],
+    lidar_ft: float,
+    lidar_measured: bool,
+) -> Optional[float]:
+    """A glass door at the end of a corridor, in feet, or None (2026-11-06).
+
+    The glass-door-in-a-wall rule judged only each board's NEAREST echo, which in a corridor
+    is the side wall at the edge of its beam: the door's own echo, behind it, never reached
+    the rule, and the per-board check let the corridor's walls "explain" it. A 1.6-2.5 m
+    corridor ending in a glass door said "Walk straight" until 2-3 ft from it, or never
+    (review, 2026-11-06). Here every echo the front boards list is judged: one that EVERY
+    live front board hears alike (RADAR_AGREE_MM), that the laser on the walking line looks
+    past (WALK_GLASS_GAP_FT), with the laser seeing wall at that range on BOTH sides of
+    the laser sees no surface FACING it at that range on just one side of ahead: what faces
+    the sensor is what echoes, so a person or post off the walking line explains the echo,
+    while the corridor's own walls, seen obliquely there, do not (they echo nearer, square
+    on). Facing surfaces on both sides are the wall the pane is set in; on neither, a pane
+    across the corridor. A double bounce off a nearer surface is not a pane."""
+    if not WALK_GLASS_ALL_ECHOES or not _straddled(radar_state, "front"):
+        return None
+    secs = radar_state.get("sectors") or {}
+    boards = [k for k in (secs.get("front") or {}).get("sources") or ()]
+    echoes = _board_echoes(radar_state, "front", all_peaks=True)
+    heard: Dict[float, List[float]] = {}
+    for b, e in echoes:
+        heard.setdefault(b, []).append(e)
+    if len(heard) < 2 or len(heard) != len(boards):  # every board live and hearing
+        return None
+    angles, dists = _laser_points(lidar_state)
+    every = sorted({e for _, e in echoes})
+    # Each board's nearest echo, when the laser explains it, is the corridor's wall at the
+    # edge of its beam: the rules above judge that one. This one is for what lies behind it.
+    walls = set()
+    for key in boards:
+        row, m = secs.get(key) or {}, _BOARD_KEY.match(str(key))
+        near = _echo_mm(row.get("min_dist"))
+        if m and near is not None and _laser_explains(lidar_state, float(m.group(1)), near):
+            walls.add(near)
+    for e in every:
+        if any(abs(e - w) <= GLASS_SAME_ECHO_MM for w in walls):
+            continue
+        if not all(any(abs(x - e) <= RADAR_AGREE_MM for x in xs) for xs in heard.values()):
+            continue
+        e_ft = e / MM_PER_FT
+        if lidar_measured and lidar_ft - e_ft < WALK_GLASS_GAP_FT:
+            continue  # the laser stops there too: something solid, not a pane
+        # A double bounce off a nearer surface, at twice its range. Any nearer echo: one that
+        # had to be RADAR_AGREE_MM nearer never matched a 0.35 m wall's ghost at 0.7 m, and an
+        # empty 0.8 m corridor said "Blocked by glass" (scene hunt, 2026-11-06).
+        if any(abs(e - 2.0 * x) <= GLASS_GHOST_TOL_MM for x in every if x < e):
+            continue
+        depth: Dict[bool, List[float]] = {}  # side (right?) -> how far ahead each facing return lies
+        beside = False
+        for i, (a, d) in enumerate(zip(angles, dists)):
+            if abs(d - e) > RADAR_AGREE_MM:
+                continue
+            signed = (float(a) + 180.0) % 360.0 - 180.0
+            off = abs(signed)
+            if off < 1.0 or off > _FRONT_VIEW_DEG or not _facing(angles, dists, i):
+                continue
+            if off > GLASS_DOOR_MAX_BEARING_DEG:
+                # Something off to the side, square-on, echoed — unless it is the corridor's
+                # own wall, whose echo is the nearest one set aside above (near a door in a
+                # 1.2 m corridor its wall lies within the match of the door's range).
+                if not any(abs(d - w) <= RADAR_AGREE_MM for w in walls):
+                    beside = True
+            else:
+                depth.setdefault(signed > 0, []).append(d * math.cos(math.radians(signed)))
+        if beside:
+            continue
+        if not depth:
+            return e_ft  # nothing facing at that range: a pane across the corridor
+        if len(depth) == 2:
+            # Facing on both sides: the wall the pane is set in is ONE surface at the pane's
+            # depth. Two posts either side at other depths are not (the scene hunt's false
+            # glass went 13 -> 31 in 1500 scenes without this; README: known limits).
+            zl, zr = (sorted(depth[s])[len(depth[s]) // 2] for s in (False, True))
+            if (
+                abs(zl - zr) <= GLASS_DOOR_WALL_DEPTH_MM
+                and abs((zl + zr) / 2.0 - e) <= GLASS_DOOR_WALL_DEPTH_MM
+            ):
+                return e_ft
+    return None
 
 
 def read_direction(
@@ -429,6 +544,17 @@ def read_direction(
             not lidar_measured or lidar_ft - single >= WALK_GLASS_GAP_FT
         ):
             radar_ft, arc_corroborates, board_glass = single, False, True
+    # A glass door at the end of a corridor: its echo is behind the side walls' (2026-11-06).
+    door_glass = False
+    if (
+        arc_corroborates
+        and radar_measured
+        and direction == "front"
+        and lidar_ft is not None
+    ):
+        door = _door_in_wall_ft(lidar_state, radar_state, lidar_ft, lidar_measured)
+        if door is not None:
+            radar_ft, arc_corroborates, door_glass = door, False, True
 
     radar_off_axis = radar_measured and not _radar_drives_block(
         radar_state, direction, radar_ft, arc_corroborates
@@ -448,6 +574,8 @@ def read_direction(
         how += (
             " (one front board heard something the laser sees nothing of on its side)"
         )
+    if door_glass:
+        how += " (both front boards hear a pane set in the wall ahead, behind the corridor's walls)"
 
     return {
         "direction": direction,
@@ -461,7 +589,12 @@ def read_direction(
         and not lidar_measured
         and not radar_measured,
         "unknown": distance_ft is None,
-        "glass": _is_glass(
+        # Glass is the radar hearing what the laser looks through, so none where the laser
+        # cannot look (LIDAR_BLIND_ARCS_DEG, the wearer's body): there every echo read as
+        # glass, and the dashboard said "left · glass" all the time on the desk (2026-11-05).
+        # The echo still counts as an obstacle at its distance.
+        "glass": not lidar_blind(direction)
+        and _is_glass(
             lidar_ft, radar_ft, radar_measured, lidar_measured, arc_corroborates
         ),
         "lidar_arc_ft": lidar_arc_ft,

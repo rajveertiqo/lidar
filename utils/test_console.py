@@ -1,5 +1,6 @@
 """The terminal, made for field testing."""
 
+import os
 import sys
 import threading
 import time
@@ -8,7 +9,8 @@ from typing import Any, Dict, Optional
 
 from config import CONSOLE_ENABLED, CONSOLE_HEARTBEAT_S, CONSOLE_STATUS_S
 
-_TTY = sys.stdout.isatty()
+# start_lidar.sh copies the output to logs/ through tee, so it says when a terminal is behind it
+_TTY = sys.stdout.isatty() or os.environ.get("SHAPPE_CONSOLE_COLOR") == "1"
 _RESET, _DIM, _BOLD = ("\033[0m", "\033[2m", "\033[1m") if _TTY else ("", "", "")
 _RED, _YEL, _GRN, _CYN = (
     ("\033[31m", "\033[33m", "\033[32m", "\033[36m") if _TTY else ("", "", "", "")

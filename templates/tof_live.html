@@ -132,13 +132,16 @@
 
       <section class="card">
         <h2>On the front camera</h2>
-        <div class="note">
-          Each depth pixel drawn where its own distance places it, red near to blue far: with a
-          correct calibration a table's dots sit on the table and the floor's on the floor.
+        <div class="note" id="ov-note"></div>
+        <div class="controls">
+          <span>show
+            <button data-ov="rgbd" class="on">depth + distances</button>
+            <button data-ov="overlay">dots</button>
+          </span>
           <button id="ov-toggle" class="on">on</button>
         </div>
         <div id="overlay-msg" class="note"></div>
-        <img id="overlay" alt="Front camera picture with the ToF depth dots drawn on it" hidden />
+        <img id="overlay" alt="Front camera picture with the ToF depth drawn on it" hidden />
       </section>
     </main>
     <script>
@@ -163,8 +166,11 @@
       const ft = (mm) => (mm == null ? "–" : `${(mm / MM_PER_FT).toFixed(1)} ft`);
       const isValid = (d, c, range) => c >= thr && d >= cut.minMm && d <= Math.min(range, cut.maxMm);
 
+      // Each frame is asked for once the one before is drawn ("next"): the Pi never has more
+      // than one in flight, so a slow link shows the newest frame, not a queue of old ones.
+      let sock = null;
       function connect() {
-        const sock = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/tof/ws`);
+        sock = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/tof/ws`);
         sock.binaryType = "arraybuffer";
         sock.onmessage = (e) => (typeof e.data === "string" ? showStatus(JSON.parse(e.data)) : onFrame(e.data));
         sock.onclose = () => {
@@ -222,6 +228,7 @@
         arrivals.push(now);
         arrivals = arrivals.filter((t) => now - t < 2000);
         draw();
+        if (sock && sock.readyState === WebSocket.OPEN) sock.send("next");
       }
 
       function draw() {
@@ -309,8 +316,23 @@
         if (frame) draw();
       };
 
-      // The overlay is drawn on the Pi (/tof/overlay.jpg), so it is fetched once a second,
-      // only while it is switched on and the page is in view.
+      // The overlay is drawn on the Pi (/tof/rgbd.jpg or /tof/overlay.jpg), so it is fetched
+      // once a second, only while it is switched on and the page is in view.
+      const OV_NOTES = {
+        rgbd: "The front camera as a depth camera: the depth aligned to its picture, red near " +
+          "to blue far (its own colours where the ToF has nothing: the top of the picture, and " +
+          "past 4 m), and each thing it names with the distance measured inside its box.",
+        overlay: "Each depth pixel drawn where its own distance places it, red near to blue " +
+          "far: with a correct calibration a table's dots sit on the table and the floor's " +
+          "on the floor.",
+      };
+      let ovKind = "rgbd";
+      $("ov-note").textContent = OV_NOTES[ovKind];
+      document.querySelectorAll("[data-ov]").forEach((b) => (b.onclick = () => {
+        ovKind = b.dataset.ov;
+        document.querySelectorAll("[data-ov]").forEach((x) => x.classList.toggle("on", x === b));
+        $("ov-note").textContent = OV_NOTES[ovKind];
+      }));
       let overlayOn = true;
       $("ov-toggle").onclick = () => {
         overlayOn = !overlayOn;
@@ -318,15 +340,26 @@
         $("ov-toggle").classList.toggle("on", overlayOn);
         if (!overlayOn) { $("overlay").hidden = true; $("overlay-msg").textContent = ""; }
       };
+      // depth + distances: the next picture as soon as this one is shown, at most 5 a second,
+      // drawn on the Pi at the width it is shown (half the camera's on most screens: ~31 KB
+      // and ~5 ms, against 231 KB and 65 ms at full size). The dots stay at 1 a second: every
+      // depth pixel is a circle drawn on the Pi.
+      const OV_GAP_MS = { rgbd: 200, overlay: 1000 };
       async function refreshOverlay() {
+        const started = performance.now();
         if (overlayOn && !document.hidden && status && status.enabled !== false) {
           try {
-            const r = await fetch(`/tof/overlay.jpg?t=${Date.now()}`, { cache: "no-store" });
+            const im = $("overlay");
+            const shown = im.clientWidth || $("ov-note").clientWidth || 640;
+            const w = Math.min(1164, Math.round(shown * (window.devicePixelRatio || 1)));
+            const q = ovKind === "rgbd" ? `w=${w}&` : "";
+            const r = await fetch(`/tof/${ovKind}.jpg?${q}t=${Date.now()}`, { cache: "no-store" });
             if (r.ok) {
               const url = URL.createObjectURL(await r.blob());
-              const im = $("overlay");
-              im.onload = () => URL.revokeObjectURL(url);
-              im.src = url;
+              await new Promise((done) => {
+                im.onload = im.onerror = () => { URL.revokeObjectURL(url); done(); };
+                im.src = url;
+              });
               im.hidden = false;
               $("overlay-msg").textContent = "";
             } else {
@@ -338,7 +371,8 @@
             $("overlay-msg").textContent = "no reply from the Pi";
           }
         }
-        setTimeout(refreshOverlay, 1000);
+        const gap = OV_GAP_MS[ovKind] || 1000;
+        setTimeout(refreshOverlay, Math.max(0, gap - (performance.now() - started)));
       }
 
       connect();

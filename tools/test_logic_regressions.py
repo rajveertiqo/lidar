@@ -113,6 +113,30 @@ class GlassBehindNearerEchoTests(unittest.TestCase):
         self.assertNotIn(self.said(corridor, ghosts=1.0), ("Glass ahead", "Blocked by glass"))
 
 
+class BlindSideGlassTests(unittest.TestCase):
+    """No glass where the laser cannot look (LIDAR_BLIND_ARCS_DEG): every echo on the blind
+    left read as glass, "left · glass" on the dashboard all the time on the desk (2026-11-05)."""
+
+    def test_echo_on_the_blind_side_is_an_obstacle_not_glass(self):
+        from tools import scene_hunt as sh
+
+        # A post straight to the left, 1.6 ft: only the blind arc sees it (a wall would also
+        # show in the laser's front-left, and that match cleared it before the fix too).
+        for post in ((0.0, -600.0, 100.0), (-200.0, -500.0, 100.0)):
+            walk, _ = sh.decide({"left": None, "right": None, "ahead": None,
+                                 "glass": None, "posts": [post]})
+            left = walk["directions"]["left"]
+            self.assertTrue(left["lidar_blind"])
+            self.assertTrue(left["radar_measured"])  # the radar heard the post
+            self.assertEqual(left["distance_ft"], left["radar_ft"])  # and it still counts
+            self.assertFalse(left["glass"])
+
+    def test_glass_where_the_laser_looks_is_still_glass(self):
+        self.assertTrue(walk_policy._is_glass(None, 3.0))  # the rule itself is unchanged
+        self.assertFalse(walk_policy.lidar_blind("right"))
+        self.assertTrue(walk_policy.lidar_blind("left"))
+
+
 class RadarEchoStrengthTests(unittest.TestCase):
     """Every echo a board lists keeps its own strength (peaks_db, same order as peaks_mm), from
     the board's row through the cardinal's (2026-11-02; only the nearest's was kept)."""

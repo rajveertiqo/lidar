@@ -13,7 +13,19 @@ Tester marks (/guidance/mark) are shown where they fell.
 Run it once on unchanged code first: "fidelity" should be 100% — if it is not, the
 replay itself differs from the device (a state the recording does not carry), and the
 differences it lists are not all yours.
+
+--turn-on replays the walk with features that run on the device but are not yet spoken
+switched on (2026-11-06): what the wearer WOULD have heard from them, and when — the
+evidence for turning each one on in config.py. Each changed line names its feature:
+
+    venv/bin/python tools/walk_replay.py --turn-on tof-hazards logs/walks/walk-*.jsonl.gz
+    venv/bin/python tools/walk_replay.py --turn-on all logs/walks/walk-*.jsonl.gz
+
+Record a walk with SHAPPE_RECORD_WALK=1 ./start_lidar.sh (or POST /guidance/record), and
+mark what happens on it with POST /guidance/mark (stairs here, a false alarm there).
 """
+
+import contextlib
 
 import argparse
 import gzip
@@ -25,6 +37,42 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+# What runs on the device but is said only once a walk shows it is right: --turn-on name ->
+# the config flag that lets it speak.
+FEATURES = {
+    "tof-hazards": "TOF_HAZARDS_SPEAK",  # stairs, steps, drops, poles (utils/ground_hazards)
+    "movers": "LIDAR_MOVERS_SPEAK",  # people and vehicles coming at the wearer
+    "route": "ROUTE_PLANNER_SPEAK",  # the route planner's turns and steers
+    "tof-distance": "TOF_USE_DISTANCE",  # the ToF's distance for what the camera names
+}
+
+
+def turned_on(names):
+    """The named features' flags True everywhere they are read: config, and every loaded
+    utils module that imported one by value (simple_guidance, motion_tracker, ...)."""
+    import config  # noqa: F401  (loaded, so it is patched with the rest)
+    from utils import simple_guidance  # noqa: F401
+
+    stack = contextlib.ExitStack()
+    for name in names:
+        flag = FEATURES[name]
+        for modname, mod in list(sys.modules.items()):
+            if (modname == "config" or modname.startswith("utils.")) and hasattr(mod, flag):
+                stack.enter_context(mock.patch.object(mod, flag, True))
+    return stack
+
+
+def _source(sg, text, got):
+    """Which not-yet-spoken feature a sentence came from, if one did."""
+    raw = got.get("raw") or {}
+    if text in sg._GROUND_SENTENCES or (text and text == raw.get("ground_would_say")):
+        return "tof-hazards"
+    if text in sg._MOVER_SENTENCES:
+        return "movers"
+    if text and text == raw.get("route_would_say"):
+        return "route"
+    return ""
 
 
 def _ticks(path):
@@ -46,8 +94,9 @@ def _ticks(path):
         print(f"  (the recording ends cut off after line {n}: {type(e).__name__})")
 
 
-def replay(path, recompute_policy=True, show_all=False):
-    """Print the differences; returns (ticks, said before, said now, differences)."""
+def replay(path, recompute_policy=True, show_all=False, turn_on=()):
+    """Print the differences; returns (ticks, said before, said now, differences).
+    `turn_on`: FEATURES names to replay as if spoken."""
     from utils import simple_guidance as sg
     from utils import walk_policy
 
@@ -56,18 +105,19 @@ def replay(path, recompute_policy=True, show_all=False):
     walk_policy._remember_turn(None, 0.0)
 
     clock = {"t": 0.0, "mono": 0.0}
-    rows = []  # (t, before, now, why now) — announcements only
+    rows = []  # (t, before, now, why now, feature) — announcements only
     ticks = same_ticks = 0
     t0 = None
     with (
         mock.patch("time.time", lambda: clock["t"]),
         mock.patch("time.monotonic", lambda: clock["mono"]),
+        turned_on(turn_on),
     ):
         for rec in _ticks(path):
             clock["t"], clock["mono"] = float(rec["t"]), float(rec["mono"])
             t0 = clock["t"] if t0 is None else t0
             if "mark" in rec:
-                rows.append((clock["t"] - t0, "mark", rec["mark"], rec.get("text", "")))
+                rows.append((clock["t"] - t0, "mark", rec["mark"], rec.get("text", ""), ""))
                 continue
             inp, out = rec["in"], rec["out"]
             wd = (
@@ -86,24 +136,31 @@ def replay(path, recompute_policy=True, show_all=False):
                 camera_state=inp.get("camera"),
                 motion=inp.get("motion"),
                 movers=inp.get("movers"),
+                ground=inp.get("ground"),
             )
             ticks += 1
             before = out["instruction"] if out.get("speak") else ""
             now = got["instruction"] if got.get("speak") else ""
             same_ticks += before == now
             if before or now:
-                rows.append((clock["t"] - t0, before, now, got.get("reason", "")))
+                rows.append(
+                    (clock["t"] - t0, before, now, got.get("reason", ""), _source(sg, now, got))
+                )
 
     said_before = sum(1 for r in rows if r[1] != "mark" and r[1])
     said_now = sum(1 for r in rows if r[1] != "mark" and r[2])
     diffs = 0
-    print(f"\n{path}")
-    for t, before, now, why in rows:
+    by_feature = {}
+    print(f"\n{path}" + (f"   (turned on: {', '.join(turn_on)})" if turn_on else ""))
+    for t, before, now, why, feature in rows:
         if before == "mark":
             print(f"  {t:7.1f}s  ** tester mark: {now.upper()}  {why}")
             continue
         differs = before != now
         diffs += differs
+        if differs and feature:
+            by_feature[feature] = by_feature.get(feature, 0) + 1
+            why = f"[{feature}] {why}"
         if not (differs or show_all):
             continue
         tag = (
@@ -124,6 +181,12 @@ def replay(path, recompute_policy=True, show_all=False):
         f"  {ticks} ticks · said before {said_before} · said now {said_now} · "
         f"{diffs} different · fidelity {fidelity:.1f}% of ticks identical"
     )
+    if turn_on:
+        print(
+            "  changed by what was turned on: "
+            + (", ".join(f"{k} {v}" for k, v in sorted(by_feature.items())) or "nothing")
+            + "  (the rest: the code changed since the walk)"
+        )
     return ticks, said_before, said_now, diffs
 
 
@@ -143,11 +206,28 @@ def main():
         help="use the recorded "
         "walk_policy decision instead of running the current walk_policy",
     )
+    ap.add_argument(
+        "--turn-on",
+        default="",
+        metavar="FEATURES",
+        help="replay as if these not-yet-spoken features were spoken, comma-separated: "
+        + ", ".join(FEATURES)
+        + ", or all",
+    )
     args = ap.parse_args()
+    turn_on = [f.strip() for f in args.turn_on.split(",") if f.strip()]
+    if turn_on == ["all"]:
+        turn_on = list(FEATURES)
+    unknown = [f for f in turn_on if f not in FEATURES]
+    if unknown:
+        ap.error(f"unknown feature(s) {', '.join(unknown)}: use {', '.join(FEATURES)} or all")
     total = 0
     for path in args.recordings:
         total += replay(
-            path, recompute_policy=not args.recorded_policy, show_all=args.all
+            path,
+            recompute_policy=not args.recorded_policy,
+            show_all=args.all,
+            turn_on=turn_on,
         )[3]
     return 0 if total == 0 else 1
 

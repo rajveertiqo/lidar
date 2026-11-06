@@ -96,6 +96,7 @@ from config import (
     SIMPLE_VEHICLE_MISS_M,
     SIMPLE_VEHICLE_SIDE_MARGIN,
     SIMPLE_VEHICLE_WINDOW_S,
+    SIMPLE_VEHICLE_WIDTH_M,
     SIMPLE_VEHICLE_CAREFUL_HEIGHT_FRAC,
     SIMPLE_VEHICLE_CAREFUL_MISS_M,
     SIMPLE_VEHICLE_RANGE_MATCH,
@@ -117,6 +118,9 @@ from config import (
     ROUTE_PLANNER_ENABLED,
     ROUTE_PLANNER_SPEAK,
     ROUTE_STEER_MAX_DEG,
+    TOF_HAZARD_FRESH_S,
+    TOF_HAZARD_STOP_M,
+    TOF_HAZARDS_SPEAK,
     TOF_USE_DISTANCE,
 )
 
@@ -229,6 +233,51 @@ _OBJECT_OF = {
 }
 _PATH_AHEAD = (WALL_AHEAD, GLASS_AHEAD, OBSTACLE_AHEAD) + tuple(OBJECT_AHEAD.values())
 
+# Hazards on the ground ahead, from the ToF and confirmed by the front camera
+# (utils/ground_hazards, 2026-11-06): what the shoulder LiDAR's one plane cannot see. A fall
+# in front ("..., stop") is urgent; the rest are said once, as a wall ahead is. A pole, a
+# pothole, or a low thing the camera names use the sentences that already exist ("Pole
+# ahead", "Pothole ahead", "Bench ahead"); an unnamed tall one is "Obstacle ahead". Said
+# only with TOF_HAZARDS_SPEAK, else logged as "would say".
+STAIRS_UP_AHEAD = "Stairs up ahead"
+STAIRS_DOWN_AHEAD = "Stairs down ahead"
+STAIRS_DOWN_STOP = "Stairs down in front, stop"
+STEP_UP_AHEAD = "Step up ahead"
+STEP_DOWN_AHEAD = "Step down ahead"
+DROP_AHEAD = "Drop ahead"
+DROP_STOP = "Drop in front, stop"
+LOW_OBSTACLE_AHEAD = "Low obstacle ahead"
+OVERHANG_AHEAD = "Overhanging obstacle ahead"
+_GROUND_STOP = (STAIRS_DOWN_STOP, DROP_STOP)
+_GROUND_SENTENCES = (
+    STAIRS_UP_AHEAD,
+    STAIRS_DOWN_AHEAD,
+    STAIRS_DOWN_STOP,
+    STEP_UP_AHEAD,
+    STEP_DOWN_AHEAD,
+    DROP_AHEAD,
+    DROP_STOP,
+    LOW_OBSTACLE_AHEAD,
+    OVERHANG_AHEAD,
+)
+# What each is about (guidance()'s "obstacle", the phone's registry).
+_GROUND_OBSTACLE = {
+    STAIRS_UP_AHEAD: "stairs",
+    STAIRS_DOWN_AHEAD: "stairs",
+    STAIRS_DOWN_STOP: "stairs",
+    STEP_UP_AHEAD: "step",
+    STEP_DOWN_AHEAD: "step",
+    DROP_AHEAD: "drop",
+    DROP_STOP: "drop",
+    LOW_OBSTACLE_AHEAD: "low obstacle",
+    OVERHANG_AHEAD: "overhang",
+}
+_GROUND_FALL_KINDS = ("drop", "stairs_down", "hole", "step_down")
+# A fall ahead outranks a wall or glass ahead; the rest come after what the LiDAR names.
+_GROUND_FALL_AHEAD = (DROP_AHEAD, STAIRS_DOWN_AHEAD, STEP_DOWN_AHEAD) + tuple(
+    OBJECT_AHEAD[w] for w in ("Pothole",) if w in OBJECT_AHEAD
+)
+
 STEER_PAST: Dict[Tuple[str, str, str], str] = {}
 for _w in _WORDS:
     STEER_PAST[(_w, "left", "right")] = f"{_w} on left, turn slightly right"
@@ -289,6 +338,7 @@ ALLOWED = (
     + (OBSTACLE_AHEAD, STOP_NO_WAY, TRAFFIC_LIGHT_AHEAD)
     + _STARTUP_NOTICES
     + _SYSTEM_NOTICES
+    + _GROUND_SENTENCES
 )
 
 _ACTION = {
@@ -324,6 +374,15 @@ _ACTION = {
     POWER_NORMAL: "power_normal",
     DEVICE_HOT: "device_hot",
     DEVICE_COOL: "device_cool",
+    STAIRS_UP_AHEAD: "stairs_up_ahead",
+    STAIRS_DOWN_AHEAD: "stairs_down_ahead",
+    STAIRS_DOWN_STOP: "stairs_down_stop",
+    STEP_UP_AHEAD: "step_up_ahead",
+    STEP_DOWN_AHEAD: "step_down_ahead",
+    DROP_AHEAD: "drop_ahead",
+    DROP_STOP: "drop_stop",
+    LOW_OBSTACLE_AHEAD: "low_obstacle_ahead",
+    OVERHANG_AHEAD: "overhang_ahead",
     **{t: "object_ahead" for t in OBJECT_AHEAD.values()},
     **{t: "object_in_front" for t in OBJECT_IN_FRONT.values()},
     **{t: "steer_" + i["turn"] for t, i in _STEER_INFO.items() if i["turn"]},
@@ -380,6 +439,8 @@ _LEVEL = {
     TURN_SLIGHT_LEFT: 1,
     TURN_SLIGHT_RIGHT: 1,
     **{t: 2 for t in STEER_IN_FRONT.values()},
+    # A fall in front cuts in, with the urgent tone (guidance()'s rule "blocked").
+    **{t: (2 if t in _GROUND_STOP else 1) for t in _GROUND_SENTENCES},
 }
 _BLOCKED = 2
 _VEHICLE = 3
@@ -982,6 +1043,15 @@ _NO_VEHICLE: Dict[str, Any] = {
 }
 
 
+# How far ahead a vehicle's sideways drift is carried to judge where it will pass (_Vehicles):
+# the time to contact, but no more than this — further on, the box's slide is too noisy.
+_VEHICLE_PREDICT_S = 5.0
+# A vehicle whose near edge crosses the walking line farther off than this passes in front.
+_VEHICLE_CROSS_AHEAD_M = 4.0
+_NO_MISS_M = 99.0  # "nowhere near": a vehicle off to the side with no prediction
+_VEHICLE_COURSE_M = 1.0  # predicted to pass within this of the walking line: a collision course
+
+
 class _Vehicles:
     """Vehicles in the front camera, followed from one detector frame to the next."""
 
@@ -1101,9 +1171,11 @@ class _Vehicles:
                 tr["approach_frames"] = tr["moving_frames"] = 0
                 continue  # not seen on this frame
             x1, y1, x2, y2 = samples[-1][1]
-            if x2 < lo or x1 > hi:
-                tr["approach_frames"] = tr["moving_frames"] = 0
-                continue  # outside the box
+            # Outside the centre band it is judged only for coming AT the wearer (review,
+            # 2026-11-06): a car on a collision course from 25 deg was not looked at until it
+            # was near. A parked one off to the side never grows past the wearer's own pace,
+            # and "be careful" (moving, stopped) stays for the band.
+            in_band = not (x2 < lo or x1 > hi)
             cx = (x1 + x2) / 2.0
             side = tr["side"]
             if side == "left" and cx > mid + SIMPLE_VEHICLE_SIDE_MARGIN * _QUAD_W:
@@ -1144,19 +1216,72 @@ class _Vehicles:
                 for _, b in samples
             )
             miss_m = misses[len(misses) // 2]
+            across = slide - (cx / _QUAD_W - 0.5) * growth - turn_slide
+            # Where it will PASS, not only where it is (review, 2026-11-06): a car on a
+            # collision course keeps its bearing, so its offset from the walking line only
+            # shrinks at the very end — from 20 deg off at 30 km/h the warning came 0.5 s
+            # before contact (4.5 s head-on). Judged from its nearest front corner (the box's
+            # OUTER edge: one point of the car, at the scale its height gives) and its width:
+            # the box's inner edge is its far end when its side shows, read too near. Its
+            # sideways speed is that corner's drift, the expansion and the wearer's turn taken
+            # off, carried on to contact (1/growth, at most _VEHICLE_PREDICT_S) — unless ALL of
+            # it would cross the walking line while still over _VEHICLE_CROSS_AHEAD_M away:
+            # crossing traffic, passing in front. Not on a box cut off at the picture's side.
+            then_m = None
+            # The closing rate from the box's HEIGHT: its area also grows as a passing car's
+            # side turns to view, which read a parallel car 3.1 m off as drifting in.
+            g_h = (
+                _theil_sen([(ts, math.log(max(1.0, b[3] - b[1]))) for ts, b in samples])
+                if not (cut_lr or cut_tb)
+                else None
+            )
+            if g_h is not None and g_h > 1e-3:
+                bx = samples[-1][1]
+                m_per_px = height_m / max(1.0, bx[3] - bx[1])
+                right_side = cx >= mid
+                outer = 2 if right_side else 0
+                out_slide = _theil_sen([(ts, b[outer] / _QUAD_W) for ts, b in samples])
+                if out_slide is not None:
+                    out_across = out_slide - (bx[outer] / _QUAD_W - 0.5) * g_h - turn_slide
+                    vy = out_across * _QUAD_W * m_per_px  # metres a second, + right
+                    tau = min(1.0 / g_h, _VEHICLE_PREDICT_S)
+                    width = SIMPLE_VEHICLE_WIDTH_M.get(tr["cls"], 1.8)
+                    o = (bx[outer] - mid) * m_per_px  # its nearest outer corner, + right
+                    crosses_ahead = False
+                    if (o > 0 and vy < 0) or (o < 0 and vy > 0):
+                        t_all = abs(o) / abs(vy)  # its far side is across the line by then
+                        crosses_ahead = (
+                            t_all < tau
+                            and range_m * (1.0 - g_h * t_all) > _VEHICLE_CROSS_AHEAD_M
+                        )
+                    if not crosses_ahead:
+                        op = o + vy * tau
+                        a_, b_ = (op - width, op) if right_side else (op, op + width)
+                        then_m = 0.0 if a_ <= 0.0 <= b_ else min(abs(a_), abs(b_))
+            # The prediction is for a car on a COLLISION course (it puts those within a few
+            # cm); a near miss is judged as before, by where the car is — a parallel car read
+            # 1.93 m from a 3.1 m pass is not a reason to warn.
+            course = then_m is not None and then_m <= _VEHICLE_COURSE_M
+            if in_band:
+                if course:
+                    miss_m = min(miss_m, then_m)
+            else:
+                # Off to the side now: only a collision course is a reason to warn.
+                miss_m = then_m if course else _NO_MISS_M
             coming = (
                 growth - SIMPLE_VEHICLE_EGO_MARGIN * own >= SIMPLE_VEHICLE_APPROACH_RATE
                 and miss_m <= SIMPLE_VEHICLE_MISS_M
             )
             tr["approach_frames"] = tr["approach_frames"] + 1 if coming else 0
             approach = tr["approach_frames"] >= SIMPLE_VEHICLE_CONFIRM_FRAMES
-            across = slide - (cx / _QUAD_W - 0.5) * growth - turn_slide
             crossing = (
-                abs(across) > SIMPLE_VEHICLE_IDLE_SLIDE
+                in_band
+                and abs(across) > SIMPLE_VEHICLE_IDLE_SLIDE
                 and abs(turn_slide) <= 2.0 * SIMPLE_VEHICLE_IDLE_SLIDE
             )
             closing = (
-                growth - SIMPLE_VEHICLE_EGO_MARGIN * own >= SIMPLE_VEHICLE_IDLE_RATE
+                in_band
+                and growth - SIMPLE_VEHICLE_EGO_MARGIN * own >= SIMPLE_VEHICLE_IDLE_RATE
                 and miss_m <= SIMPLE_VEHICLE_CAREFUL_MISS_M
             )
             tr["moving_frames"] = (
@@ -1166,7 +1291,8 @@ class _Vehicles:
                 "approaching": approach,
                 "side": side,
                 "stopped": (
-                    abs(growth) <= SIMPLE_VEHICLE_IDLE_RATE
+                    in_band
+                    and abs(growth) <= SIMPLE_VEHICLE_IDLE_RATE
                     and abs(slide) <= SIMPLE_VEHICLE_IDLE_SLIDE
                 ),
                 "moving": (
@@ -1530,6 +1656,69 @@ def _steer_allowed(
     return True
 
 
+def ground_sentence(
+    ground: Optional[Dict[str, Any]], now: float
+) -> Tuple[Optional[str], str, Optional[Dict[str, Any]]]:
+    """(sentence, why, the hazard) for utils/ground_hazards' top hazard — the one its
+    speaking rule allows, nearest, a fall in front first — or (None, why not, None). An
+    analysis older than TOF_HAZARD_FRESH_S says nothing: the ToF has stopped, or lags."""
+    if not ground or not ground.get("ok"):
+        return None, (ground or {}).get("why") or "no ToF analysis", None
+    t = ground.get("t")
+    if not isinstance(t, (int, float)) or not -1.0 <= now - t <= TOF_HAZARD_FRESH_S:
+        return None, "the ToF analysis is stale", None
+    top = ground.get("top")
+    if not top:
+        return None, "nothing on the ground ahead", None
+    kind = top.get("kind")
+    ahead = float(top.get("ahead_m") or 0.0)
+    near = ahead <= TOF_HAZARD_STOP_M
+    name = (top.get("camera") or {}).get("name")
+    named = OBJECT_AHEAD.get(name) if name in OBJECT_AHEAD else None
+    text = {
+        "drop": DROP_STOP if near else DROP_AHEAD,
+        "stairs_down": STAIRS_DOWN_STOP if near else STAIRS_DOWN_AHEAD,
+        "step_down": STEP_DOWN_AHEAD,
+        "hole": OBJECT_AHEAD.get("Pothole", STEP_DOWN_AHEAD),
+        "stairs_up": STAIRS_UP_AHEAD,
+        "step_up": STEP_UP_AHEAD,
+        "pole": named or OBJECT_AHEAD.get("Pole", OBSTACLE_AHEAD),
+        "overhang": named or OVERHANG_AHEAD,
+        "low_obstacle": named or LOW_OBSTACLE_AHEAD,
+        "obstacle": named or OBSTACLE_AHEAD,
+    }.get(kind)
+    if text is None:
+        return None, f"an unknown kind of hazard ({kind})", None
+    why = (
+        f"{str(kind).replace('_', ' ')} {ahead / 0.3048:.1f} ft ahead, measured by the ToF"
+        f" — {top.get('why') or ''}"
+    )
+    return text, why, top
+
+
+def _ground_brief(ground: Optional[Dict[str, Any]], now: float) -> Optional[Dict[str, Any]]:
+    """The ToF's analysis as the dashboard and the walk recorder keep it, in FEET."""
+    if not ground:
+        return None
+    t = ground.get("t")
+    return {
+        "ok": bool(ground.get("ok")),
+        "why": ground.get("why") or "",
+        "age_s": round(now - t, 2) if isinstance(t, (int, float)) else None,
+        "hazards": [
+            {
+                "kind": h.get("kind"),
+                "ahead_ft": h.get("ahead_ft"),
+                "camera": (h.get("camera") or {}).get("status"),
+                "name": (h.get("camera") or {}).get("name"),
+                "speak": bool(h.get("speak")),
+                "why": h.get("why"),
+            }
+            for h in ground.get("hazards") or []
+        ],
+    }
+
+
 def _sentence(
     blocked: bool,
     near: bool,
@@ -1546,12 +1735,17 @@ def _sentence(
     glass_side: Optional[str] = None,
     mover: Optional[str] = None,
     obstacle: bool = False,
+    ground: Optional[str] = None,
 ) -> str:
     """A vehicle coming at the user, above everything."""
     if vehicle:
         if vehicle_no_room:
             return VEHICLE_APPROACHING
         return VEHICLE_FROM_LEFT if vehicle == "left" else VEHICLE_FROM_RIGHT
+    # A fall in front (the ToF: stairs down or a drop within TOF_HAZARD_STOP_M) is the worst
+    # of what is left: above a mover, and above the block's turn, which may not see it.
+    if ground in _GROUND_STOP:
+        return ground
     if mover:  # already a sentence (mover_sentence)
         return mover
     if blocked:
@@ -1579,6 +1773,8 @@ def _sentence(
         return TURN_LEFT if side != "right" else TURN_RIGHT
     if vehicle_ahead:
         return VEHICLE_AHEAD
+    if ground in _GROUND_FALL_AHEAD:  # a fall on the way, before a wall or a pane
+        return ground
     # A pane on the path outranks a wall beside you, which a 4 ft near-wall band makes common (2026-10-01).
     if near and glass:
         return GLASS_AHEAD
@@ -1586,21 +1782,27 @@ def _sentence(
     # 3 ft beside the user held "Wall ahead" back until the 4 ft block (~1.8 s at walking pace).
     if near and wall:
         return WALL_AHEAD
+    # Glass beside, inside SIMPLE_GLASS_BESIDE_FT, before a steer or a thing named further
+    # ahead (review, 2026-11-06): it is the nearer hazard, and the one the wearer cannot find
+    # with a cane in time — with a person 10 ft ahead, "Person ahead" held back "Glass on
+    # right, move left" for good, and a sidestep round the person went into the pane.
+    # glass_side is set only where the other side has room to move into (decide).
+    if glass_side:
+        return GLASS_LEFT if glass_side == "left" else GLASS_RIGHT
     past = _steer_text(steer, False)
     if past:
         return past
     if near and obj in OBJECT_AHEAD:
         return OBJECT_AHEAD[obj]
+    # The ToF's: stairs or a step up, a pole, something low or overhanging, or under the
+    # LiDAR's plane. It knows more than the LiDAR's unnamed obstacle, so it comes first.
+    if ground:
+        return ground
     if obstacle:
         return OBSTACLE_AHEAD
-    # Never "move" toward glass beside you (2026-10-22): with a wall near on the other side
-    # the glass is the one to keep clear of — glass_side is only set when that side has room.
-    if glass_side and close and close != glass_side:
-        return GLASS_LEFT if glass_side == "left" else GLASS_RIGHT
+    # (Glass beside is said above, before steers: never "move" toward it — 2026-10-22.)
     if close:
         return NEAR_LEFT if close == "left" else NEAR_RIGHT
-    if glass_side:
-        return GLASS_LEFT if glass_side == "left" else GLASS_RIGHT
     if drift:
         return DRIFT_LEFT if drift == "left" else DRIFT_RIGHT
     return WALK_STRAIGHT
@@ -1618,10 +1820,14 @@ def decide(
     vehicles: Optional[_Vehicles] = None,
     previous_steer: Optional[str] = None,
     movers: Optional[Dict[str, Any]] = None,
+    ground: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """What this one poll's readings say, and the sentence they map to."""
+    """What this one poll's readings say, and the sentence they map to. `ground`: utils/
+    ground_hazards.snapshot() — the ToF's hazards on the ground ahead."""
     walk_decision = walk_decision or {}
     now = time.time() if now is None else now
+    ground_would, ground_why, _ = ground_sentence(ground, now)
+    ground_text = ground_would if TOF_HAZARDS_SPEAK else None
     motion = current_motion(motion)  # stale motion is no motion (NEW-026)
     still, pace = user_motion(motion)
     yaw = float((motion or {}).get("yaw_rate_dps") or 0.0)
@@ -1810,6 +2016,29 @@ def decide(
     obj = None
     if (blocked or near) and not (glass or wall or alongside or brushed):
         obj = veh_word or front_object(camera_state, now, front_ft)
+    # What the laser blocks on, if the ToF found a pole that far ahead and the camera named
+    # nothing: "Pole in front", not just "Turn left" (with TOF_HAZARDS_SPEAK).
+    if (
+        TOF_HAZARDS_SPEAK
+        and obj is None
+        and ground_would is not None
+        and (blocked or near)
+        and not (glass or wall or alongside or brushed)
+        and front_ft is not None
+    ):
+        pole = next(
+            (
+                h
+                for h in (ground or {}).get("hazards") or []
+                if h.get("kind") == "pole"
+                and h.get("speak")
+                and abs(float(h.get("ahead_m") or 0.0) / 0.3048 - front_ft) <= 1.5
+            ),
+            None,
+        )
+        if pole is not None:
+            name = (pole.get("camera") or {}).get("name")
+            obj = name if name in OBJECT_IN_FRONT else "Pole" if "Pole" in OBJECT_IN_FRONT else None
 
     # Something the laser measures on the walking line, short of a block, that is not a
     # wall, glass or named: until 2026-10-21 that was "Walk straight" right up to 4 ft.
@@ -1890,6 +2119,12 @@ def decide(
     )
     if steer and not _steer_allowed(steer, side_room, blocked, front_ft, side):
         steer = None
+    # Never steer toward glass a front board hears beside the path (review, 2026-11-06): the
+    # pane is not in side_room (the laser looks through it, the cones are the cardinals'), so
+    # "Person on left, turn slightly right" sent the wearer at a pane 2.8 ft to the right and
+    # its own warning was never said. Without the steer, "Glass on right, move left" is.
+    if steer and beside and steer.get("turn") == beside:
+        steer = None
     # Past something on the way that a small turn clears (or a moving thing that will be there).
     route_steer = None
     if (
@@ -1922,6 +2157,8 @@ def decide(
         }
         if not _steer_allowed(route_steer, side_room, blocked, front_ft, side):
             route_steer = None
+        elif beside and route_steer.get("turn") == beside:
+            route_steer = None  # nor the planner's, toward glass beside (as the camera's)
     if ROUTE_PLANNER_SPEAK and steer is None and route_steer is not None:
         steer = route_steer
     no_room_by_side = {
@@ -2031,8 +2268,11 @@ def decide(
         glass_side,
         mover,
         obstacle_ahead,
+        ground=ground_text,
     )
-    if text in _MOVER_SENTENCES:
+    if ground_text and text == ground_text:
+        rule, why = "ground_hazard", ground_why
+    elif text in _MOVER_SENTENCES:
         rule, why = "mover_approaching", mover_why
     elif text in _VEHICLE_APPROACH:
         rule = "vehicle_approaching"
@@ -2127,6 +2367,9 @@ def decide(
         "vehicle_no_room": vehicle_no_room,
         "vehicle_no_room_by_side": no_room_by_side,
         "glass_side": glass_side,
+        # The side a front board hears glass on, near or not: no steer may turn toward it,
+        # one held from before the pane was heard included (_World).
+        "glass_dir": beside,
         "glass_side_ft": beside_ft,
         "object": obj,
         # The front camera frame these detections came from: _World confirms a name (and a
@@ -2157,6 +2400,12 @@ def decide(
         ),
         "mover_text": mover,
         "mover_reason": mover_why,
+        # The ToF's hazards on the ground (utils/ground_hazards): the sentence the top one
+        # maps to, said only with TOF_HAZARDS_SPEAK (ground_text), else "would say".
+        "ground": _ground_brief(ground, now),
+        "ground_text": ground_text,
+        "ground_would_say": ground_would,
+        "ground_reason": ground_why,
         # For the dashboard, in FEET like every figure a person reads there.
         "movers": [
             {
@@ -2309,6 +2558,10 @@ class _World:
         )
         self.obj_word: Optional[str] = None
         self.obstacle = _Hold(*timing)
+        # The ToF's hazard on the ground: confirmed over its own frames already (utils/
+        # ground_hazards: 3 of 5 analyses), so taken at once and released like the rest.
+        self.ground = _Hold(0.0, SIMPLE_CLEAR_CONFIRM_S, SIMPLE_ALERT_GAP_S)
+        self.ground_text: Optional[str] = None
         self.episode = 0
         self._in_episode = False
         self._unknown_since: Optional[float] = None
@@ -2464,6 +2717,15 @@ class _World:
         )
         if not self.mover.active:
             self.mover_text = None
+        if raw.get("ground_text"):
+            self.ground_text = raw["ground_text"]
+        ground = (
+            self.ground_text
+            if self.ground.update(bool(raw.get("ground_text")), now)
+            else None
+        )
+        if not self.ground.active:
+            self.ground_text = None
         side_seen = bool(raw.get("close") or raw.get("drift") or raw.get("close_band"))
         on_line = raw.get("on_line_ft")
         line_blocked = (
@@ -2482,12 +2744,15 @@ class _World:
         )
         if not self.steer.active:
             self.steer_plan = None
-        if self.steer_plan and not _steer_allowed(
-            self.steer_plan,
-            raw.get("side_room") or {},
-            blocked,
-            front,
-            raw.get("side") or self.side,
+        if self.steer_plan and (
+            not _steer_allowed(
+                self.steer_plan,
+                raw.get("side_room") or {},
+                blocked,
+                front,
+                raw.get("side") or self.side,
+            )
+            or (raw.get("glass_dir") and self.steer_plan.get("turn") == raw.get("glass_dir"))
         ):
             self.steer.clear()
             self.steer_plan = steer = None
@@ -2554,6 +2819,7 @@ class _World:
             glass_side=glass_side,
             mover=mover,
             obstacle=obstacle and not (wall or obj),
+            ground=ground,
         )
         self._last_text = text
         hazard = _LEVEL.get(text, 0) >= 1
@@ -2742,6 +3008,33 @@ def _airtime(text: str) -> float:
     )
 
 
+def _advised_side(text: str) -> Optional[str]:
+    """The side a sentence sends the wearer toward (turn or move), or None."""
+    if text in (TURN_LEFT, TURN_SLIGHT_LEFT):
+        return "left"
+    if text in (TURN_RIGHT, TURN_SLIGHT_RIGHT):
+        return "right"
+    if text in _STEER_INFO:
+        return _STEER_INFO[text]["turn"]
+    if text in _MOVER_INFO:
+        return _MOVER_INFO[text]["move"]
+    if text in (NEAR_LEFT, DRIFT_LEFT, GLASS_LEFT, VEHICLE_FROM_LEFT):
+        return "right"  # "..., move right" / "turn slightly right"
+    if text in (NEAR_RIGHT, DRIFT_RIGHT, GLASS_RIGHT, VEHICLE_FROM_RIGHT):
+        return "left"
+    return None
+
+
+def _advice_closed(spoken: str, text: str, raw: Dict[str, Any]) -> bool:
+    """Has the side the last sentence sent the wearer toward closed (under WALK_MIN_TURN_FT
+    of room, or unknown) while something else is now to be said?"""
+    side = _advised_side(spoken)
+    if not side or not text or text == spoken:
+        return False
+    room = (raw.get("side_room") or {}).get(side)
+    return isinstance(room, (int, float)) and room < WALK_MIN_TURN_FT
+
+
 class _Gate:
     """Decides whether a sentence is worth SAYING on this poll."""
 
@@ -2761,9 +3054,10 @@ class _Gate:
         self._status_busy_until: float = 0.0
 
     def admit(
-        self, text: str, now: float, episode: Optional[int] = None
+        self, text: str, now: float, episode: Optional[int] = None, closed: bool = False
     ) -> Tuple[bool, int, str]:
-        """(say it, sequence number, why not)."""
+        """(say it, sequence number, why not). `closed`: the side the last sentence sent the
+        wearer toward has no room now (_advice_closed) — its correction is news."""
         if not text:
             self._pending, self._pending_since = "", 0.0
             return False, self._seq, "nothing to say"
@@ -2856,7 +3150,11 @@ class _Gate:
 
         held = now - self._pending_since
         need = SIMPLE_CONFIRM_S
-        flipped = self._spoken in _VEHICLE_APPROACH and text in _VEHICLE_APPROACH
+        # One approach warning becoming another (review, 2026-11-06): until then only a
+        # vehicle's flip was news, so "Person approaching from left, stop" -> "Person coming
+        # toward you, move right" waited SIMPLE_SETTLE_S (6 s), past the 5 s horizon. Still
+        # held SIMPLE_CONFIRM_S, so a side flickering tick to tick is not said.
+        flipped = self._spoken in _APPROACHING and text in _APPROACHING
         if (
             level >= 1
             and self._has_spoken
@@ -2874,6 +3172,9 @@ class _Gate:
                 or (self._spoken in _APPROACHING and text not in _APPROACHING)
             )
             upgrade = upgrade or self._spoken in (SENSORS_OFFLINE, STOP_NO_WAY)
+            # The advice just given is wrong now (review, 2026-11-06): "Turn right", then
+            # someone stepped in 1.5 ft to the right, and "Turn left" waited 6 s.
+            upgrade = upgrade or closed
             if not upgrade:
                 need = SIMPLE_SETTLE_S
         if held < need:
@@ -2887,7 +3188,7 @@ class _Gate:
         if (
             self._has_spoken
             and now - self._spoken_at < SIMPLE_MIN_GAP_S
-            and not flipped
+            and not (flipped or closed)
         ):
             return (
                 False,
@@ -3020,6 +3321,7 @@ _shadow = _MoverShadow()
 _route_shadow = (
     _MoverShadow()
 )  # the route planner's would-say (ROUTE_PLANNER_SPEAK False)
+_ground_shadow = _MoverShadow()  # the ToF's hazards' would-say (TOF_HAZARDS_SPEAK False)
 # The start-up hold as the wearer hears it: "Starting, please wait" when it begins, "Ready"
 # when guidance does (2026-10-21; until then the hold was silent, like a dead device).
 _startup = {"held": False, "starting_said": False, "ready_said": False}
@@ -3054,6 +3356,12 @@ def _reason(text: str, raw: Dict[str, Any]) -> str:
         return raw.get("reason", "")
     if text == STOP_NO_WAY:
         return "front blocked, and no direction has room to turn into"
+    if text in _GROUND_SENTENCES or (
+        raw.get("ground_text") and text == raw.get("ground_text")
+    ):
+        return raw.get("ground_reason") or (
+            f"{_GROUND_OBSTACLE.get(text, 'something')} on the ground ahead, measured by the ToF"
+        )
     if text == OBSTACLE_AHEAD:
         return "something unnamed on your path ahead"
     if text in _STEER_INFO:
@@ -3110,8 +3418,10 @@ def guidance(
     hold_lidar_absent: bool = False,
     movers: Optional[Dict[str, Any]] = None,
     system: Optional[Dict[str, Any]] = None,
+    ground: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """The sentence AND whether to announce it. `system`: utils/pi_health.read()."""
+    """The sentence AND whether to announce it. `system`: utils/pi_health.read(). `ground`:
+    utils/ground_hazards.snapshot()."""
     now = time.time() if now is None else now
     with _lock:
         raw = decide(
@@ -3126,6 +3436,7 @@ def guidance(
             vehicles=_world.vehicles,
             previous_steer=_world.steer_turn,
             movers=movers,
+            ground=ground,
         )
         naming = False
         # Judged on every poll, whatever is said (it used to be judged only when nothing
@@ -3294,6 +3605,7 @@ def guidance(
             raw.get("blocked")
             or (raw.get("near") and raw.get("instruction") not in _WALK_ON)
             or raw.get("instruction") in _APPROACHING
+            or bool(raw.get("ground_text"))  # never "walk on" past a hazard on the ground
         ):
             speak, cue_seq = False, _gate.state()["cue_seq"]
             quiet = "confirming — the newest reading is not clear"
@@ -3321,7 +3633,9 @@ def guidance(
             speak, cue_seq = False, _gate.state()["cue_seq"]
             quiet = "blocked — confirming what it is"
         else:
-            speak, cue_seq, quiet = _gate.admit(text, now, _world.episode)
+            speak, cue_seq, quiet = _gate.admit(
+                text, now, _world.episode, closed=_advice_closed(_gate.last, text, raw)
+            )
         if raw["rule"] in ("waiting", "stale"):
             quiet = quiet if (hold and not through_hold) else raw["reason"]
         announced = _gate.counted
@@ -3333,6 +3647,11 @@ def guidance(
         route_shadow = (
             _route_shadow.update(raw.get("route_would_say"), now)
             if not ROUTE_PLANNER_SPEAK and not hold
+            else None
+        )
+        ground_shadow = (
+            _ground_shadow.update(raw.get("ground_would_say"), now)
+            if not TOF_HAZARDS_SPEAK and not hold
             else None
         )
         # A whole tick after "Guidance stopped" (fault_notice): guidance is back, so what
@@ -3401,6 +3720,8 @@ def guidance(
             if text in (BLOCKED_GLASS, GLASS_AHEAD) + _GLASS_BESIDE
             else "wall"
             if text in (BLOCKED_WALL, WALL_AHEAD) + _SIDE_WALL
+            else _GROUND_OBSTACLE[text]
+            if text in _GROUND_OBSTACLE
             else _OBJECT_OF[text].lower()
             if text in _OBJECT_OF
             else None
@@ -3434,6 +3755,8 @@ def guidance(
                 "route",
                 "route_would_say",
                 "tracks",
+                "ground",
+                "ground_would_say",
             )
         },
         "speak": speak,
@@ -3446,6 +3769,9 @@ def guidance(
         # The route planner's turn or steer, held and new on this poll, not spoken (ROUTE_PLANNER_SPEAK).
         "route_shadow": route_shadow,
         "route_shadow_reason": raw.get("route_reason", "") if route_shadow else "",
+        # The ToF's hazard on the ground, held and new on this poll, not spoken (TOF_HAZARDS_SPEAK).
+        "ground_shadow": ground_shadow,
+        "ground_shadow_reason": raw.get("ground_reason", "") if ground_shadow else "",
     }
 
 
@@ -3505,6 +3831,7 @@ def reset() -> None:
         _heat.reset()
         _shadow.reset()
         _route_shadow.reset()
+        _ground_shadow.reset()
         _startup.update(held=False, starting_said=False, ready_said=False)
         _fault["said_at"] = None
     try:

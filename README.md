@@ -119,7 +119,7 @@ Every threshold is a `SIMPLE_*` / `PI_VOICE_*` constant in `config.py`.
 | ------------------------- | --------------------------------------------------------- |
 | Raspberry Pi 5            | Host                                                      |
 | Hailo-10H NPU             | Runs both neural models (object detection + segmentation) |
-| RPLIDAR A2M12             | 360° distance and direction, ~15 Hz at 900 RPM            |
+| RPLIDAR A2M12             | 360° distance and direction, ~23 Hz at 1380 RPM (full)    |
 | UC-512 kit (4× IMX519)    | Four camera directions in one 2×2 frame: each its full 66° view, 1164×874, ~16 pictures/s (new cameras, 2026-11-02) |
 | 6× Acconeer A121 (60 GHz) | Radar, every 60° straddling the cardinals, on a USB hub  |
 | MPU-6500 IMU (SPI0 CE0)   | Yaw rate, gait and tilt — heading, not position            |
@@ -682,6 +682,17 @@ pip install -r requirements.txt
 ./run_tests.sh --full     # and the desk simulators and tools/scene_hunt.py, ~5 min
 ```
 
+**Every run is saved** in `logs/run_<date>_<time>.log` (newest: `logs/latest.log`), with
+the same lines as the terminal and the colour codes stripped. That includes a run started
+with `--background` or by the service, and the shutdown lines after Ctrl+C. The newest 100
+runs are kept (`LOG_KEEP_RUNS=… ./start_lidar.sh` to change it). If `logs/` can't be
+written, the app still starts, with a warning. `logs/` is not committed.
+
+```bash
+less -R logs/latest.log       # the last run
+tail -f logs/latest.log       # follow the one running now
+```
+
 The tests include the web pages (`tools/test_templates.py`): every inline script must parse
 (`node --check`, when node is installed) and no stray character may sit in a page's code —
 an editor once dropped a "🔊" into the /map page's script and the 3D view silently died.
@@ -870,13 +881,34 @@ real sensor:
 - **Found, not numbered.** The SDK opens `/dev/videoN`, and N moves with probe order
   once both ports carry a camera. The app uses the node media-ctl links to the
   `arducam-pivariety` sensor (`TOF_VIDEO_INDEX = None`); set it only to pin one.
+- **One overlay per port.** `/boot/firmware/config.txt` carries exactly
+  `dtoverlay=imx519,cam1` (the CamArray) and `dtoverlay=arducam-pivariety,cam0` (the ToF).
+  A bare `dtoverlay=arducam-pivariety` means CAM1. It took the CamArray's port, so the
+  IMX519 never became a camera, and I2C address 0x0c, so the lens driver failed
+  (2026-11-05). `tools/tof_check.py` names the line to drop. At each camera open, libcamera
+  tries every port and can't run the ToF, which the SDK reads directly. It used to print
+  five ERROR lines (`arducam-pivariety_mono.json` not found, `Failed to register camera
+  arducam-pivariety 10-000c: -22`). The app holds those back and prints one line instead:
+  `[CAMERA] libcamera passed over the ToF's port … as expected`. Anything else libcamera
+  says still comes through.
 - **`/tof/live`** (the dashboard's *depth* chip): the live depth picture, red near to
   blue far, in feet. Tap or drag to read the distance under the crosshair (the median
-  of the 3×3 around it); the confidence slider changes the picture only. Below it,
-  `/tof/overlay.jpg` once a second: every depth pixel drawn on the front camera's
-  picture where its own distance places it — the calibration check. The range stays
+  of the 3×3 around it); the confidence slider changes the picture only. Below it, once
+  a second, the front camera's picture in one of two ways: *depth + distances*
+  (`/tof/rgbd.jpg`, the default) or *dots* (`/tof/overlay.jpg`: every depth pixel drawn
+  where its own distance places it — the calibration check). The range stays
   `TOF_RANGE_MM` (4 m): the 2 m mode reads anything past 2 m as near, so the page
   cannot switch it.
+- **The front camera as a depth camera** (2026-11-06). The placed depth points also make
+  a depth picture aligned to the camera's, as an RGB-D camera gives:
+  `DepthFrame.depth_map()` in `utils/depth_fusion.py`, one distance per 4 × 4 block of
+  camera pixels (`TOF_ALIGNED_CELL_PX`; a ToF pixel spans ~4.3), the nearest point
+  winning where several land in one block, a one-block gap taking its nearer neighbour's.
+  `/tof/rgbd.jpg` lays it over the picture with each front detection boxed and labelled
+  with its measured distance ("no depth" past 4 m or above the ToF's view);
+  `/tof/aligned.npy` hands scripts the newest one. It covers only where the two views
+  overlap — the ToF looks 20° lower, so roughly the lower half of the picture — and it
+  is placed by the design until the bench calibration below.
 - **What the user hears does not change yet.** Each front detection gets a measured
   `depth` (the nearest surface in its box, `utils/depth_fusion.py`), shown beside the
   box-size distance (`tof_ft`). It replaces it only with `TOF_USE_DISTANCE`, after the
@@ -890,6 +922,70 @@ real sensor:
 SDK: `./venv/bin/pip install --no-deps ArducamDepthCamera==0.1.24`. Its metadata asks
 for numpy < 2, and a plain install swaps the app's numpy 2.2.4 for 1.26; it runs on
 2.2.4 (checked 2026-11-03, 31 frames/s).
+
+### Hazards on the ground — stairs, steps, drops, poles (added 2026-11-06)
+
+The LiDAR is worn on the shoulder and measures one plane there, so stairs, kerbs, drops,
+holes and everything below the shoulder — a chair, a bin, a bollard, a table — never
+reach it. The ToF looks down at the ground ~1–4 m ahead, and `utils/ground_hazards.py`
+reads it there, 10 times a second in a thread of its own (~15 ms each), so the guidance
+tick pays nothing for it:
+
+- **The ground is measured, not assumed.** Each frame a plane is fitted to the ToF's
+  points (RANSAC: near-level, near `TOF_MOUNT_HEIGHT_M`, near the last one, most points
+  within 3 cm), so the body's sway and the mount's error drop out. Every point gets its
+  height above it; `/tof/hazards` reports the fitted height and tilt.
+- **Along the walking corridor** (`TOF_CORRIDOR_HALF_M` either side) the ground's height
+  every 5 cm ahead, cut where it jumps. A sharp rise of 7–25 cm from the floor is a
+  **step up** (a kerb); two or more of a stair's rise and run, **stairs up**. A fall is a
+  **step down**, **stairs down** (each tread past the edge shows only as a strip a few
+  cm long — every level counts), a **drop** if deeper, a **hole** if it comes back up
+  within a metre. A floor that ends in nothing at all is a drop the ToF cannot measure.
+- **Things on the ground** — points 8 cm or more above it, joined in 5 cm cells: an
+  **overhang** if its front is all above 50 cm (the cane passes under), a **pole** if
+  narrow and rising out of the ToF's view, a **low obstacle** if no taller than 60 cm,
+  otherwise an **obstacle**.
+- **The camera confirms.** Each hazard is placed on the front camera's picture (the
+  calibration above; until the bench one, the design's, searched 40 px around). A
+  detection over it confirms and names it ("Bench ahead"); else the picture's own edges
+  do: two level edges for stairs, one for a step, drop or hole, an upright edge for a
+  pole, an outline for the rest. A dark, blurred or missing picture is *unseen*. The
+  camera sees the ground only from ~2 m out (it looks 10° down, 26° either way), so its
+  verdict is **kept for 3 s** while the hazard stays tracked: an edge confirmed at 2.5 m
+  is still confirmed at 1.5 m, below the picture.
+- **When it is said** (`speak_rule`). Seen in 3 of the last 5 analyses, in the path,
+  within `TOF_HAZARD_WARN_M` (11 ft). Confirmed or unseen by the camera: said. The camera
+  looking and seeing nothing there: only a *measured* fall of `TOF_FALL_ALONE_M` (6 in)
+  or more is still said — a ToF artifact must not stop the user, and a real edge on a
+  plain floor must not be missed. An unmeasured drop is said only with the camera's edge.
+- **What the user hears.** `Stairs down ahead`, `Stairs up ahead`, `Step up ahead`,
+  `Step down ahead`, `Drop ahead`, `Low obstacle ahead`, `Overhanging obstacle ahead`;
+  within `TOF_HAZARD_STOP_M` (5 ft), urgent and with the tone: `Stairs down in front,
+  stop` and `Drop in front, stop`. A pole, a pothole or a named thing use the sentences
+  that were there (`Pole ahead`, `Pothole ahead`, `Bench ahead`; `Pole in front` when the
+  laser blocks on it); an unnamed tall one is `Obstacle ahead`. A fall in front outranks
+  everything but an approaching vehicle (a block's turn too); a fall ahead outranks a
+  wall or glass ahead; the rest come after what the LiDAR names, ahead of its unnamed
+  obstacle. Phrases 311–319 of the phone's registry (revision 7).
+- **Spoken only with `TOF_HAZARDS_SPEAK`.** Until a test walk has judged them, as the
+  movers were, they are logged as `would say: …` (speech log source `tof-hazards`, and
+  the test console) and drawn on `/tof/rgbd.jpg`: red if it would be said, amber if not.
+  `/tof/hazards` says why for each. `TOF_HAZARDS_ENABLED = False` stops the analysis.
+
+Desk-tested on ray-traced scenes (`tools/ground_hazard_sim.py`: stairs both ways,
+kerbs, drops, a hole, poles, a table, ramps, walls, with sway, noise and dropped
+pixels). **Not yet on real stairs.** Its limits:
+
+- The ToF sees the ground from ~1.1 m ahead: nearer than that nothing is seen, so a
+  hazard is said from further off or not at all.
+- From further than ~2.1 m the ToF (1.45 m up) looks over each tread's lip of a standard
+  flight going down: there it is a `Drop ahead`, and `Stairs down` from ~2.1 m in.
+- A drop deeper than the ToF reaches (a platform's edge) is said only if the camera sees
+  its edge — not in the dark.
+- Above ~1.1–1.3 m (the top of the ToF's view, 7° below level) nothing is measured: a
+  branch at head height is not seen. The camera sees it but cannot range it.
+- The ToF is infrared: bright sunlight blinds it, and black or wet ground may return
+  nothing (a floor that "ends" there is an unmeasured drop, so the camera must agree).
 
 ### Models
 
@@ -1147,6 +1243,9 @@ label sizes are set for that capped width; changing the cap needs them revisited
 | `GET /tof/status`             | Is the ToF delivering: fps, frame age, device, restarts, which calibration places its dots |
 | `GET /tof/depth.jpg`          | The newest depth frame as a picture                           |
 | `GET /tof/overlay.jpg`        | The front camera's picture with the depth dots drawn on: the calibration check |
+| `GET /tof/rgbd.jpg`           | The front camera as a depth camera: aligned depth laid over its picture, each detection labelled with its measured distance |
+| `GET /tof/aligned.npy`        | The newest depth picture aligned to the front camera's (float32 m, NaN = none, per `TOF_ALIGNED_CELL_PX` block; `?what=ground` for along the ground) |
+| `GET /tof/hazards`            | The ToF's hazards on the ground: the fitted ground, each confirmed hazard (kind, feet, the camera's word, would it be said and why), the one the guidance would say, every sighting of the newest frame |
 | `GET /environment/status`     | Fog / rain / low light / visibility                           |
 
 **Navigation & crossing**
@@ -1240,6 +1339,47 @@ Kept because each one explains why the code is the way it is.
    what the laser ranged; too low or too thin for its beam". A reason string that
    contradicts the flag beside it is worse than no reason at all.
 
+4. **The cross-sensor review (2026-11-06).** Five independent reviews of the seams
+   between the sensors, each finding run through the real decision code. The four
+   the wearer heard that were unsafe are fixed, each checked against what is SAID
+   on a walk:
+   - **A glass door at a corridor's end was walked into.** Each front board's
+     nearest echo is the corridor's wall at its beam's edge; the door's echo, behind
+     it, never reached the door-in-a-wall rule. In a 1.6 m corridor the wearer heard
+     only "Walk straight" all the way to the door. `walk_policy._door_in_wall_ft`
+     now judges every echo both boards hear alike, the laser looking past it, and
+     takes what FACES the sensor (`GLASS_FACING_DEG`) to be what echoed: a person
+     or post on one side of the line explains the echo, the corridor's walls seen
+     obliquely do not. Now "Glass ahead" ~10 ft out in 1.2-3 m corridors, door
+     across or set in an end wall, "Blocked by glass" by ~2.5 ft. The price: in the
+     scene hunt's random cluttered scenes, false "Glass ahead" 13 -> 20 of 1500
+     (mostly posts either side at one depth, read as a door in a wall).
+   - **A steer past a person went into glass beside.** "Person on left, turn
+     slightly right" with a pane 2.8 ft to the right that one board hears (the pane
+     is not in the side room the steer checks). No steer, the camera's or the
+     route planner's, held or new, may turn toward glass a front board hears; and
+     glass beside within `SIMPLE_GLASS_BESIDE_FT` now outranks steers and things
+     named further ahead ("Person ahead" had held it back for good).
+   - **A car coming from the side was warned 0.3-1 s before contact** (4.5 s
+     head-on): its offset from the walking line was judged where it was, and a car
+     on a collision course keeps its bearing. `_Vehicles` now also judges where it
+     will pass — its nearest front corner's drift and its width
+     (`SIMPLE_VEHICLE_WIDTH_M`), carried to contact, from the height's growth (the
+     area grows as a car's side turns to view) — when that puts it within 1 m, and
+     cars outside the centre band are judged for this alone. 10-30 deg: 4.2 s.
+     Passing, crossing and parked cars are judged exactly as before.
+   - **A changed instruction waited 6 s.** "Turn right", then someone stepped in
+     1.5 ft to the right: "Turn left" came at 8 s. The gate now takes a change as
+     news when the side last advised has closed (`_advice_closed`), and any approach
+     warning turning into another (still confirmed for 1 s, so a flicker is not
+     said). Now 1 s.
+
+   Not fixed, on purpose: a car passing parallel within ~2.6 m (its box's inner edge
+   is its far end, read too near) still gets "Vehicle approaching, move …" — a false
+   alarm toward safety; the correction would read diagonal near misses too far. The
+   rest of the review (shadow-mode movers, route planner, the ToF hazards) waits on
+   those features being finished before they speak.
+
 ## Walking the drift layer without leaving the desk
 
 ```bash
@@ -1282,7 +1422,10 @@ run for the absence of a *veer* cue, not for the absence of output.
   so, because an unreadable colour lands in the same branch as an empty
   intersection; those two cases are now distinguished.
 - **The 2D LiDAR sees one plane.** Overhead branches and low obstacles at foot
-  height are missed. The radar helps with glass, not with height.
+  height are missed. The radar helps with glass, not with height. The ToF now covers
+  the ground 1–4 m ahead up to ~1.1 m (stairs, kerbs, drops, low and waist-high things:
+  [above](#hazards-on-the-ground--stairs-steps-drops-poles-added-2026-11-06)) — not yet
+  spoken (`TOF_HAZARDS_SPEAK`), and nothing at head height.
 - **Heading is dead reckoning and unvalidated on real walks.** The scan matcher
   is accurate on synthetic corridors (0.02° per scan) but has not yet been
   checked against a measured walk. It degrades where a scan carries little

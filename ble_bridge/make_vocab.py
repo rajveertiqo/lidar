@@ -62,6 +62,8 @@ def _describe(sg) -> List[Dict[str, Any]]:
             obstacle = "glass"
         elif text in (sg.BLOCKED_WALL, sg.WALL_AHEAD) + sg._SIDE_WALL:
             obstacle = "wall"
+        elif text in getattr(sg, "_GROUND_OBSTACLE", {}):  # the ToF's (2026-11-06)
+            obstacle = sg._GROUND_OBSTACLE[text]
         elif text in sg._OBJECT_OF:
             obstacle = sg._OBJECT_OF[text].lower()
         else:

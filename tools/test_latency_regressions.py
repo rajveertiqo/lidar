@@ -564,6 +564,86 @@ class LensFocusTests(unittest.TestCase):
             self.assertFalse(pc._set_focus())
 
 
+class TofPortLinesTests(unittest.TestCase):
+    """libcamera's ERROR lines about the ToF's port, at every camera open, are held back;
+    anything else it says still reaches the console (2026-11-05)."""
+
+    TOF_LINES = (
+        b"[0:05:06.282] [4769] ERROR V4L2 v4l2_device.cpp:410 'arducam-pivariety 10-000c': "
+        b"Unable to set controls: Device or resource busy\n"
+        b"[0:05:06.310] [4769] ERROR IPAProxy ipa_proxy.cpp:189 Configuration file "
+        b"'arducam-pivariety_mono.json' not found for IPA module 'rpi/pisp'\n"
+        b"[0:05:06.315] [4769] ERROR IPARPI ipa_base.cpp:151 Could not create camera helper "
+        b"for arducam-pivariety\n"
+        b"[0:05:06.315] [4769] ERROR RPI pipeline_base.cpp:836 Failed to load a suitable IPA library\n"
+        b"[0:05:06.315] [4769] ERROR RPI pisp.cpp:953 Failed to register camera "
+        b"arducam-pivariety 10-000c: -22\n"
+    )
+    REAL = b"[0:05:07.000] [4769] ERROR RPI pipeline_base.cpp:999 Camera frontend has timed out!\n"
+
+    def console(self, written):
+        import contextlib, io, os, sys, tempfile
+
+        with tempfile.TemporaryFile() as console:
+            sys.stderr.flush()
+            saved = os.dup(2)
+            os.dup2(console.fileno(), 2)
+            out = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(out), pc._quiet_tof_port():
+                    os.write(2, written)
+            finally:
+                os.dup2(saved, 2)
+                os.close(saved)
+            console.seek(0)
+            return console.read(), out.getvalue()
+
+    def test_tof_lines_held_back_real_errors_through(self):
+        err, out = self.console(self.TOF_LINES + self.REAL)
+        self.assertEqual(err, self.REAL)
+        self.assertIn("passed over the ToF's port", out)
+
+    def test_no_tof_nothing_held_back(self):
+        lines = b"[0:01] ERROR RPI pipeline_base.cpp:836 Failed to load a suitable IPA library\n"
+        err, out = self.console(lines + self.REAL)
+        self.assertEqual(err, lines + self.REAL)  # about the CamArray: it stays
+        self.assertEqual(out, "")
+
+
+class TofPortClashTests(unittest.TestCase):
+    """tools/tof_check names the line to drop by the camera that answered in the port. A bare
+    dtoverlay=arducam-pivariety (CAM1) beside imx519,cam1 took the CamArray's port and lens
+    address, and the old advice was to drop imx519,cam1 (2026-11-05)."""
+
+    BOOT = ("[all]\ndtoverlay=imx519,cam1\ndtoverlay=imx519,cam0\n"
+            "dtoverlay=arducam-pivariety\ndtoverlay=arducam-pivariety,cam0\n")
+
+    def advice(self, kernel):
+        import contextlib, io, tempfile
+        from tools import tof_check
+
+        with tempfile.NamedTemporaryFile("w", suffix=".txt") as cfg:
+            cfg.write(self.BOOT)
+            cfg.flush()
+            out = io.StringIO()
+            with patch.object(tof_check, "CONFIG_PATHS", (cfg.name,)), \
+                 patch.object(tof_check, "answered_on", lambda port: kernel.get(port, set())), \
+                 contextlib.redirect_stdout(out):
+                tof_check.check_config("Raspberry Pi 5 Model B Rev 1.0")
+        return out.getvalue()
+
+    def test_the_camera_that_answered_keeps_its_port(self):
+        out = self.advice({"cam0": {"arducam-pivariety"}, "cam1": {"imx519"}})
+        self.assertIn("remove 'dtoverlay=imx519,cam0'", out)  # the ToF answered in CAM0
+        self.assertIn("remove 'dtoverlay=arducam-pivariety' ", out)  # the CamArray in CAM1
+        self.assertNotIn("dtoverlay=imx519,cam1'", out)
+
+    def test_nothing_answered_nothing_named(self):
+        out = self.advice({})
+        self.assertNotIn("remove ", out)
+        self.assertIn("neither answered at boot", out)
+
+
 class VoiceHangTimeoutTests(unittest.TestCase):
     """A hung espeak-ng is given up on after its sentence's airtime plus a margin, not 8 s."""
 

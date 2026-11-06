@@ -80,9 +80,9 @@ stop_scanner = threading.Event()
 lidar_instance = None
 lidar_lock = threading.Lock()
 
-MIN_SCAN_INTERVAL = (
-    0.066  # cap ~15 Hz (matches 900 RPM motor; bounds broadcast/UI load)
-)
+# Analysis/broadcast cap: just under one revolution, so every scan is kept and no more
+# (0.043 s at 1380 RPM; 0.066 s at the old 900 RPM).
+MIN_SCAN_INTERVAL = math.floor(60000.0 / LIDAR_RPM) / 1000.0
 
 _pending_scan = None
 _scan_cv = threading.Condition()

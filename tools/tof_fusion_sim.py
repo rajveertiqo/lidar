@@ -41,8 +41,9 @@ TRUE_TOF = df.Lens(
     214.0, 213.2, 121.3, 88.6, 240, 180, (-0.12, 0.03, 0.001, -0.0005, 0.0)
 )
 TRUE_CAM = df.Lens(
-    896.0, 895.1, 482.1, 268.4, 960, 540, (0.05, -0.08, 0.0004, 0.0002, 0.0)
+    896.0, 895.1, 583.4, 438.2, 1164, 874, (0.05, -0.08, 0.0004, 0.0002, 0.0)
 )
+CW, CH = TRUE_CAM.width, TRUE_CAM.height  # the front picture: 1164 x 874, 66 deg (2026-11-02)
 
 
 def _rot(axis: str, deg: float) -> np.ndarray:
@@ -123,8 +124,8 @@ def detection_box(lo, hi):
     return [
         max(0.0, u.min()),
         max(0.0, v.min()),
-        min(959.0, u.max()),
-        min(539.0, v.max()),
+        min(CW - 1.0, u.max()),
+        min(CH - 1.0, v.max()),
     ]
 
 
@@ -148,8 +149,8 @@ def test_design_numbers():
     ch, cv = d.cam.fov_deg()
     th, tv = d.tof.fov_deg()
     check(
-        "camera picture is a centre crop: ~56.4 x 33.5 deg",
-        abs(ch - 56.4) < 0.3 and abs(cv - 33.5) < 0.4,
+        "camera picture is the whole sensor: ~66.0 x 52.0 deg",
+        abs(ch - 66.0) < 0.3 and abs(cv - 52.0) < 0.4,
         f"{ch:.1f} x {cv:.1f}",
     )
     check(
@@ -186,7 +187,7 @@ def test_geometry():
         if len(fr):
             landed += 1
             worst = max(worst, math.hypot(fr.u[0] - u[0], fr.v[0] - v[0]))
-        elif 0 <= u[0] < 960 and 0 <= v[0] < 540:
+        elif -0.5 <= u[0] < CW - 0.5 and -0.5 <= v[0] < CH - 0.5:  # pixel centres
             worst = max(worst, 999.0)  # lost a point that is in the picture
     check(
         "with distortion on both lenses, within 0.05 px",
@@ -217,14 +218,16 @@ def test_boxes():
         f"{d and d['distance_m']} m (true {truth:.2f}), {d and d['points']} points, "
         f"bearing {d and d['bearing_deg']} deg",
     )
-    near = box(-0.25, 0.25, 1.70, 0.0, 1.0, 1.3)
+    # 1.90 m: the 66 x 52 deg picture (2026-11-02) reaches 16 deg above level, so a
+    # 1.70 m person's head at 1 m is still in it.
+    near = box(-0.25, 0.25, 1.90, 0.0, 1.0, 1.3)
     depth, conf, _ = render([near], wall_z=3.5)
     fr = proj.project(depth, conf)
     bb = detection_box(*near)
     d = fr.box_depth(bb)
     truth = ground_dist([0.0, 0, 1.0])
     check(
-        "person 1 m ahead, head cut off by the picture: still measured",
+        "a tall person 1 m ahead, head cut off by the picture: still measured",
         bb[1] <= 0.5 and d is not None and abs(d["distance_m"] - truth) < 0.06,
         f"box top {bb[1]:.0f} px, {d and d['distance_m']} m (true {truth:.2f})",
     )
@@ -253,11 +256,11 @@ def test_wrong_ways():
     depth, conf, pts = render([table], wall_z=3.5, noise=0.0)
     ok = np.isfinite(pts[:, 0])
     u, v = cam_pixel(pts[ok])
-    inside = (u >= 0) & (u < 960) & (v >= 0) & (v < 540)
+    inside = (u >= 0) & (u < CW) & (v >= 0) & (v < CH)
     tof = TRUE.tof
     vv, uu = np.mgrid[0 : tof.height, 0 : tof.width]
-    su = (uu.ravel()[ok] + 0.5) / tof.width * 960 - 0.5  # stretched over the picture
-    sv = (vv.ravel()[ok] + 0.5) / tof.height * 540 - 0.5
+    su = (uu.ravel()[ok] + 0.5) / tof.width * CW - 0.5  # stretched over the picture
+    sv = (vv.ravel()[ok] + 0.5) / tof.height * CH - 0.5
     stretch = np.hypot(su - u, sv - v)[inside]
     xn, yn = tof.normalised(uu.ravel()[ok].astype(float), vv.ravel()[ok].astype(float))
     dirs = np.stack([xn, yn, np.ones_like(xn)], 1) @ TRUE.R.T  # angles only: no offset
@@ -271,7 +274,7 @@ def test_wrong_ways():
     du, dv = design.cam.project(P @ design.R.T + design.t)
     design_err = np.hypot(du - u, dv - v)[inside]
     print(
-        f"     stretched depth picture: median {np.median(stretch):.0f} px off (of 960)"
+        f"     stretched depth picture: median {np.median(stretch):.0f} px off (of {CW})"
     )
     print(
         f"     angles only: {np.median(angles[near_k]):.1f} px off within 1.6 m, "
@@ -326,7 +329,7 @@ def _board_views(kind: str, n: int):
             continue
         cu, cv = TRUE.cam.project(pc)
         tu, tv = TRUE.tof.project(pt)
-        in_cam = bool(((cu > 5) & (cu < 954) & (cv > 5) & (cv < 534)).all())
+        in_cam = bool(((cu > 5) & (cu < CW - 6) & (cv > 5) & (cv < CH - 6)).all())
         in_tof = bool(((tu > 3) & (tu < 236) & (tv > 3) & (tv < 176)).all())
         if (
             (kind == "both" and not (in_cam and in_tof))
@@ -360,7 +363,7 @@ def placement_error(calib: df.Calibration, truth: df.Calibration = TRUE):
     u, v = cam_pixel(pts[ok], truth.cam)
     P = df.DepthProjector(calib).rays[ok] * (depth.reshape(-1)[ok, None] / 1000.0)
     pu, pv = calib.cam.project(P @ calib.R.T + calib.t)
-    inside = (u >= 0) & (u < 960) & (v >= 0) & (v < 540)
+    inside = (u >= 0) & (u < CW) & (v >= 0) & (v < CH)
     err = np.hypot(pu - u, pv - v)[inside]
     return float(np.median(err)), float(np.percentile(err, 95))
 
@@ -368,9 +371,9 @@ def placement_error(calib: df.Calibration, truth: df.Calibration = TRUE):
 def test_calibration():
     print("the bench calibration gets the rig back from checkerboard corners")
     pairs_only = _board_views("both", 22)
-    res0 = tc.calibrate(pairs_only, (240, 180), (960, 540))
+    res0 = tc.calibrate(pairs_only, (240, 180), (CW, CH))
     views = pairs_only + _board_views("cam", 15) + _board_views("tof", 10)
-    res = tc.calibrate(views, (240, 180), (960, 540))
+    res = tc.calibrate(views, (240, 180), (CW, CH))
     R = np.array(res["R"])
     t = np.array(res["t_m"])
     ang = math.degrees(math.acos(min(1.0, (np.trace(R.T @ TRUE.R) - 1.0) / 2.0)))
@@ -415,12 +418,12 @@ def test_calibration():
     with tempfile.TemporaryDirectory() as tmp:  # the file it writes loads back
         path = os.path.join(tmp, "cal.json")
         big = dict(res)
-        big["camera"] = df.Lens.from_dict(res["camera"]).resized(1920, 1080).to_dict()
+        big["camera"] = df.Lens.from_dict(res["camera"]).resized(2 * CW, 2 * CH).to_dict()
         with open(path, "w") as f:
             json.dump(big, f)
         cal = df.load_calibration(path)
         check(
-            "a file calibrated at 1920 x 1080 loads, scaled to the 960 x 540 picture",
+            f"a file calibrated at {2 * CW} x {2 * CH} loads, scaled to the {CW} x {CH} picture",
             cal.source == "bench" and abs(cal.cam.fx - res["camera"]["fx"]) < 0.01,
             f"fx {cal.cam.fx:.2f} vs {res['camera']['fx']:.2f}",
         )
@@ -509,7 +512,7 @@ def test_pictures():
             cu, cv = truth.cam.project(pc)
             tu, tv = truth.tof.project(pt)
             if not (
-                ((cu > 2) & (cu < 957) & (cv > 2) & (cv < 537)).all()
+                ((cu > 2) & (cu < CW - 3) & (cv > 2) & (cv < CH - 3)).all()
                 and ((tu > 2) & (tu < 237) & (tv > 2) & (tv < 177)).all()
             ):
                 continue
@@ -623,6 +626,113 @@ def test_wiring():
             tof_camera._frames.clear()
 
 
+def test_aligned():
+    print("the depth picture aligned to the camera's (an RGB-D camera's depth)")
+    cell = config.TOF_ALIGNED_CELL_PX
+    proj = df.DepthProjector(TRUE)
+    person = box(0.05, 0.55, 1.70, 0.0, 1.85, 2.15)
+    depth, conf, pts = render([person], wall_z=3.5, noise=0.0)
+    fr = proj.project(depth, conf)
+    rng = fr.depth_map(cell)
+    gh, gw = rng.shape
+    check(
+        "one value per block of the camera picture",
+        (gw, gh) == (-(-CW // cell), -(-CH // cell)),
+        f"{gw} x {gh} blocks of {cell} px",
+    )
+    x1, y1, x2, y2 = detection_box(*person)
+    tx1, tx2 = x1 + 0.2 * (x2 - x1), x2 - 0.2 * (x2 - x1)  # well inside the person
+    ty2 = y2 - 0.25 * (y2 - y1)
+    flat = depth.reshape(-1)
+    ok = (flat >= config.TOF_MIN_MM) & (flat <= config.TOF_MAX_MM)
+    u, v = cam_pixel(pts[ok])
+    lowest_seen = float(np.max(v[(u > tx1) & (u < tx2)]))  # the ToF's view reaches down to here
+    top_seen = float(np.min(v[(u > tx1) & (u < tx2)]))  # and up to here
+    ty1 = max(y1 + 0.1 * (y2 - y1), top_seen + 2 * cell)
+    region = rng[int(ty1 // cell) : int(ty2 // cell), int(tx1 // cell) : int(tx2 // cell)]
+    on_person = np.isfinite(region)
+    p_rng = np.linalg.norm(
+        (LEVEL.T @ np.array([0.30, CAM_HEIGHT_M - 0.9, 1.85])), axis=0
+    )
+    check(
+        "inside the person's box: every block has a distance, the person's, not the wall's",
+        on_person.mean() > 0.99 and np.nanmax(region) < 2.6,
+        f"{on_person.mean() * 100:.1f} % of {region.size} blocks, "
+        f"{np.nanmin(region):.2f}-{np.nanmax(region):.2f} m (about {p_rng:.2f} m; wall 3.5+)",
+    )
+    gr = fr.depth_map(cell, "ground")
+    bd = fr.box_depth(detection_box(*person))
+    check(
+        "its ground distance agrees with the box's",
+        bd is not None and abs(float(np.nanmedian(gr[np.isfinite(region).nonzero()[0] + int(ty1 // cell), np.isfinite(region).nonzero()[1] + int(tx1 // cell)])) - bd["distance_m"]) < 0.05,
+        f"box {bd and bd['distance_m']} m",
+    )
+    top_rows = int(float(np.min(v)) // cell) - 1  # above the highest depth point anywhere
+    check(
+        "above the ToF's view: no depth (the camera looks 20 deg higher)",
+        top_rows > 0 and not np.isfinite(rng[:top_rows]).any(),
+        f"top {top_rows} of {gh} block rows empty",
+    )
+
+    def frame_of(us, vs, rs):
+        us, vs, rs = (np.asarray(a, dtype=float) for a in (us, vs, rs))
+        return df.DepthFrame(0.0, us, vs, rs, rs, rs * 0, rs, "design", len(rs), (CW, CH))
+
+    two = frame_of([100.2, 101.0], [200.4, 201.3], [3.0, 1.2])
+    check(
+        "two points in one block: the nearer (the camera sees what is in front)",
+        abs(two.depth_map(cell)[200 // cell, 100 // cell] - 1.2) < 1e-6,
+    )
+    k = cell
+    gap1 = frame_of([10 * k, 12 * k], [10 * k, 10 * k], [2.0, 2.5])
+    gap3 = frame_of([10 * k, 14 * k], [10 * k, 10 * k], [2.0, 2.5])
+    m1, m3 = gap1.depth_map(cell), gap3.depth_map(cell)
+    check(
+        "a one-block gap takes its nearer neighbour's; a wider one stays empty",
+        abs(m1[10, 11] - 2.0) < 1e-6 and not np.isfinite(m3[10, 12]),
+        f"gap of 1: {m1[10, 11]}, middle of 3: {m3[10, 12]}",
+    )
+    edge = frame_of([CW - 0.6], [CH - 0.6], [1.0])
+    check(
+        "a point on the picture's last pixel lands in the last block",
+        abs(edge.depth_map(cell)[-1, -1] - 1.0) < 1e-6,
+    )
+    empty = frame_of([], [], [])
+    check("an empty frame: all NaN, no error", not np.isfinite(empty.depth_map(cell)).any())
+
+    pic = np.full((CH, CW, 3), 90, dtype=np.uint8)
+    dets = [
+        {"class_name": "person", "bbox": detection_box(*person), "depth": bd},
+        {"class_name": "sign", "bbox": [470, 107, 697, 262]},
+    ]
+    out = df.draw_rgbd(pic, fr, dets)
+    tinted = (out != 90).any(axis=2)
+    check(
+        "the RGB-D picture: depth laid over the camera's, boxes labelled",
+        out.shape == pic.shape and tinted[int(ty2) - 5, int((tx1 + tx2) / 2)]
+        and not tinted[2, 2],
+        f"{tinted.mean() * 100:.0f} % of the picture changed",
+    )
+    out2 = df.draw_rgbd(pic[::2, ::2].copy(), fr, [])
+    check("a smaller picture: the depth is scaled to it", out2.shape == (CH // 2, CW // 2, 3))
+
+    # The fastest of five fresh frames (each aligns once, then keeps it): one timing read
+    # 15+ ms whenever the app ran beside it (review, 2026-11-06) — judge the code, not the load.
+    times = []
+    for _ in range(5):
+        fresh = proj.project(depth, conf)
+        t = time.perf_counter()
+        fresh.aligned(cell)
+        times.append((time.perf_counter() - t) * 1000.0)
+    once = min(times)
+    t = time.perf_counter()
+    for _ in range(100):
+        fresh.depth_map(cell)
+    again = (time.perf_counter() - t) / 100 * 1000.0
+    print(f"     aligning one frame: {once:.1f} ms, then {again:.2f} ms a map")
+    check("aligning a frame under 15 ms, once per frame", once < 15.0)
+
+
 def test_cost():
     print("cost on this machine")
     person = box(0.05, 0.55, 1.70, 0.0, 1.85, 2.15)
@@ -654,6 +764,7 @@ def main() -> int:
         test_pictures,
         test_wall,
         test_wiring,
+        test_aligned,
         test_cost,
     ):
         test()

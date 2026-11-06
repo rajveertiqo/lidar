@@ -15,6 +15,12 @@ K_tof, K_cam (with each lens's distortion), R and t come from the bench calibrat
 TOF_* / FUSION_*). Each detection box then takes the distance of the nearest surface inside
 it (DepthFrame.box_depth): a person's, not the wall's behind them.
 
+The placed points also make a depth picture aligned to the camera's, as an RGB-D camera
+gives (DepthFrame.depth_map, 2026-11-06): a distance per TOF_ALIGNED_CELL_PX block of camera
+pixels, the nearest point wins where several land in one block (the camera sees the near
+thing, not what it hides). Only where the two views overlap: the ToF looks 20 deg lower, so
+the top of the camera's picture has no depth, and nothing past TOF_MAX_MM does.
+
 Frames: OpenCV's, x right, y down, z ahead. "Level" is the camera's frame turned up by
 FUSION_CAMERA_DOWN_DEG, so its z runs along the ground.
 """
@@ -38,6 +44,7 @@ from config import (
     FUSION_CAMERA_SENSOR_PX,
     FUSION_TOF_DOWN_DEG,
     FUSION_TOF_OFFSET_M,
+    TOF_ALIGNED_CELL_PX,
     TOF_BOX_GROUP_M,
     TOF_BOX_MIN_POINTS,
     TOF_BOX_MIN_SHARE,
@@ -256,6 +263,7 @@ class DepthFrame:
         ahead: np.ndarray,
         source: str,
         pixels: int,
+        size: Tuple[int, int] = PICTURE_PX,
     ):
         self.t = t  # time.time() of capture
         self.u, self.v = u, v  # camera pixel of each point (only those in the picture)
@@ -265,9 +273,63 @@ class DepthFrame:
         self.ahead = ahead  # metres ahead (level)
         self.source = source  # calibration: "design" | "bench"
         self.pixels = pixels  # depth pixels with a usable reading
+        self.size = (int(size[0]), int(size[1]))  # the camera picture: width, height
+        self._aligned: Dict[int, np.ndarray] = {}  # cell px -> aligned(), made once
 
     def __len__(self) -> int:
         return int(self.u.size)
+
+    def aligned(self, cell: int = TOF_ALIGNED_CELL_PX) -> np.ndarray:
+        """The depth picture aligned to the camera's, as point numbers: for each `cell` x
+        `cell` block of camera pixels (rows, columns), the point nearest the camera of
+        those that land in it, -1 where none does. A block with none, beside one that has,
+        takes the nearest of its eight neighbours' (a ToF pixel lands ~4.3 camera pixels
+        from the next, so 4-px blocks leave such gaps); wider gaps stay empty. Made once
+        per frame: every view and lookup of it shares the one array (do not write to it)."""
+        cell = max(1, int(cell))
+        got = self._aligned.get(cell)
+        if got is not None:
+            return got
+        W, H = self.size
+        gw, gh = -(-W // cell), -(-H // cell)
+        idx = np.full(gh * gw, -1, dtype=np.int64)
+        if len(self):
+            # Pixel centres sit at whole numbers, so the picture runs -0.5 .. W - 0.5.
+            cu = np.clip(((self.u + 0.5) // cell).astype(np.int64), 0, gw - 1)
+            cv = np.clip(((self.v + 0.5) // cell).astype(np.int64), 0, gh - 1)
+            block = cv * gw + cu
+            order = np.lexsort((self.rng, block))  # by block, nearest first in each
+            b = block[order]
+            first = np.ones(b.size, dtype=bool)
+            first[1:] = b[1:] != b[:-1]
+            idx[b[first]] = order[first]
+        idx = idx.reshape(gh, gw)
+        rng = np.append(self.rng, np.inf)  # index -1 reads as infinitely far
+        hole = idx < 0
+        if hole.any() and len(self):
+            best, best_r = idx.copy(), rng[idx]
+            pad = np.pad(idx, 1, constant_values=-1)
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    if dy == 0 and dx == 0:
+                        continue
+                    nb = pad[1 + dy : 1 + dy + gh, 1 + dx : 1 + dx + gw]
+                    nr = rng[nb]
+                    take = hole & (nr < best_r)
+                    best[take], best_r[take] = nb[take], nr[take]
+            idx = best
+        idx.setflags(write=False)
+        self._aligned[cell] = idx
+        return idx
+
+    def depth_map(
+        self, cell: int = TOF_ALIGNED_CELL_PX, what: str = "range"
+    ) -> np.ndarray:
+        """The aligned depth picture in metres, float32 (rows, columns of `cell`-px blocks;
+        NaN where the ToF has nothing): "range" from the camera's lens, or "ground" along
+        the ground (box_depth's distance_m)."""
+        vals = {"range": self.rng, "ground": self.ground}[what]
+        return np.append(vals, np.nan).astype(np.float32)[self.aligned(cell)]
 
     def box_depth(
         self, box: Sequence[float], trim: Sequence[float] = TOF_BOX_TRIM
@@ -379,6 +441,7 @@ class DepthProjector:
             L[:, 2],
             c.source,
             pixels,
+            (c.cam.width, c.cam.height),
         )
 
 
@@ -444,4 +507,93 @@ def draw_overlay(
         cv2.circle(
             out, (int(x), int(y)), 1, (int(col[0]), int(col[1]), int(col[2])), -1
         )
+    return out
+
+
+def _label_spot(placed, x, y, w, h, limit):
+    """Where a label (top-left x, baseline y) goes so it covers no label already placed:
+    moved down a line at a time, at most a few (two boxes side by side hid each other's
+    label, 2026-11-06)."""
+    for _ in range(6):
+        box = (x, y - h - 4, x + w + 6, y + 4)
+        if not any(box[0] < b[2] and b[0] < box[2] and box[1] < b[3] and b[1] < box[3] for b in placed):
+            break
+        y += h + 8
+    y = min(y, limit)
+    placed.append((x, y - h - 4, x + w + 6, y + 4))
+    return y
+
+
+def draw_rgbd(
+    picture_bgr: np.ndarray,
+    frame: Optional[DepthFrame],
+    detections: Sequence[Dict[str, Any]] = (),
+    cell: int = TOF_ALIGNED_CELL_PX,
+    alpha: float = 0.45,
+    width: Optional[int] = None,
+) -> np.ndarray:
+    """The front camera as a depth camera: its picture with the aligned depth laid over it
+    (red near -> blue at TOF_MAX_MM; the picture's own colours where the ToF has nothing)
+    and each detection boxed with the distance the ToF measured in it (its "depth", along
+    the ground, from annotate), or "no depth" where it has none: past TOF_MAX_MM, or above
+    the ToF's view. `width`: drawn this wide (the page asks for the width it shows) — at
+    1164 px the blend took 65 ms and the JPEG was 231 KB; at 582, ~5 ms and ~31 KB."""
+    import cv2
+
+    H0, W0 = picture_bgr.shape[:2]
+    if width and 0 < int(width) < W0:
+        W = int(width)
+        H = max(1, int(round(H0 * W / W0)))
+        out = cv2.resize(picture_bgr, (W, H), interpolation=cv2.INTER_AREA)
+    else:
+        W, H, out = W0, H0, picture_bgr.copy()
+    sx, sy = W / W0, H / H0
+    if frame is not None and len(frame):
+        rng = frame.depth_map(cell)
+        fw, fh = frame.size
+        hue = np.clip(np.nan_to_num(rng, nan=0.0) / (TOF_MAX_MM / 1000.0), 0.0, 1.0)
+        hue = (hue * 120.0).astype(np.uint8)
+        full = np.full_like(hue, 255)
+        col = cv2.cvtColor(np.dstack([hue, full, full]), cv2.COLOR_HSV2BGR)
+        have = np.isfinite(rng).astype(np.uint8)
+        # Blocks straight onto this picture: each is `cell` camera pixels of the fw x fh
+        # picture the calibration places points on.
+        size = (
+            max(1, int(round(rng.shape[1] * cell * W / fw))),
+            max(1, int(round(rng.shape[0] * cell * H / fh))),
+        )
+        col = cv2.resize(col, size, interpolation=cv2.INTER_NEAREST)[:H, :W]
+        have = cv2.resize(have, size, interpolation=cv2.INTER_NEAREST)[:H, :W]
+        if col.shape[:2] != (H, W):  # a pixel short by rounding
+            col = cv2.resize(col, (W, H), interpolation=cv2.INTER_NEAREST)
+            have = cv2.resize(have, (W, H), interpolation=cv2.INTER_NEAREST)
+        blend = cv2.addWeighted(out, 1.0 - alpha, col, alpha, 0.0)
+        out = np.where(have[..., None].astype(bool), blend, out)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    big = W >= 900
+    fs, thick = (0.6, 2) if big else (0.45, 1)
+    placed: List[Tuple[int, int, int, int]] = []
+    labels = []
+    for det in detections:
+        try:
+            x1, y1, x2, y2 = (float(b) for b in det.get("bbox") or ())
+        except (TypeError, ValueError):
+            continue
+        x1, x2 = int(round(x1 * sx)), int(round(x2 * sx))
+        y1, y2 = int(round(y1 * sy)), int(round(y2 * sy))
+        name = str(det.get("class_name") or "object")
+        m = (det.get("depth") or {}).get("distance_m")
+        if isinstance(m, (int, float)):
+            text, colour = f"{name} {m:.1f} m ({m / 0.3048:.1f} ft)", (255, 255, 255)
+        else:
+            text, colour = f"{name}: no depth", (170, 170, 170)
+        cv2.rectangle(out, (x1, y1), (x2, y2), colour, thick)
+        labels.append((x1, y1, text, colour))
+    for x1, y1, text, colour in labels:  # after every box, so no box is drawn over a label
+        (tw, th), base = cv2.getTextSize(text, font, fs, thick)
+        x1 = max(0, min(x1, W - tw - 7))  # inside the picture, a box at its right edge too
+        ty = y1 - 6 if y1 - th - 10 >= 0 else y1 + th + 6
+        ty = _label_spot(placed, x1, ty, tw, th, H - base - 1)
+        cv2.rectangle(out, (x1, ty - th - 4), (x1 + tw + 6, ty + base), (0, 0, 0), -1)
+        cv2.putText(out, text, (x1 + 3, ty), font, fs, colour, thick, cv2.LINE_AA)
     return out

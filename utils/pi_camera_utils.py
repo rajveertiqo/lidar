@@ -1,11 +1,14 @@
 """Pi Camera utility functions and state management."""
 
 import atexit
+import contextlib
 import fcntl
 import glob
 import io
 import os
 import struct
+import sys
+import tempfile
 import threading
 import time
 import base64
@@ -427,6 +430,51 @@ def _set_focus() -> bool:
     return True
 
 
+# libcamera looks at every camera port when the camera opens, and in CAM0 finds the ToF,
+# which it cannot run: no tuning file, no helper (the ToF's own SDK reads it). That was five
+# ERROR lines at every start that read as a failure (2026-11-05); one plain line now says so.
+_TOF_PORT_DRIVER = b"arducam-pivariety"
+_TOF_PORT_FOLLOW_ON = (  # libcamera's lines about that port that don't name it
+    b"Failed to load a suitable IPA library",
+    b"Please consider updating the camera sensor properties database",
+)
+
+
+@contextlib.contextmanager
+def _quiet_tof_port():
+    """Hold back stderr while libcamera looks over the camera ports, then pass all of it on
+    but its lines about the ToF's port. A file, not a pipe: no writer can block on it."""
+    try:
+        if sys.stderr:
+            sys.stderr.flush()
+        console = os.dup(2)
+    except (OSError, ValueError):  # no stderr to hold back
+        yield
+        return
+    with tempfile.TemporaryFile() as held:
+        os.dup2(held.fileno(), 2)
+        try:
+            yield
+        finally:
+            if sys.stderr:
+                sys.stderr.flush()
+            os.dup2(console, 2)
+            os.close(console)
+            held.seek(0)
+            lines = held.read().splitlines(keepends=True)
+            tof = any(_TOF_PORT_DRIVER in line for line in lines)
+            kept = b"".join(
+                line for line in lines
+                if _TOF_PORT_DRIVER not in line
+                and not (tof and any(s in line for s in _TOF_PORT_FOLLOW_ON))
+            )
+            if tof:
+                print("[CAMERA] libcamera passed over the ToF's port (arducam-pivariety), "
+                      "as expected: the ToF's own SDK reads it")
+            while kept:
+                kept = kept[os.write(2, kept):]
+
+
 def _open_camera():
     """Open, configure and start the camera, retrying until it works or we are stopped."""
     global picam2
@@ -451,7 +499,8 @@ def _open_camera():
     while running:
         cam = None
         try:
-            cam = Picamera2()
+            with _quiet_tof_port():
+                cam = Picamera2()
             cam.configure(
                 cam.create_video_configuration(
                     main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"},

@@ -2,7 +2,8 @@
 
 A recording is gzipped JSON lines in WALK_RECORD_DIR, one line per guidance tick:
     {"t": wall clock, "mono": monotonic clock, "in": {walk_decision, lidar, radar, camera,
-     motion, movers, hold, hold_lidar_absent, at_crossing}, "out": {instruction, speak, ...}}
+     motion, movers, ground, hold, hold_lidar_absent, at_crossing}, "out": {instruction,
+     speak, ...}}   (ground: the ToF's hazards on the ground, since 2026-11-06)
 plus {"mark": ...} lines from a tester (/guidance/mark). tools/walk_replay.py feeds the
 inputs back through the CURRENT simple_guidance (and, by default, walk_policy) and lists
 every sentence that would now be said differently — so a change is tried on real walks

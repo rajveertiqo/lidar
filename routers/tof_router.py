@@ -1,6 +1,7 @@
 """ToF depth camera routes (2026-10-13): its status, a depth preview, the depth dots placed on
 the front camera's picture (the calibration check), and the bench calibration's captures.
-Since 2026-11-03 also the live view, /tof/live (from ~/tof/tof_live.py), fed by /tof/ws."""
+Since 2026-11-03 also the live view, /tof/live (from ~/tof/tof_live.py), fed by /tof/ws.
+Since 2026-11-06 the front camera as a depth camera: /tof/rgbd.jpg and /tof/aligned.npy."""
 
 import asyncio
 import json
@@ -20,6 +21,11 @@ router = APIRouter(prefix="/tof", tags=["ToF depth"])
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 _STATUS_S = 0.5  # /tof/ws: the status this often, between the frames
+_UNASKED_S = 2.0  # /tof/ws: a page that never asks for frames gets one this often
+_SEND_LIMIT_S = 3.0  # /tof/ws: a send the page has not taken in this long ends the stream
+# /tof/rgbd.jpg: the front's boxes are drawn only if found in a picture this near the one
+# shown (the front is detected on every picture, so they are normally one picture old).
+_RGBD_BOXES_MAX_AGE_S = 0.5
 
 
 def _need_tof():
@@ -41,10 +47,10 @@ def _front_picture():
     return pc._to_bgr(quad), float(t)
 
 
-def _jpeg(img) -> Response:
+def _jpeg(img, quality: int = 85) -> Response:
     import cv2
 
-    ok, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+    ok, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)])
     if not ok:
         raise HTTPException(status_code=500, detail="could not encode the picture")
     return Response(
@@ -77,8 +83,15 @@ async def live_page():
 @router.websocket("/ws")
 async def live_websocket(websocket: WebSocket):
     """Stream /tof/live each new frame as it came up from the capture process (at most
-    TOF_LIVE_MAX_FPS; layout in utils/tof_camera._HEADER), and /tof/status between them."""
+    TOF_LIVE_MAX_FPS; layout in utils/tof_camera._HEADER), and /tof/status between them.
+
+    The page asks for each frame ("next") once it has drawn the one before (2026-11-06).
+    Pushed as fast as the socket took them, ~170 KB at 15 a second (2.6 MB/s) queued in the
+    network's buffers on Wi-Fi: the page showed seconds-old frames, the camera picture below
+    it waited behind them, and a shutdown hung on a send. Now at most one frame is in flight.
+    A page that never asks (one loaded before this) still gets one every _UNASKED_S."""
     await websocket.accept()
+    reader = None
     try:
         if not TOF_ENABLED:
             await websocket.send_json({"enabled": False})
@@ -86,24 +99,39 @@ async def live_websocket(websocket: WebSocket):
             return
         from utils.tof_camera import latest_packet, tof_status
 
+        asked = asyncio.Event()
+        asked.set()  # the first frame is not waited for
+
+        async def listen():
+            while True:
+                if await websocket.receive_text() == "next":
+                    asked.set()
+
+        reader = asyncio.create_task(listen())
         seq, status_at, sent_at = 0, 0.0, 0.0
         gap = 1.0 / TOF_LIVE_MAX_FPS
-        while True:
+        while not reader.done():  # done: the page went away
             now = time.monotonic()
             if now - status_at >= _STATUS_S:  # first, or the frames would starve it
                 status_at = now
-                await websocket.send_json(await run_in_threadpool(tof_status))
+                status = await run_in_threadpool(tof_status)
+                await asyncio.wait_for(websocket.send_json(status), _SEND_LIMIT_S)
                 continue
             n, packet = latest_packet()
-            if n != seq and packet is not None and now - sent_at >= gap:
+            wanted = asked.is_set() or now - sent_at >= _UNASKED_S
+            if n != seq and packet is not None and wanted and now - sent_at >= gap:
                 seq, sent_at = n, now
-                await websocket.send_bytes(packet)
+                asked.clear()
+                await asyncio.wait_for(websocket.send_bytes(packet), _SEND_LIMIT_S)
             else:
-                await asyncio.sleep(max(0.01, gap - (now - sent_at)))
-    except WebSocketDisconnect:
+                await asyncio.sleep(0.01)
+    except (WebSocketDisconnect, asyncio.TimeoutError):
         pass
     except Exception as e:
         print(f"[WARN] ToF WebSocket error: {e}")
+    finally:
+        if reader is not None:
+            reader.cancel()
 
 
 @router.get("/depth.jpg")
@@ -140,6 +168,88 @@ def overlay():
         raise HTTPException(status_code=503, detail="no camera picture yet")
     frame = nearest(t, max(TOF_PAIR_MAX_S, 0.2))
     return _jpeg(draw_overlay(picture, frame))
+
+
+@router.get("/rgbd.jpg")
+def rgbd(w: int = 0):
+    """The front camera as a depth camera (2026-11-06): its picture with the depth aligned to
+    it laid over (red near -> blue far; its own colours where the ToF has nothing) and each
+    of its newest detections boxed with the distance the ToF measured inside the box. `w`:
+    drawn this wide (the page asks for the width it shows; 0: the camera's 1164)."""
+    _need_tof()
+    w = max(0, min(int(w), 4096))
+    from config import TOF_PAIR_MAX_S
+    from utils.depth_fusion import draw_rgbd
+    from utils.pi_camera_utils import live_detections
+    from utils.tof_camera import nearest
+
+    picture, t = _front_picture()
+    if picture is None:
+        raise HTTPException(status_code=503, detail="no camera picture yet")
+    frame = nearest(t, max(TOF_PAIR_MAX_S, 0.2))
+    found = live_detections("front", 0, 0.0).get("front") or {}
+    dets = found.get("detections") or []
+    if abs(float(found.get("frame_time") or 0.0) - t) > _RGBD_BOXES_MAX_AGE_S:
+        dets = []  # from an older picture: they would mark where things were
+    img = draw_rgbd(picture, frame, dets, width=w or None)
+    from config import TOF_HAZARDS_ENABLED
+
+    if TOF_HAZARDS_ENABLED:  # and the hazards on the ground, where they land
+        from utils.ground_hazards import draw, snapshot
+
+        snap = snapshot()
+        if snap.get("t") is not None and abs(float(snap["t"]) - t) <= 1.0:
+            scale = (img.shape[1] / picture.shape[1], img.shape[0] / picture.shape[0])
+            img = draw(img, snap, scale)
+    return _jpeg(img, 80)
+
+
+@router.get("/hazards")
+def hazards():
+    """The ToF's hazards on the ground ahead (utils/ground_hazards): the ground it fitted,
+    each confirmed hazard (kind, distance in feet, the camera's word on it, whether it would
+    be said and why), the one the guidance would say ("top"), and every unconfirmed sighting
+    of the newest frame ("seen")."""
+    _need_tof()
+    from config import TOF_HAZARDS_ENABLED
+
+    if not TOF_HAZARDS_ENABLED:
+        return {"enabled": False}
+    from utils.ground_hazards import snapshot
+
+    return {"enabled": True, **snapshot()}
+
+
+@router.get("/aligned.npy")
+def aligned_npy(what: str = "range"):
+    """The newest depth picture aligned to the front camera's, for scripts (np.load it):
+    float32 metres, NaN where the ToF has nothing, one value per TOF_ALIGNED_CELL_PX x
+    TOF_ALIGNED_CELL_PX block of camera pixels. `what`: "range" from the lens, or "ground"
+    along the ground. The headers say the block size, the capture time and the calibration."""
+    _need_tof()
+    if what not in ("range", "ground"):
+        raise HTTPException(status_code=400, detail='what: "range" or "ground"')
+    import io
+
+    from config import TOF_ALIGNED_CELL_PX
+    from utils.tof_camera import nearest
+
+    frame = nearest(time.time(), 1.0)
+    if frame is None:
+        raise HTTPException(status_code=503, detail="no ToF frame in the last second")
+    buf = io.BytesIO()
+    np.save(buf, frame.depth_map(TOF_ALIGNED_CELL_PX, what))
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/octet-stream",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Cell-Px": str(TOF_ALIGNED_CELL_PX),
+            "X-Picture-Size": f"{frame.size[0]}x{frame.size[1]}",
+            "X-Captured-At": f"{frame.t:.3f}",
+            "X-Calibration": frame.source,
+        },
+    )
 
 
 @router.post("/calibrate/capture", dependencies=[Depends(require_admin)])

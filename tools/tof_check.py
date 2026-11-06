@@ -14,7 +14,7 @@ broken link:
 
 PORTS (Pi 5): two connectors, CAM/DISP 0 and CAM/DISP 1. The overlay must name
 the one the ToF ribbon is in, and that port can't also carry another camera's
-overlay (e.g. imx519) - one camera per port:
+overlay (e.g. imx519) - one camera per port, and only one of these two lines:
     dtoverlay=arducam-pivariety          # ToF in CAM/DISP 1
     dtoverlay=arducam-pivariety,cam0     # ToF in CAM/DISP 0 (the rig: CamArray in CAM/DISP 1)
 Reboot after editing config.txt.
@@ -132,10 +132,24 @@ def check_config(model):
         clash = [line for line, name, p in overlays if p == port and name != DRIVER]
         say("PASS", f"dtoverlay={DRIVER} on {port} ({PORT_LABELS[port]})")
         if clash:
-            # Only a warning: step 2 shows whether the ToF actually won the port.
+            # Only a warning: step 2 shows whether the ToF actually won the port. Which line
+            # goes depends on the camera in the port: a bare dtoverlay=arducam-pivariety (CAM1)
+            # beside imx519,cam1 took the CamArray's port and its lens (2026-11-05).
             say("WARN", f"{port} also has {', '.join(clash)} - one camera per port, the")
             hint("two drivers fight over the connector (and I2C address 0x0c for imx519)")
-            hint(f"remove {', '.join(repr(c) for c in clash)} from {path}, then sudo reboot")
+            there = answered_on(port)
+            other = [c for c in clash if c[len("dtoverlay="):].split(",")[0] in there]
+            if DRIVER in there:
+                drop = clash
+            elif other:
+                hint(f"{other[0]} answered in {PORT_LABELS[port]} at boot and the ToF didn't:")
+                hint("that camera is in this port, so the ToF line goes")
+                drop = [line for line, name, p in overlays if p == port and name == DRIVER]
+            else:
+                hint("neither answered at boot: keep the line for the camera in this port")
+                drop = []
+            if drop:
+                hint(f"remove {', '.join(map(repr, drop))} from {path}, then sudo reboot")
     return True
 
 
@@ -173,6 +187,17 @@ def csi_port(i2c_name):
 def where(i2c_name):
     port = csi_port(i2c_name)
     return f"I2C {i2c_name} ({PORT_LABELS[port]})" if port else f"I2C {i2c_name}"
+
+
+def answered_on(port):
+    """The drivers bound on a port's I2C bus in the running kernel ({'imx519', 'ak7375'}):
+    a driver binds only if its chip answered."""
+    names = set()
+    for link in glob.glob("/sys/bus/i2c/devices/*/driver"):
+        i2c_name = os.path.basename(os.path.dirname(link))
+        if re.fullmatch(r"\d+-[0-9a-f]{4}", i2c_name) and csi_port(i2c_name) == port:
+            names.add(os.path.basename(os.path.realpath(link)))
+    return names
 
 
 def check_driver(cfg_ok):

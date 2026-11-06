@@ -388,6 +388,19 @@ def get_unified_guidance() -> Dict[str, Any]:
         except Exception as e:
             _warn("radar movers", e)
         radar_now = radar
+        ground = None
+        try:
+            from config import TOF_ENABLED, TOF_HAZARDS_ENABLED
+
+            if TOF_ENABLED and TOF_HAZARDS_ENABLED:
+                # The ToF's hazards on the ground (utils/ground_hazards): analysed in their own
+                # thread, ~10 a second, so reading them here costs this tick nothing.
+                from utils.ground_hazards import snapshot as ground_snapshot
+
+                ground = ground_snapshot()
+                ground.pop("seen", None)  # every unconfirmed sighting: /tof/hazards, not the recorder
+        except Exception as e:
+            _warn("ground hazards", e)
         system = None
         try:
             from utils import pi_health
@@ -409,6 +422,7 @@ def get_unified_guidance() -> Dict[str, Any]:
             motion=motion,
             movers=movers,
             system=system,
+            ground=ground,
         )
         _note_guidance(None)
         _record(
@@ -421,6 +435,7 @@ def get_unified_guidance() -> Dict[str, Any]:
                 "camera": camera,
                 "motion": motion,
                 "movers": movers,
+                "ground": ground,
                 "hold": hold,
                 "hold_lidar_absent": bool(ready.get("lidar_absent")),
                 "at_crossing": at_crossing,
@@ -467,6 +482,26 @@ def get_unified_guidance() -> Dict[str, Any]:
                 simple["route_shadow"],
                 simple.get("route_shadow_reason", ""),
                 source="route planner",
+            )
+        except Exception:
+            pass
+
+    if simple.get("ground_shadow"):
+        # Not spoken (TOF_HAZARDS_SPEAK False): logged so a test walk can judge it.
+        try:
+            from utils import speech_log, test_console
+
+            speech_log.say(
+                source="tof-hazards",
+                text=f"would say: {simple['ground_shadow']}",
+                level="silent",
+                detail=simple.get("ground_shadow_reason", ""),
+                via="none",
+            )
+            test_console.would_say(
+                simple["ground_shadow"],
+                simple.get("ground_shadow_reason", ""),
+                source="ToF hazards",
             )
         except Exception:
             pass

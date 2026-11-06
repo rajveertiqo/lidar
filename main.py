@@ -61,6 +61,10 @@ async def lifespan(app: FastAPI):
     from utils.tof_camera import start_tof, stop_tof
 
     _step("ToF start", start_tof)  # only with TOF_ENABLED (the depth camera)
+    from utils.ground_hazards import start_ground_hazards, stop_ground_hazards
+
+    # Stairs, steps, drops, poles... on the ToF's frames (with TOF_HAZARDS_ENABLED).
+    _step("ToF hazards start", start_ground_hazards)
 
     from utils import pi_voice, service, test_console
     from utils.walk_recorder import get_recorder
@@ -115,6 +119,7 @@ async def lifespan(app: FastAPI):
         _step("camera stop", stop_camera)
         _step("LiDAR stop", stop_scanner_thread)
         _step("radar stop", stop_radar)
+        _step("ToF hazards stop", stop_ground_hazards)
         _step("ToF stop", stop_tof)
         _step("gyro stop", stop_gyro)
         print("👋 Application shutdown complete")

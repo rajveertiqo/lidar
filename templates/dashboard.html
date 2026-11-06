@@ -1532,9 +1532,9 @@
           // own quarter of it: [row, column] as the camera board lays them out.
           const lay = geom.camera_layout || {
             right: [0, 0],
-            front: [0, 1],
-            left: [1, 0],
-            back: [1, 1],
+            front: [1, 1],
+            left: [0, 1],
+            back: [1, 0],
           };
           const [W, H] = (geom.camera_px || [1164, 874]).map(Number);
           $("cam-all").innerHTML = ["front", "right", "left", "back"]

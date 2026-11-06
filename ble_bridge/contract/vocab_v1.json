@@ -1,8 +1,8 @@
 {
  "registry": "shappe-phrases",
  "version": 1,
- "revision": 6,
- "sha": "e01793d26d69ca9a",
+ "revision": 7,
+ "sha": "c575a75898c58e8f",
  "note": "Append-only. id 0 = no sentence; 65535 = not in this registry (use ALERT_TEXT). Generated from utils/simple_guidance.ALLOWED by ble_bridge/make_vocab.py — do not edit by hand.",
  "phrases": [
   {
@@ -3104,6 +3104,96 @@
    "urgent": false,
    "side": null,
    "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 311,
+   "text": "Stairs up ahead",
+   "action": "stairs_up_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "stairs",
+   "mover": false
+  },
+  {
+   "id": 312,
+   "text": "Stairs down ahead",
+   "action": "stairs_down_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "stairs",
+   "mover": false
+  },
+  {
+   "id": 313,
+   "text": "Stairs down in front, stop",
+   "action": "stairs_down_stop",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "stairs",
+   "mover": false
+  },
+  {
+   "id": 314,
+   "text": "Step up ahead",
+   "action": "step_up_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "step",
+   "mover": false
+  },
+  {
+   "id": 315,
+   "text": "Step down ahead",
+   "action": "step_down_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "step",
+   "mover": false
+  },
+  {
+   "id": 316,
+   "text": "Drop ahead",
+   "action": "drop_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "drop",
+   "mover": false
+  },
+  {
+   "id": 317,
+   "text": "Drop in front, stop",
+   "action": "drop_stop",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "drop",
+   "mover": false
+  },
+  {
+   "id": 318,
+   "text": "Low obstacle ahead",
+   "action": "low_obstacle_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "low obstacle",
+   "mover": false
+  },
+  {
+   "id": 319,
+   "text": "Overhanging obstacle ahead",
+   "action": "overhang_ahead",
+   "level": 1,
+   "urgent": false,
+   "side": null,
+   "obstacle": "overhang",
    "mover": false
   }
  ]

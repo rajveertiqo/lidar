@@ -116,6 +116,28 @@ fi
 # fd 9 stays open into uvicorn below (exec keeps it), so the lock lasts as long as the app.
 if already_running; then exit $REFUSED; fi
 
+# Every run's output also goes to logs/run_<date>_<time>.log, newest at logs/latest.log: the
+# terminal's scrollback, or a journal kept for one boot, was all there was (2026-11-05).
+# Colour codes are stripped from the file. tee ignores Ctrl+C and the stop signals, so the
+# shutdown lines are kept too: it ends when the app closes its output. With an output gone
+# (a full card, a closed terminal) it warns and carries on with the other. A log that can't
+# be written never stops guidance starting.
+LOG_DIR="$SCRIPT_DIR/logs"
+LOG_KEEP_RUNS="${LOG_KEEP_RUNS:-100}"
+RUN_LOG="$LOG_DIR/run_$(date +%F_%H-%M-%S).log"
+if mkdir -p "$LOG_DIR" 2>/dev/null && touch "$RUN_LOG" 2>/dev/null; then
+    ls -1t "$LOG_DIR"/run_*.log | tail -n +"$((LOG_KEEP_RUNS + 1))" | xargs -r rm -f --
+    ln -sfn "$(basename "$RUN_LOG")" "$LOG_DIR/latest.log"
+    if [ -t 1 ]; then
+        export SHAPPE_CONSOLE_COLOR=1  # the guidance console keeps its colours through tee
+    fi
+    exec > >(trap '' INT TERM HUP; exec tee --output-error=warn \
+        >(sed -u 's/\x1b\[[0-9;]*m//g' >> "$RUN_LOG")) 2>&1
+    echo "This run's output is saved in logs/$(basename "$RUN_LOG") (newest: logs/latest.log)"
+else
+    echo -e "${YELLOW}Warning: can't write $LOG_DIR - this run's output is not saved${NC}"
+fi
+
 # Line by line into the journal, not in 8 KB blocks: the last lines before a crash count.
 export PYTHONUNBUFFERED=1
 

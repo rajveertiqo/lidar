@@ -77,7 +77,7 @@ class NavigationTests(unittest.IsolatedAsyncioTestCase):
             mock = patch.object(navigation, name, return_value=value)
             mock.start()
             self.addCleanup(mock.stop)
-        mock = patch.object(navigation, "update_navigation_stayte")
+        mock = patch.object(navigation, "update_navigation_state")
         mock.start()
         self.addCleanup(mock.stop)
 

@@ -294,6 +294,13 @@ def _echo_mm(d: Any) -> Optional[float]:
     return None
 
 
+def _front_view_blocked(lidar_state: Dict[str, Any]) -> bool:
+    """Something right at the LiDAR hides the way ahead from the laser in this scan
+    (lidar_utils._front_blocked, 2026-11-09)."""
+    front = ((lidar_state or {}).get("cones") or {}).get("front") or {}
+    return front.get("blocked_near_mm") is not None
+
+
 def _board_echoes(
     radar_state: Dict[str, Any], direction: str, all_peaks: bool = False
 ) -> List[Tuple[float, float]]:
@@ -501,10 +508,26 @@ def _door_in_wall_ft(
 
 
 def read_direction(
-    lidar_state: Dict[str, Any], radar_state: Dict[str, Any], direction: str
+    lidar_state: Dict[str, Any],
+    radar_state: Dict[str, Any],
+    direction: str,
+    tof_front: Optional[Tuple[float, Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """Both sensors' view of one direction, fused into a single figure in feet."""
+    """Both sensors' view of one direction, fused into a single figure in feet. `tof_front`:
+    (feet, hazard) of the ToF's nearest confirmed solid thing on the path (_tof_front)."""
     lidar_ft, lidar_measured = _lidar_reading(lidar_state, direction)
+    # The ToF sees something solid on the path that the laser does not: a blind or a door it
+    # passes through, anything above or below its one plane. The ToF's range stands in for
+    # the laser's (2026-11-09: a window blind 2.6 ft ahead, the laser through it, the radar
+    # silent — "Walk straight", then "Blocked by glass" off one faint echo). Only where the
+    # laser has no return or ranges further by more than RADAR_AGREE_MM: else it rules.
+    tof_used = None
+    if (
+        direction == "front"
+        and tof_front is not None
+        and (not lidar_measured or float(tof_front[0]) < lidar_ft - _AGREE_FT)
+    ):
+        lidar_ft, lidar_measured, tof_used = float(tof_front[0]), True, tof_front[1]
     radar_ft, radar_measured = _radar_reading(radar_state, direction)
     lidar_arc_ft = _lidar_arc_ft(lidar_state, direction)
     arc_corroborates = _arc_corroborates(lidar_state, direction, radar_ft)
@@ -556,6 +579,15 @@ def read_direction(
         if door is not None:
             radar_ft, arc_corroborates, door_glass = door, False, True
 
+    # The laser saw nothing ahead because something right at the LiDAR hid it (a hand, the
+    # wearer's body, a person pressed close: lidar_utils._front_blocked): that is no
+    # evidence of glass. The radar's echo still blocks, as an obstacle (2026-11-09).
+    laser_hidden = (
+        direction == "front"
+        and not lidar_measured
+        and _front_view_blocked(lidar_state)
+    )
+
     radar_off_axis = radar_measured and not _radar_drives_block(
         radar_state, direction, radar_ft, arc_corroborates
     )
@@ -576,6 +608,21 @@ def read_direction(
         )
     if door_glass:
         how += " (both front boards hear a pane set in the wall ahead, behind the corridor's walls)"
+    if tof_used is not None:
+        how += (
+            f" (the ToF's {tof_used.get('kind')} {lidar_ft:.1f} ft ahead, which the laser"
+            " does not see, stands in for it)"
+        )
+    glass = (
+        not lidar_blind(direction)
+        and not laser_hidden
+        and _is_glass(lidar_ft, radar_ft, radar_measured, lidar_measured, arc_corroborates)
+    )
+    if laser_hidden and radar_measured:
+        how += (
+            " (something right at the LiDAR hides the way ahead from the laser: the"
+            " radar's echo is an obstacle, not glass)"
+        )
 
     return {
         "direction": direction,
@@ -593,10 +640,9 @@ def read_direction(
         # cannot look (LIDAR_BLIND_ARCS_DEG, the wearer's body): there every echo read as
         # glass, and the dashboard said "left · glass" all the time on the desk (2026-11-05).
         # The echo still counts as an obstacle at its distance.
-        "glass": not lidar_blind(direction)
-        and _is_glass(
-            lidar_ft, radar_ft, radar_measured, lidar_measured, arc_corroborates
-        ),
+        "glass": glass,
+        "laser_hidden": laser_hidden,
+        "tof_ft": round(lidar_ft, 2) if tof_used is not None else None,
         "lidar_arc_ft": lidar_arc_ft,
         "arc_corroborates": arc_corroborates,
         "radar_off_axis": radar_off_axis,
@@ -608,9 +654,53 @@ def read_direction(
 
 
 def read_all(
-    lidar_state: Dict[str, Any], radar_state: Dict[str, Any]
+    lidar_state: Dict[str, Any],
+    radar_state: Dict[str, Any],
+    tof_front: Optional[Tuple[float, Dict[str, Any]]] = None,
 ) -> Dict[str, Dict[str, Any]]:
-    return {d: read_direction(lidar_state, radar_state, d) for d in GUIDANCE_SECTORS}
+    return {
+        d: read_direction(lidar_state, radar_state, d, tof_front if d == "front" else None)
+        for d in GUIDANCE_SECTORS
+    }
+
+
+# The ToF's kinds that stand on the path from the ground up, as a wall or a person does for the
+# laser. Overhangs and low obstacles wait on TOF_HAZARDS_SPEAK: a wall alongside has read as an
+# overhang, and range noise as a low obstacle (review, 2026-11-06).
+_TOF_SOLID = ("obstacle", "pole")
+
+
+def _tof_front() -> Optional[Tuple[float, Dict[str, Any]]]:
+    """(feet, hazard) of the nearest solid thing the ToF has confirmed on the walking path
+    (utils/ground_hazards: 3 of 5 frames, and the camera's check), or None. Only while the
+    ToF worker runs and its analysis is under TOF_HAZARD_FRESH_S old."""
+    try:
+        from config import TOF_ENABLED, TOF_HAZARDS_ENABLED, TOF_HAZARD_FRESH_S
+        from utils import ground_hazards as gh
+
+        if not (TOF_ENABLED and TOF_HAZARDS_ENABLED):
+            return None
+        if gh._thread is None or not gh._thread.is_alive():
+            return None  # not running: tests, desk tools
+        snap = gh.snapshot()
+    except Exception:
+        return None
+    age = snap.get("age_s")
+    if not snap.get("ok") or not isinstance(age, (int, float)) or age > TOF_HAZARD_FRESH_S:
+        return None
+    best = None
+    for h in snap.get("hazards") or []:
+        if (
+            h.get("kind") in _TOF_SOLID
+            and h.get("in_path")
+            and h.get("measured", True)
+            and h.get("speak")
+            and isinstance(h.get("ahead_m"), (int, float))
+        ):
+            ft = float(h["ahead_m"]) / 0.3048
+            if best is None or ft < best[0]:
+                best = (ft, h)
+    return best
 
 
 _measured_lock = threading.Lock()
@@ -787,11 +877,16 @@ def choose_turn(
 
     # Room only one sensor can vouch for ranks behind room both can: a silent radar misses
     # thin poles, and the LiDAR's blind arc is the wearer's body.
+    # Equal room by the fused reading (both side radars hearing the same wall ahead at their
+    # beams' edge): the laser's own side reading decides, not WALK_TURN_ORDER — that sent
+    # "Blocked by wall, turn left" toward a wall 9 ft off with the right open (2026-11-09).
     def rank(view):
+        laser = view.get("lidar_ft")
         return (
             view["direction"] == "back",
             bool(view.get("radar_blind") or view.get("lidar_blind")),
             -_room_ft(view),
+            -(laser if isinstance(laser, (int, float)) else 0.0),
         )
 
     return sorted(candidates, key=rank)[0]
@@ -812,7 +907,7 @@ def decide(
 
     if lidar_state and (not lidar_is_fresh(lidar_state) or lidar_sparse(lidar_state)):
         lidar_state = {}
-    views = read_all(lidar_state, radar_state)
+    views = read_all(lidar_state, radar_state, _tof_front() if lidar_state else None)
     _carry_measured(views, time.time())
     front = views["front"]
 

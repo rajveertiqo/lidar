@@ -47,6 +47,8 @@ def _evidence(raw: Dict[str, Any]) -> str:
     )
     bits.append("wall ✓" if raw.get("wall") else "wall ·")
     bits.append("glass ✓" if raw.get("glass") else "glass ·")
+    if raw.get("laser_hidden"):  # something right at the LiDAR: its echo is no glass
+        bits.append("laser hidden")
     if raw.get("object"):
         bits.append(f"cam {raw['object']}")
     steer = raw.get("steer") or {}

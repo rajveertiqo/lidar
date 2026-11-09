@@ -40,7 +40,7 @@ from utils.shared_state import get_lidar_state, get_radar_state, update_lidar_st
 
 FT = 304.8
 GLASS_HALF_MM = 600.0  # a pane 1.2 m wide, centred on the path
-GLASS_WORDS = (sg.GLASS_AHEAD, sg.BLOCKED_GLASS) + sg._GLASS_BESIDE
+GLASS_WORDS = (sg.GLASS_AHEAD,) + sg.BLOCKED_GLASS_ANY + sg._GLASS_BESIDE
 
 
 def random_scene(rnd):
@@ -190,8 +190,8 @@ def run_rules(n, seed, ghosts):
         if not scene["glass"] and text in GLASS_WORDS:
             bad["no glass, a glass sentence (false alarm)"].append((i, text, scene))
         for side, turn in (("left", sg.TURN_LEFT), ("right", sg.TURN_RIGHT)):
-            if text == turn and room[side] < c.WALK_MIN_TURN_FT * FT - m:
-                bad[f"'{turn}' with < 2 ft of room that way"].append((i, text, scene))
+            if (text == turn or sg._WAY_OUT.get(text) == side) and room[side] < c.WALK_MIN_TURN_FT * FT - m:
+                bad[f"'{text}' with < 2 ft of room that way"].append((i, text, scene))
     print(f"{n} scenes{f', radar ghosts {ghosts:.0%}' if ghosts else ''}. Said: "
           + ", ".join(f"{t!r} {k}" for t, k in said.most_common(6)))
     print("  no rule broken" if not bad else "")

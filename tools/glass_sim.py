@@ -305,7 +305,7 @@ def run(verbose=False):
         wd = walk_policy.decide(lidar, radar)
         raw = sg.decide(wd, lidar, now=time.time(), radar_state=radar)
         said = raw["instruction"]
-        named = said in (sg.BLOCKED_GLASS, sg.GLASS_AHEAD) + sg._GLASS_BESIDE
+        named = said in sg.BLOCKED_GLASS_ANY + (sg.GLASS_AHEAD,) + sg._GLASS_BESIDE
         if kind == "glass":
             verdict = "ok" if named else "MISSED"
         elif kind == "clear":

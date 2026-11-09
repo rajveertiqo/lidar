@@ -197,6 +197,28 @@ SENSORS_OFFLINE = "Guidance stopped, use your cane"
 # On the walking line inside SIMPLE_OBSTACLE_AHEAD_FT, not a wall, glass or anything a
 # camera names: said before the WALK_BLOCK_FT turn (2026-10-21).
 OBSTACLE_AHEAD = "Obstacle ahead"
+# The same thing inside WALK_BLOCK_FT: named, with the turn (2026-11-09). Until then it was
+# "Turn left" alone, and the wearer was not told something stood in front (a post at
+# 0.8 ft on the rig, 09:40): the camera names no plain pole. A wall beside the user that
+# the front brushes is still "Turn left" — that is no obstacle in front.
+_WAYS = ("left", "right", "around")
+OBSTACLE_IN_FRONT = {s: f"Obstacle in front, turn {s}" for s in _WAYS}
+_OBSTACLE_TURN = {t: s for s, t in OBSTACLE_IN_FRONT.items()}
+_TURNS = (TURN_LEFT, TURN_RIGHT) + tuple(OBSTACLE_IN_FRONT.values())
+# Blocked by a wall or a pane, AND the way out (2026-11-09): "Blocked by glass" alone left
+# the wearer at the pane not knowing where to go. The turn is the walk policy's: toward more
+# room, or around when neither side has WALK_MIN_TURN_FT. The bare sentences stay in the
+# vocabulary (the phone's registry is append-only) but are no longer said.
+BLOCKED_WALL_TURN = {s: f"Blocked by wall, turn {s}" for s in _WAYS}
+BLOCKED_GLASS_TURN = {s: f"Blocked by glass, turn {s}" for s in _WAYS}
+BLOCKED_WALL_ANY = (BLOCKED_WALL,) + tuple(BLOCKED_WALL_TURN.values())
+BLOCKED_GLASS_ANY = (BLOCKED_GLASS,) + tuple(BLOCKED_GLASS_TURN.values())
+# Every block sentence that carries its way out -> that way (left, right or around).
+_WAY_OUT = {
+    **_OBSTACLE_TURN,
+    **{t: s for s, t in BLOCKED_WALL_TURN.items()},
+    **{t: s for s, t in BLOCKED_GLASS_TURN.items()},
+}
 # The walk policy's "stop": blocked, and no direction has room to turn into (2026-10-21).
 STOP_NO_WAY = "Stop, no clear way"
 # A traffic light in the front camera: said once per crossing, in place of the "Walk
@@ -339,6 +361,9 @@ ALLOWED = (
     + _STARTUP_NOTICES
     + _SYSTEM_NOTICES
     + _GROUND_SENTENCES
+    + tuple(OBSTACLE_IN_FRONT.values())
+    + tuple(BLOCKED_WALL_TURN.values())
+    + tuple(BLOCKED_GLASS_TURN.values())
 )
 
 _ACTION = {
@@ -383,6 +408,8 @@ _ACTION = {
     DROP_STOP: "drop_stop",
     LOW_OBSTACLE_AHEAD: "low_obstacle_ahead",
     OVERHANG_AHEAD: "overhang_ahead",
+    # A turn, as "Turn left" is: the heading reset (unified_guidance) and the phone's arrow.
+    **{t: f"turn_{s}" for t, s in _WAY_OUT.items()},
     **{t: "object_ahead" for t in OBJECT_AHEAD.values()},
     **{t: "object_in_front" for t in OBJECT_IN_FRONT.values()},
     **{t: "steer_" + i["turn"] for t, i in _STEER_INFO.items() if i["turn"]},
@@ -413,6 +440,7 @@ _LEVEL = {
     BLOCKED_GLASS: 2,
     TURN_LEFT: 2,
     TURN_RIGHT: 2,
+    **{t: 2 for t in _WAY_OUT},
     TURN_AROUND: 2,
     STOP_NO_WAY: 2,
     SENSORS_OFFLINE: 2,
@@ -1736,8 +1764,10 @@ def _sentence(
     mover: Optional[str] = None,
     obstacle: bool = False,
     ground: Optional[str] = None,
+    in_front: bool = False,
 ) -> str:
-    """A vehicle coming at the user, above everything."""
+    """A vehicle coming at the user, above everything. `in_front`: the block is something
+    standing on the path, not a wall or glass, nor a wall beside the user."""
     if vehicle:
         if vehicle_no_room:
             return VEHICLE_APPROACHING
@@ -1752,10 +1782,11 @@ def _sentence(
         # No way out is said before naming what is in the way (2026-10-21).
         if side == "stop":
             return STOP_NO_WAY
+        way = side if side in _WAYS else None
         if glass:
-            return BLOCKED_GLASS
+            return BLOCKED_GLASS_TURN[way] if way else BLOCKED_GLASS
         if wall:
-            return BLOCKED_WALL
+            return BLOCKED_WALL_TURN[way] if way else BLOCKED_WALL
         # A vehicle further off no longer replaces the block sentence (2026-10-21): the
         # thing in the way is what the user must act on; a vehicle IN the way is named by
         # ranged_vehicle as "Vehicle in front".
@@ -1769,8 +1800,11 @@ def _sentence(
         if obj in OBJECT_IN_FRONT:
             return OBJECT_IN_FRONT[obj]
         if side == "around":
-            return TURN_AROUND
-        return TURN_LEFT if side != "right" else TURN_RIGHT
+            return OBSTACLE_IN_FRONT["around"] if in_front else TURN_AROUND
+        turn = "right" if side == "right" else "left"
+        if in_front:
+            return OBSTACLE_IN_FRONT[turn]
+        return TURN_LEFT if turn == "left" else TURN_RIGHT
     if vehicle_ahead:
         return VEHICLE_AHEAD
     if ground in _GROUND_FALL_AHEAD:  # a fall on the way, before a wall or a pane
@@ -2043,6 +2077,10 @@ def decide(
     # Something the laser measures on the walking line, short of a block, that is not a
     # wall, glass or named: until 2026-10-21 that was "Walk straight" right up to 4 ft.
     laser_ft = front.get("lidar_ft") if front.get("lidar_measured") else None
+    # Hidden from the laser right at the LiDAR (walk_policy laser_hidden): the radar's echo
+    # is the thing on the path, said as an obstacle too, not glass (2026-11-09).
+    if laser_ft is None and front.get("laser_hidden") and front_ft is not None:
+        laser_ft = front_ft
     # Held out to SIMPLE_BAND_MARGIN_FT beyond, once said, like "near" (no chatter at 8 ft).
     obstacle_band = bool(
         fresh
@@ -2231,11 +2269,19 @@ def decide(
     )
     mover = would_say if LIDAR_MOVERS_SPEAK else None
     route_would, route_why = None, ""
+    # The block is something standing on the path (2026-11-09): "Obstacle in front, turn
+    # left", not "Turn left" alone. Not a wall or glass, nor a wall beside the user that
+    # the front brushes (alongside, brushed, tight_turn): that is still "Turn left".
+    in_front = bool(
+        blocked and not (glass or wall or alongside or brushed or tight_turn)
+    )
     if route_ok and not ROUTE_PLANNER_SPEAK:
         if blocked and route_turn and route_turn != device_side and not tight_turn:
             route_would = (
                 TURN_AROUND
                 if route_turn == "around"
+                else OBSTACLE_IN_FRONT[route_turn]
+                if in_front
                 else (TURN_LEFT if route_turn == "left" else TURN_RIGHT)
             )
             route_why = (
@@ -2269,6 +2315,7 @@ def decide(
         mover,
         obstacle_ahead,
         ground=ground_text,
+        in_front=in_front,
     )
     if ground_text and text == ground_text:
         rule, why = "ground_hazard", ground_why
@@ -2387,6 +2434,8 @@ def decide(
         "scan_index": (lidar_state or {}).get("scan_index") if fresh else None,
         "on_line_ft": on_line_ft,
         "obstacle_ahead": obstacle_ahead,
+        "in_front": in_front,
+        "laser_hidden": bool(front.get("laser_hidden")),
         "obstacle_band": obstacle_band,
         "mover": (
             {
@@ -2567,6 +2616,9 @@ class _World:
         self._unknown_since: Optional[float] = None
         self._last_text = ""  # the sentence the last update mapped to
         self.side: Optional[str] = None
+        # The block is something standing on the path (decide's in_front), kept, as the
+        # side is, while the block lasts: "Obstacle in front, turn left" (2026-11-09).
+        self.in_front = False
         self._blocked_since: Optional[float] = None
         self._crossing_seen: Optional[float] = None  # last traffic light, this crossing
         self._light_since: Optional[float] = None  # an unconfirmed light, seen since
@@ -2784,8 +2836,11 @@ class _World:
                 "stop",
             ):
                 self.side = raw["side"]
+            if raw["blocked"]:
+                self.in_front = bool(raw.get("in_front"))
         else:
             self.side = None
+            self.in_front = False
             self._blocked_since = None
         side_active = (side_seen or not line_blocked) and (
             self.drift_left.active
@@ -2820,6 +2875,7 @@ class _World:
             mover=mover,
             obstacle=obstacle and not (wall or obj),
             ground=ground,
+            in_front=self.in_front,
         )
         self._last_text = text
         hazard = _LEVEL.get(text, 0) >= 1
@@ -3014,6 +3070,8 @@ def _advised_side(text: str) -> Optional[str]:
         return "left"
     if text in (TURN_RIGHT, TURN_SLIGHT_RIGHT):
         return "right"
+    if _WAY_OUT.get(text) in ("left", "right"):
+        return _WAY_OUT[text]
     if text in _STEER_INFO:
         return _STEER_INFO[text]["turn"]
     if text in _MOVER_INFO:
@@ -3162,8 +3220,8 @@ class _Gate:
             and episode == self._episode
         ):
             upgrade = (
-                self._spoken in (TURN_LEFT, TURN_RIGHT)
-                and text not in (TURN_LEFT, TURN_RIGHT)
+                self._spoken in _TURNS
+                and text not in _TURNS
                 and level == self._level
             )
             upgrade = (
@@ -3388,8 +3446,10 @@ def _reason(text: str, raw: Dict[str, Any]) -> str:
         return f"near the wall on your {side}" + (f" ({ft:.1f} ft)" if ft else "")
     if text == WALK_STRAIGHT:
         return "path ahead is clear"
-    if text in (TURN_LEFT, TURN_RIGHT):
+    if text in _TURNS:
         return "front blocked by an obstacle"
+    if text in _WAY_OUT:  # blocked by a wall or glass, and the way out
+        return f"front blocked by {'glass' if text in BLOCKED_GLASS_ANY else 'wall'}"
     if text == TURN_AROUND:
         return "front blocked, and no way 1 m clear anywhere ahead"
     thing = (
@@ -3699,6 +3759,8 @@ def guidance(
         "side": (
             _world.side
             if text in (TURN_LEFT, TURN_RIGHT)
+            else _WAY_OUT[text]
+            if text in _WAY_OUT
             else _STEER_INFO[text]["turn"]
             if text in _STEER_INFO
             else _MOVER_INFO[text]["move"]
@@ -3717,9 +3779,9 @@ def guidance(
             else (_STEER_INFO[text]["word"] or "").lower() or None
             if text in _STEER_INFO
             else "glass"
-            if text in (BLOCKED_GLASS, GLASS_AHEAD) + _GLASS_BESIDE
+            if text in BLOCKED_GLASS_ANY + (GLASS_AHEAD,) + _GLASS_BESIDE
             else "wall"
-            if text in (BLOCKED_WALL, WALL_AHEAD) + _SIDE_WALL
+            if text in BLOCKED_WALL_ANY + (WALL_AHEAD,) + _SIDE_WALL
             else _GROUND_OBSTACLE[text]
             if text in _GROUND_OBSTACLE
             else _OBJECT_OF[text].lower()

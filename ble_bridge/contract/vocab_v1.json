@@ -1,8 +1,8 @@
 {
  "registry": "shappe-phrases",
  "version": 1,
- "revision": 7,
- "sha": "c575a75898c58e8f",
+ "revision": 9,
+ "sha": "e8238d2c89ea80c3",
  "note": "Append-only. id 0 = no sentence; 65535 = not in this registry (use ALERT_TEXT). Generated from utils/simple_guidance.ALLOWED by ble_bridge/make_vocab.py — do not edit by hand.",
  "phrases": [
   {
@@ -3194,6 +3194,96 @@
    "urgent": false,
    "side": null,
    "obstacle": "overhang",
+   "mover": false
+  },
+  {
+   "id": 320,
+   "text": "Obstacle in front, turn left",
+   "action": "turn_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 321,
+   "text": "Obstacle in front, turn right",
+   "action": "turn_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 322,
+   "text": "Obstacle in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": null,
+   "mover": false
+  },
+  {
+   "id": 323,
+   "text": "Blocked by wall, turn left",
+   "action": "turn_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "wall",
+   "mover": false
+  },
+  {
+   "id": 324,
+   "text": "Blocked by wall, turn right",
+   "action": "turn_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "wall",
+   "mover": false
+  },
+  {
+   "id": 325,
+   "text": "Blocked by wall, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "wall",
+   "mover": false
+  },
+  {
+   "id": 326,
+   "text": "Blocked by glass, turn left",
+   "action": "turn_left",
+   "level": 2,
+   "urgent": true,
+   "side": "left",
+   "obstacle": "glass",
+   "mover": false
+  },
+  {
+   "id": 327,
+   "text": "Blocked by glass, turn right",
+   "action": "turn_right",
+   "level": 2,
+   "urgent": true,
+   "side": "right",
+   "obstacle": "glass",
+   "mover": false
+  },
+  {
+   "id": 328,
+   "text": "Blocked by glass, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "glass",
    "mover": false
   }
  ]

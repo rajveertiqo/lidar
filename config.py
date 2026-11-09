@@ -141,6 +141,15 @@ LIDAR_PERSIST_MAX_AGE_S = 0.5
 # (arm swing through the cones). 0 turns it off.
 LIDAR_SELF_RANGE_MM = 250.0
 LIDAR_SELF_PERSIST_S = 0.5
+# Something right at the LiDAR straight ahead (a hand, a person pressed close) hides the way
+# from the laser, so the laser's "nothing ahead" is then no evidence of glass (2026-11-09:
+# "Blocked by glass", with a hand near the LiDAR and a person ~1 m ahead). Right at it = a
+# return under LIDAR_OCCLUDED_MM within LIDAR_FRONT_VIEW_DEG of front, in this scan,
+# counted before the self filter drops it. Kept that narrow on purpose: the first version
+# (2026-11-09 morning) also counted a front arc that returned little, and a held second,
+# and a real pane with open space behind it then went unnamed on the rig.
+LIDAR_FRONT_VIEW_DEG = 10.0
+LIDAR_OCCLUDED_MM = 250.0
 
 LIDAR_MAX_BACKLOG_S = 0.25
 LIDAR_KEEP_BACKLOG_S = 0.1

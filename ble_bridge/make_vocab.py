@@ -32,14 +32,14 @@ def _describe(sg) -> List[Dict[str, Any]]:
         sg.VEHICLE_FROM_LEFT,
         sg.GLASS_LEFT,
         sg.TURN_LEFT,
-    )
+    ) + tuple(t for t, s in getattr(sg, "_WAY_OUT", {}).items() if s == "left")
     side_right = (
         sg.DRIFT_RIGHT,
         sg.NEAR_RIGHT,
         sg.VEHICLE_FROM_RIGHT,
         sg.GLASS_RIGHT,
         sg.TURN_RIGHT,
-    )
+    ) + tuple(t for t, s in getattr(sg, "_WAY_OUT", {}).items() if s == "right")
     for text in sg.ALLOWED:
         level = sg._LEVEL[text]
         if text in sg._STEER_INFO:
@@ -58,9 +58,9 @@ def _describe(sg) -> List[Dict[str, Any]]:
             obstacle = sg._MOVER_INFO[text]["word"].lower()
         elif text in sg._STEER_INFO:
             obstacle = (sg._STEER_INFO[text]["word"] or "").lower() or None
-        elif text in (sg.BLOCKED_GLASS, sg.GLASS_AHEAD) + sg._GLASS_BESIDE:
+        elif text in sg.BLOCKED_GLASS_ANY + (sg.GLASS_AHEAD,) + sg._GLASS_BESIDE:
             obstacle = "glass"
-        elif text in (sg.BLOCKED_WALL, sg.WALL_AHEAD) + sg._SIDE_WALL:
+        elif text in sg.BLOCKED_WALL_ANY + (sg.WALL_AHEAD,) + sg._SIDE_WALL:
             obstacle = "wall"
         elif text in getattr(sg, "_GROUND_OBSTACLE", {}):  # the ToF's (2026-11-06)
             obstacle = sg._GROUND_OBSTACLE[text]

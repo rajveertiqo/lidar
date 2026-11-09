@@ -34,6 +34,8 @@ from config import (
     LIDAR_PERSIST_MAX_AGE_S,
     LIDAR_SELF_PERSIST_S,
     LIDAR_SELF_RANGE_MM,
+    LIDAR_FRONT_VIEW_DEG,
+    LIDAR_OCCLUDED_MM,
     LIDAR_MAX_BACKLOG_S,
     LIDAR_KEEP_BACKLOG_S,
     LIDAR_MEAS_RATE_HZ,
@@ -652,6 +654,20 @@ def _drop_transient_self(points, captured_at):
     ]
 
 
+def _front_blocked(points):
+    """The nearest return under LIDAR_OCCLUDED_MM within LIDAR_FRONT_VIEW_DEG of straight
+    ahead in this scan — something right at the LiDAR hiding the way ahead — or None.
+    `points`: before the self filter, which drops such a return for its first 0.5 s
+    (2026-11-09)."""
+    centre = GUIDANCE_CONE_CENTRES["front"]
+    near = [
+        d
+        for a, d in points
+        if d < LIDAR_OCCLUDED_MM and _angular_gap(a, centre) <= LIDAR_FRONT_VIEW_DEG
+    ]
+    return min(near) if near else None
+
+
 def _publish_scan(loop, scan, scan_index, hz, health, captured_at=None, swept=None):
     """Turn one raw scan into sector/cone stats and push it to state + clients."""
     global _previous_scan
@@ -660,6 +676,7 @@ def _publish_scan(loop, scan, scan_index, hz, health, captured_at=None, swept=No
     if not points:
         return
     valid_fraction = _valid_fraction(points, swept)
+    front_blocked_mm = _front_blocked(points)
     points = _drop_transient_self(points, captured_at)
     if not points:
         return
@@ -673,6 +690,8 @@ def _publish_scan(loop, scan, scan_index, hz, health, captured_at=None, swept=No
 
     sector_stats = analyze_sectors(points, previous)
     cone_stats = _mark_unswept(analyze_cones(points, previous), swept)
+    if isinstance(cone_stats.get("front"), dict):
+        cone_stats["front"] = {**cone_stats["front"], "blocked_near_mm": front_blocked_mm}
     points_data = {
         "angles": [round(a, 1) for a, d in points],
         "distances": [int(d) for a, d in points],

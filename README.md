@@ -29,8 +29,8 @@ closed vocabulary:
 | --- | --- |
 | Path clear | `Walk straight` — said once, never repeated |
 | Closing on a wall / glass (within ~12 ft) | `Wall ahead` / `Glass ahead` |
-| Front blocked (under 4 ft — was 6.5 ft until 2026-10-01) by a wall / glass | `Blocked by wall` / `Blocked by glass` |
-| Front blocked by something unnamed | `Turn left` / `Turn right`, toward more room — with room both ways (`WALK_TURN_AMPLE_FT`), away from the side the obstacle is on (2026-11-02; it was a fixed order, so the rig said "Turn right" even with the obstacle on the right) |
+| Front blocked (under 4 ft — was 6.5 ft until 2026-10-01) by a wall / glass | `Blocked by wall, turn left` / `Blocked by glass, turn right` / `…, turn around` — the way out, toward more room (since 2026-11-09; it was `Blocked by wall` alone, and the wearer was not told where to go) |
+| Front blocked by something unnamed standing on the path (a pole, a post, a box) | `Obstacle in front, turn left` / `Obstacle in front, turn right` / `Obstacle in front, turn around` (named since 2026-11-09; it was `Turn left` alone, and the camera names no plain pole). A wall beside you that the front brushes is still `Turn left` / `Turn right`. The turn goes toward more room — with room both ways (`WALK_TURN_AMPLE_FT`), away from the side the obstacle is on (2026-11-02; it was a fixed order, so the rig said "Turn right" even with the obstacle on the right) |
 | Walking toward a wall beside you that is under 5 ft away (only while actually moving toward it; 2.5 ft on 2026-09-30, 5 ft since 2026-10-01). Inside 4 ft the near-wall sentence below takes over | `Drifting toward right wall, turn slightly left` (and the mirror) |
 | Already within 4 ft of a wall beside you (moving or not; 1.5 ft until 2026-10-01) | `Near right wall, move left` (and the mirror) |
 | Glass only one front radar board hears, within 4 ft, and room to step away (added 2026-10-01) | `Glass on right, move left` (and the mirror) |
@@ -1379,6 +1379,46 @@ Kept because each one explains why the code is the way it is.
    alarm toward safety; the correction would read diagonal near misses too far. The
    rest of the review (shadow-mode movers, route planner, the ToF hazards) waits on
    those features being finished before they speak.
+
+5. **"Blocked by glass" with no glass (2026-11-09).** On the rig, 11 times in 10
+   minutes, with a hand near the LiDAR and a person ~1 m ahead. Glass is the radar
+   hearing what the laser does not see. A hand at the LiDAR hides everything behind it
+   from the laser, but not from the radar boards. Inside 250 mm the self filter also
+   drops the hand for its first 0.5 s, so the laser saw nothing at all. Now
+   `lidar_utils._front_blocked` marks the front cone `blocked_near_mm` when a return
+   under `LIDAR_OCCLUDED_MM` lies within `LIDAR_FRONT_VIEW_DEG` (10°) of straight ahead
+   in this scan, counted before the self filter. A front with no laser return is then
+   `laser_hidden` (walk_policy), not glass. The radar's echo still blocks, said as
+   "Obstacle in front, turn …", and as "Obstacle ahead" inside 8 ft. The console line
+   shows `laser hidden` when this happens.
+
+   The first version, the same morning, went wider, and real glass went unnamed on the
+   rig. It also counted a front arc that returned almost nothing, held for a second.
+   Glass with open space or a far room behind it returns exactly that. It also let the
+   camera's object outrank glass, and the detector names trucks and horses indoors. Both
+   are gone. Left as it was: a LiDAR window covered so closely that it returns nothing
+   at all (a hand inside the LiDAR's minimum range) still reads as glass. Missing a real
+   pane is the worse error. Covered that far, the LiDAR soon falls under 10% of its
+   returns, and the user hears "Guidance stopped".
+
+6. **A window blind: "Walk straight", then "Blocked by glass" (2026-11-09).** On the
+   rig, facing a roller blind 2.6 ft ahead. The laser passed through the fabric and the
+   window and got nothing back. The front-left radar heard nothing. The front-right
+   board heard one faint echo (-17 dB at 1.0 ft) on about 1 poll in 5. Only the ToF saw
+   the blind: an obstacle 0.8 m ahead, 1 m wide, confirmed by the camera. Now
+   `walk_policy._tof_front` takes the nearest confirmed `obstacle` or `pole` the ToF
+   has on the walking path (fresh, its worker running). It stands in for the laser's
+   front reading where the laser has no return, or ranges further by more than
+   `RADAR_AGREE_MM`. The block and the way out then follow as for a laser reading, and a
+   radar echo at the ToF's range is not glass. Here: "Obstacle in front, turn around".
+   Overhangs and low obstacles still wait on `TOF_HAZARDS_SPEAK`. A wall alongside has
+   read as an overhang, and range noise as a low obstacle.
+
+   With every block now saying its way out, the scene hunt's mirror test found ties.
+   Both side radars heard a wall ahead at their beams' edge, so the left and right room
+   read equal, and the fixed order always gave "left": toward a wall 9 ft off with the
+   right open. `choose_turn` now breaks an exact tie on the laser's own side reading. A
+   scene that is the same both ways to the side readings still goes left (6 of 300).
 
 ## Walking the drift layer without leaving the desk
 

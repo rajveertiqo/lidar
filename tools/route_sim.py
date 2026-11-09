@@ -382,7 +382,7 @@ def planner_scenes():
         "glass wall across 4 ft, room beyond (never steered into)",
         B(),
         {"deg030": 4 * FT, "deg330": 4 * FT},
-        {"said": (sg.GLASS_AHEAD, sg.BLOCKED_GLASS)},
+        {"said": (sg.GLASS_AHEAD,) + sg.BLOCKED_GLASS_ANY},
     )
     add(
         "car crossing 2.5 m ahead as the user gets there (stop)",

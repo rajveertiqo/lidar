@@ -6,6 +6,7 @@ import time
 import unittest
 
 from utils import drift_guidance, walk_policy
+from utils import simple_guidance as sg
 
 
 def _ranges(ahead_mm, post):
@@ -84,8 +85,9 @@ class TurnAwayFromObstacleTests(unittest.TestCase):
         from tools import scene_hunt as sh
 
         post = {"left": None, "right": None, "ahead": None, "glass": None, "posts": [(800.0, 300.0, 130.0)]}
-        self.assertEqual(sh.decide(post)[1]["instruction"], "Turn left")
-        self.assertEqual(sh.decide(sh.mirror(post))[1]["instruction"], "Turn right")
+        # Named since 2026-11-09: a post in front is not "Turn left" alone.
+        self.assertEqual(sh.decide(post)[1]["instruction"], "Obstacle in front, turn left")
+        self.assertEqual(sh.decide(sh.mirror(post))[1]["instruction"], "Obstacle in front, turn right")
 
 
 class GlassBehindNearerEchoTests(unittest.TestCase):
@@ -101,16 +103,16 @@ class GlassBehindNearerEchoTests(unittest.TestCase):
     def test_pane_at_a_side_posts_range(self):
         scene = {"left": None, "right": 2667.0, "ahead": None, "glass": 836.0,
                  "posts": [(3417.0, -135.0, 258.0), (3597.0, 1413.0, 196.0), (528.0, -776.0, 91.0)]}
-        self.assertEqual(self.said(scene), "Blocked by glass")
+        self.assertIn(self.said(scene), sg.BLOCKED_GLASS_TURN.values())  # with the way out
         self.assertEqual(self.said({**scene, "glass": None}), "Walk straight")
 
     def test_pane_behind_a_side_walls_echo(self):
         scene = {"left": 1227.0, "right": None, "ahead": None, "glass": 1084.0, "posts": []}
-        self.assertEqual(self.said(scene), "Blocked by glass")
+        self.assertIn(self.said(scene), sg.BLOCKED_GLASS_TURN.values())
 
     def test_double_bounce_ghosts_are_not_glass(self):
         corridor = {"left": 757.0, "right": 1067.0, "ahead": 3951.0, "glass": None, "posts": []}
-        self.assertNotIn(self.said(corridor, ghosts=1.0), ("Glass ahead", "Blocked by glass"))
+        self.assertNotIn(self.said(corridor, ghosts=1.0), (sg.GLASS_AHEAD,) + sg.BLOCKED_GLASS_ANY)
 
 
 class BlindSideGlassTests(unittest.TestCase):

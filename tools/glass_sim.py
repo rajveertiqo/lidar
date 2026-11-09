@@ -200,11 +200,13 @@ def scenes():
                 side_wall(side, lat, x_to=d) + back_wall(),
                 {near: min(d, lat * BEAM_EDGE), far: d},
             )
-    for ft in (2.0, 2.6, 3.4):
+    for ft in (2.0, 2.6, 3.0, 3.4):
         d, lat = ft * FT, 1000.0
-        # Farther than ~2.3 ft the pane is about as far as the side walls: range alone cannot tell them apart.
+        # Past ~2.3 ft the pane is about as far as the side walls' echo. A limit until
+        # 2026-11-09: the door's echo, each board's nearest, was set aside as the corridor's
+        # wall. Now the laser finds the side walls themselves (walk_policy._side_walls_mm).
         add(
-            "glass" if ft <= 2.0 else "limit",
+            "glass",
             f"glass door ending a 2 m corridor, {ft} ft"
             + ("" if ft <= 2.0 else " (as far as its walls)"),
             side_wall("left", lat)
@@ -300,6 +302,7 @@ def run(verbose=False):
     failures = 0
     for kind, name, segments, echoes in scenes():
         walk_policy._last_measured.clear()
+        walk_policy._near_frames.clear()  # each scene stands alone: no radar frames before it
         walk_policy._remember_turn(None, 0.0)
         lidar, radar = lidar_state(segments), radar_state(echoes)
         wd = walk_policy.decide(lidar, radar)

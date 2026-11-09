@@ -208,6 +208,33 @@ class StallWatchTests(unittest.TestCase):
         self.assertIsNotNone(sg._fault["said_at"])  # what stands is said again
         self.assertIsNone(pi_voice._stall_said_at)
 
+    def test_hang_reaches_the_phone(self):
+        """With no Pi speaker the phone is the voice: the hang's notice must be a cue the
+        bridge sends it (timing review, 2026-11-09: it went to the Pi voice alone)."""
+        from ble_bridge import protocol as P
+        from ble_bridge.core import Bridge, load_vocab
+
+        bridge = Bridge(load_vocab(), {"model": "t", "software": "t", "mock": True},
+                        clock=lambda: 1000.0, wall=lambda: 1791504000.0)
+        with patch.object(unified_guidance, "_latest", None), patch("builtins.print"):
+            bridge.on_walk(unified_guidance.latest_guidance())  # learns the cue counter
+            before = sg.cue_seq()
+            pi_voice.start()
+            time.sleep(0.5)
+            self.mode = "hang"
+            time.sleep(1.5)
+            snap = unified_guidance.latest_guidance()
+            out = bridge.on_walk(snap)
+            self.mode = "ok"
+            self.release.set()
+            time.sleep(0.4)
+        self.assertEqual(snap["notify"]["instruction"], sg.SENSORS_OFFLINE)
+        self.assertGreater(snap["notify"]["cue_seq"], before)
+        alerts = [P.unpack_alert(rec) for kind, t, rec in out if t == P.T_ALERT]
+        self.assertEqual(len(alerts), 1)
+        self.assertTrue(alerts[0]["urgent"] and alerts[0]["loop_stale"])
+        self.assertEqual(alerts[0]["phrase_id"], bridge.vocab["by_text"][sg.SENSORS_OFFLINE]["id"])
+
     def test_failing_ticks_are_not_a_hang(self):
         with patch("builtins.print"):
             pi_voice.start()

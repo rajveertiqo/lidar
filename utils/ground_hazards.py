@@ -119,6 +119,33 @@ _CAMERA_PTS = 400  # at most this many of a hazard's points are placed on the pi
 # ---------------------------------------------------------------- one frame: the geometry
 
 
+
+# What stands within reach on the walking path, by its distance from the ToF, with no ground
+# needed (2026-11-09): the guidance asks whether a radar echo the laser does not see is a solid
+# thing there (walk_policy, a desk or a table below the laser's plane), not glass. Worn, the
+# floor is never this near in the ToF's view (aimed 30 deg down from ~1.45 m: ~1.6 m at the
+# least, the body leaning 15 deg), and points more than TOF_NEAR_BELOW_M below it are left out
+# besides (a shorter wearer, leaning); on a desk, where no ground is found, it still answers.
+TOF_NEAR_MAX_M = 1.3
+TOF_NEAR_BIN_M = 0.05
+TOF_NEAR_HALF_M = 0.30  # the walking corridor's half width (GUIDANCE_CORRIDOR_HALF_WIDTH_MM)
+TOF_NEAR_BELOW_M = 1.0  # a table top is ~0.5-0.7 m below a worn ToF; the floor 1.2 m or more
+
+
+def near_counts(P: np.ndarray, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> List[int]:
+    """How many of this frame's points lie in the walking corridor at each TOF_NEAR_BIN_M of
+    distance from the ToF, out to TOF_NEAR_MAX_M, no lower than TOF_NEAR_BELOW_M (y down)."""
+    rng = np.sqrt(np.sum(P * P, axis=1))
+    on = (
+        (np.abs(x) <= TOF_NEAR_HALF_M)
+        & (z > 0.0)
+        & (y <= TOF_NEAR_BELOW_M)
+        & (rng <= TOF_NEAR_MAX_M)
+    )
+    n = int(round(TOF_NEAR_MAX_M / TOF_NEAR_BIN_M))
+    bins = np.minimum((rng[on] / TOF_NEAR_BIN_M).astype(int), n - 1)
+    return np.bincount(bins, minlength=n)[:n].astype(int).tolist()
+
 class GroundAnalyser:
     """One ToF frame -> the ground and the hazards on it. Its only state is the last ground,
     which steers the next fit (so a stair tread does not replace the floor)."""
@@ -508,6 +535,16 @@ class GroundAnalyser:
                 in_path=lo <= TOF_CORRIDOR_HALF_M and hi >= -TOF_CORRIDOR_HALF_M,
                 above_view=top_cut,
             )
+            # Where it stands IN the walking corridor: its nearest point there, not anywhere
+            # along it. A wall beside the path, the chest turned 5 deg toward it, is one long
+            # cluster that reaches the corridor ~7 ft out but starts 2 ft beside the wearer
+            # (ToF review, 2026-11-09). None when too few of its points are in the corridor.
+            inside = np.abs(xs) <= TOF_CORRIDOR_HALF_M
+            f["path_m"] = (
+                round(float(np.percentile(zs[inside], 3)), 3)
+                if int(inside.sum()) >= TOF_OBSTACLE_MIN_POINTS
+                else None
+            )
             f["_sel"] = sel
             out.append(f)
         return out
@@ -540,6 +577,7 @@ class GroundAnalyser:
         P = rays[idx] * (d[idx, None] / 1000.0)  # the ToF's frame
         L = P @ self.to_level.T + self.t_level
         x, y, z = L[:, 0], L[:, 1], L[:, 2]
+        out["near"] = near_counts(P, x, y, z)
         fit = self._fit_ground(x, y, z, float(t))
         if fit is None:
             out["why"] = "no ground seen (nothing level near the mount's height)"
@@ -934,6 +972,7 @@ class GroundHazards:
             "ms": res.get("ms"),
             "calibration": calib.source,
             "speak_enabled": _speak_enabled(),
+            "near": res.get("near"),
         }
         if res.get("camera_error"):
             snap["camera_error"] = res["camera_error"]

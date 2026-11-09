@@ -11,6 +11,7 @@ from config import (
     GUIDANCE_CORRIDOR_HALF_WIDTH_MM,
     GUIDANCE_CORRIDOR_MAX_MM,
     LIDAR_CLUSTER_WINDOW_MM,
+    LIDAR_MAX_DISTANCE,
     LIDAR_STALE_S,
     NOTIFY_AIRTIME_BASE_S,
     NOTIFY_AIRTIME_PER_CHAR_S,
@@ -38,6 +39,10 @@ from config import (
     SIMPLE_CROSSING_WALKED_S,
     SIMPLE_GLASS_RELEASE_S,
     SIMPLE_CONFIRM_S,
+    SIMPLE_CLEAR_SAY_CONFIRM_S,
+    SIMPLE_SPARSE_CONFIRM_S,
+    SIMPLE_FLIP_SETTLE_S,
+    SIMPLE_AFTER_SPEECH_S,
     SIMPLE_LIDAR_FRESH_S,
     SIMPLE_MIN_GAP_S,
     SIMPLE_OBSTACLE_AHEAD_FT,
@@ -51,6 +56,7 @@ from config import (
     WALK_GLASS_GAP_FT,
     WALK_MIN_TURN_FT,
     WALK_TURN_HYSTERESIS_FT,
+    WALK_TURN_MARGIN_FT,
     CAMERA_HEIGHT,
     CAMERA_WIDTH,
     DRIFT_WALL_SIDE_MAX_DEG,
@@ -250,8 +256,15 @@ _OBJECT_WORDS = {c.lower(): w for c, w in SIMPLE_NAMED_OBJECTS.items()}
 _WORDS = sorted(set(_OBJECT_WORDS.values()))
 OBJECT_AHEAD = {w: f"{w} ahead" for w in _WORDS}
 OBJECT_IN_FRONT = {w: f"{w} in front" for w in _WORDS}
+# A named block with the walk policy's way out when it is around (2026-11-09): a person in a
+# 1 m corridor was "Person in front", where unnamed it was "Obstacle in front, turn around".
+# Left and right are STEER_IN_FRONT's.
+OBJECT_IN_FRONT_AROUND = {w: f"{w} in front, turn around" for w in _WORDS}
+_WAY_OUT.update({t: "around" for t in OBJECT_IN_FRONT_AROUND.values()})
 _OBJECT_OF = {
-    t: w for table in (OBJECT_AHEAD, OBJECT_IN_FRONT) for w, t in table.items()
+    t: w
+    for table in (OBJECT_AHEAD, OBJECT_IN_FRONT, OBJECT_IN_FRONT_AROUND)
+    for w, t in table.items()
 }
 _PATH_AHEAD = (WALL_AHEAD, GLASS_AHEAD, OBSTACLE_AHEAD) + tuple(OBJECT_AHEAD.values())
 
@@ -364,6 +377,7 @@ ALLOWED = (
     + tuple(OBSTACLE_IN_FRONT.values())
     + tuple(BLOCKED_WALL_TURN.values())
     + tuple(BLOCKED_GLASS_TURN.values())
+    + tuple(OBJECT_IN_FRONT_AROUND.values())
 )
 
 _ACTION = {
@@ -1023,6 +1037,32 @@ def ranged_vehicle(
     return best[1] if best else None
 
 
+def _laser_ranger(lidar_state: Optional[Dict[str, Any]]) -> Optional[Any]:
+    """(from, to bearing, degrees + right) -> the median laser range across that span in
+    metres, from at least 3 returns, or None: what the LiDAR measures where a camera box is
+    (_Vehicles). None without a scan."""
+    pts = (lidar_state or {}).get("points") or {}
+    angles, dists = pts.get("angles") or [], pts.get("distances") or []
+    if not angles or len(angles) != len(dists):
+        return None
+
+    def ranger(lo: float, hi: float) -> Optional[float]:
+        lo, hi = min(lo, hi), max(lo, hi)
+        span = sorted(
+            float(d)
+            for a, d in zip(angles, dists)
+            if isinstance(a, (int, float))
+            and isinstance(d, (int, float))
+            and math.isfinite(d)
+            and 0.0 < d < LIDAR_MAX_DISTANCE
+            and lo <= (float(a) + 180.0) % 360.0 - 180.0 <= hi
+        )
+        return span[len(span) // 2] / 1000.0 if len(span) >= 3 else None
+
+    return ranger
+
+
+
 def current_motion(motion: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """`motion`, or None once it has stopped updating (audit pass 2, NEW-026)."""
     if not motion:
@@ -1059,6 +1099,10 @@ def user_motion(motion: Optional[Dict[str, Any]]) -> Tuple[Optional[bool], float
 _NO_VEHICLE: Dict[str, Any] = {
     "approaching": False,
     "side": None,
+    "away": None,
+    "heading": None,
+    "vy_mps": None,
+    "own_range_m": None,
     "stopped": False,
     "moving": False,
     "class": None,
@@ -1068,6 +1112,7 @@ _NO_VEHICLE: Dict[str, Any] = {
     "own_growth": None,
     "box": None,
     "tracks": 0,
+    "still_boxes": [],
 }
 
 
@@ -1078,6 +1123,16 @@ _VEHICLE_PREDICT_S = 5.0
 _VEHICLE_CROSS_AHEAD_M = 4.0
 _NO_MISS_M = 99.0  # "nowhere near": a vehicle off to the side with no prediction
 _VEHICLE_COURSE_M = 1.0  # predicted to pass within this of the walking line: a collision course
+# Moving across the walking line at least this fast (m/s), a vehicle's step-away side is the
+# way it is GOING, not where it is (2026-11-09); under half of it, where it is again.
+_VEHICLE_HEADING_MPS = 0.6
+# Going away across the walking line at least this fast, the whole box past the middle: it has
+# crossed, and is no longer coming at the wearer (2026-11-09).
+_VEHICLE_PASSED_MPS = 1.5
+# A range the LiDAR measures across a vehicle's box this much nearer than its class height
+# gives: the box is a smaller thing than that class (a short object called "truck"), and the
+# wearer's own approach is judged from the measured range (2026-11-09).
+_VEHICLE_MEASURED_NEARER = 1.3
 
 
 class _Vehicles:
@@ -1094,7 +1149,10 @@ class _Vehicles:
         now: float,
         pace_mps: float,
         yaw_dps: float = 0.0,
+        ranger: Optional[Any] = None,
     ) -> Dict[str, Any]:
+        """`ranger`: (bearing from, bearing to, degrees, + right) -> the LiDAR's median range
+        across that span in metres, or None (_laser_ranger)."""
         cam = camera_state or {}
         if not _camera_sees(cam, now):
             self._tracks, self._frame, self._seen = [], None, dict(_NO_VEHICLE)
@@ -1107,7 +1165,7 @@ class _Vehicles:
             return self._seen
         self._frame = stamp
         self._follow(self._detections(cam), stamp)
-        self._seen = self._judge(stamp, pace_mps, yaw_dps)
+        self._seen = self._judge(stamp, pace_mps, yaw_dps, ranger)
         return self._seen
 
     def reset(self) -> None:
@@ -1132,7 +1190,15 @@ class _Vehicles:
                 or (y2 - y1) < SIMPLE_VEHICLE_MIN_HEIGHT_FRAC * _QUAD_H
             ):
                 continue
-            out.append({"cls": cls, "box": (x1, y1, x2, y2)})
+            depth = det.get("depth") if TOF_USE_DISTANCE else None
+            depth_m = (
+                float(depth["distance_m"])
+                if isinstance(depth, dict)
+                and isinstance(depth.get("distance_m"), (int, float))
+                and depth["distance_m"] > 0
+                else None
+            )
+            out.append({"cls": cls, "box": (x1, y1, x2, y2), "depth_m": depth_m})
         return out
 
     def _follow(self, dets: List[Dict[str, Any]], t: float) -> None:
@@ -1166,15 +1232,19 @@ class _Vehicles:
             tr = self._tracks[ti]
             tr["samples"].append((t, dets[di]["box"]))
             tr["cls"] = dets[di]["cls"]
+            tr["depth_m"] = dets[di].get("depth_m")
         for di, d in enumerate(dets):
             if di not in used_d:
                 self._tracks.append(
                     {
                         "samples": [(t, d["box"])],
                         "cls": d["cls"],
+                        "depth_m": d.get("depth_m"),
                         "side": None,
+                        "heading": None,
                         "approach_frames": 0,
                         "moving_frames": 0,
+                        "drift_frames": 0,
                     }
                 )
         kept = []
@@ -1187,16 +1257,38 @@ class _Vehicles:
             kept.append(tr)
         self._tracks = kept
 
-    def _judge(self, t: float, pace_mps: float, yaw_dps: float = 0.0) -> Dict[str, Any]:
+    def _judge(
+        self, t: float, pace_mps: float, yaw_dps: float = 0.0, ranger: Optional[Any] = None
+    ) -> Dict[str, Any]:
         lo, hi = _band()
         mid = _QUAD_W / 2.0
         focal_px = mid / math.tan(math.radians(SIMPLE_CAMERA_HFOV_DEG) / 2.0)
-        turn_slide = -yaw_dps / SIMPLE_CAMERA_HFOV_DEG
+        w_turn = math.radians(yaw_dps)  # the wearer's turn, + to the right
+
+        # What the wearer's own turn does to a point at column px, by the pinhole the boxes
+        # come through: slides it (frames a second, sec^2 of its bearing off the axis), and
+        # grows a box there (log a second: tan of its bearing, once for a height, twice for a
+        # width). Until 2026-11-09 the slide was one rate across the picture and the growth
+        # was not taken off at all: turning on the spot at 20 deg/s grew a parked car at the
+        # picture's side as one coming in, read as a collision course (camera review).
+        def turn_slide_at(px: float) -> float:
+            th = math.atan((px - mid) / focal_px)
+            return -(focal_px / _QUAD_W) * w_turn / math.cos(th) ** 2
+
+        def turn_growth_at(px: float, k: float) -> float:
+            return -k * ((px - mid) / focal_px) * w_turn
+
+        def bearing(px: float) -> float:
+            return math.degrees(math.atan((px - mid) / focal_px))
+
         approaching, moving, stopped = [], [], []
+        # Boxes of vehicles watched long enough to judge, and judged standing still: the only
+        # ones camera_path plans a way past (2026-11-09).
+        still_boxes: List[List[float]] = []
         for tr in self._tracks:
             samples = tr["samples"]
             if samples[-1][0] != t:
-                tr["approach_frames"] = tr["moving_frames"] = 0
+                tr["approach_frames"] = tr["moving_frames"] = tr["drift_frames"] = 0
                 continue  # not seen on this frame
             x1, y1, x2, y2 = samples[-1][1]
             # Outside the centre band it is judged only for coming AT the wearer (review,
@@ -1231,11 +1323,28 @@ class _Vehicles:
             )
             if growth is None or slide is None:
                 continue
+            turn_slide = turn_slide_at(cx)
+            growth -= turn_growth_at(cx, 1.0 if cut_lr else 2.0 if cut_tb else 1.5)
             height_m = SIMPLE_VEHICLE_HEIGHT_M.get(tr["cls"], 1.5)
             heights = sorted(b[3] - b[1] for _, b in samples)
             h_px = heights[len(heights) // 2]
             range_m = focal_px * height_m / h_px
-            own = pace_mps / range_m
+            # The wearer's own approach, from a MEASURED range where one says the box is much
+            # nearer than its class's height does: an object 1.2 m tall called "truck" read
+            # 2.5 times as far, too little of the wearer's own walking came off its growth,
+            # and walking toward it said "Vehicle approaching" (camera review, 2026-11-09).
+            # The ToF's distance in its box, or the LiDAR's median across it.
+            measured = [tr.get("depth_m")]
+            if ranger is not None:
+                try:
+                    measured.append(ranger(bearing(x1), bearing(x2)))
+                except Exception:
+                    pass
+            measured = [m for m in measured if isinstance(m, (int, float)) and m > 0]
+            own_range_m = range_m
+            if measured and min(measured) * _VEHICLE_MEASURED_NEARER < range_m:
+                own_range_m = min(measured)
+            own = pace_mps / own_range_m
             # Nearer edge's offset from the walking line, in metres.
             misses = sorted(
                 0.0
@@ -1263,6 +1372,9 @@ class _Vehicles:
                 if not (cut_lr or cut_tb)
                 else None
             )
+            if g_h is not None:
+                g_h -= turn_growth_at(cx, 1.0)
+            vy = None
             if g_h is not None and g_h > 1e-3:
                 bx = samples[-1][1]
                 m_per_px = height_m / max(1.0, bx[3] - bx[1])
@@ -1270,7 +1382,11 @@ class _Vehicles:
                 outer = 2 if right_side else 0
                 out_slide = _theil_sen([(ts, b[outer] / _QUAD_W) for ts, b in samples])
                 if out_slide is not None:
-                    out_across = out_slide - (bx[outer] / _QUAD_W - 0.5) * g_h - turn_slide
+                    out_across = (
+                        out_slide
+                        - (bx[outer] / _QUAD_W - 0.5) * g_h
+                        - turn_slide_at(bx[outer])
+                    )
                     vy = out_across * _QUAD_W * m_per_px  # metres a second, + right
                     tau = min(1.0 / g_h, _VEHICLE_PREDICT_S)
                     width = SIMPLE_VEHICLE_WIDTH_M.get(tr["cls"], 1.8)
@@ -1290,7 +1406,30 @@ class _Vehicles:
             # cm); a near miss is judged as before, by where the car is — a parallel car read
             # 1.93 m from a 3.1 m pass is not a reason to warn.
             course = then_m is not None and then_m <= _VEHICLE_COURSE_M
-            if in_band:
+            # The way it is going across the walking line: the side to step AWAY from is that
+            # one, not the side it is on (2026-11-09). A car from 20 deg right, heading left on
+            # a collision course, was told "move left" — where it was going: contact. Behind
+            # it, the step cleared it by 0.7-2.2 m (camera review). Held while the box is cut
+            # off, and through a little noise (half the rate to clear).
+            if vy is not None:
+                if abs(vy) >= _VEHICLE_HEADING_MPS:
+                    tr["heading"] = "right" if vy > 0 else "left"
+                elif abs(vy) < _VEHICLE_HEADING_MPS / 2.0:
+                    tr["heading"] = None
+            # Already across the walking line and going on away from it: the whole box past
+            # the middle the way it is moving. A car crossing 10 m ahead at 240 deg was
+            # "Vehicle approaching, move right" just after it had crossed (camera review,
+            # 2026-11-09): in the band, nothing ever cleared a car.
+            # Measured going away on this frame, at a crossing car's pace, not a drift: a car
+            # coming straight on 1 m to one side must keep its warning.
+            margin = SIMPLE_VEHICLE_SIDE_MARGIN * _QUAD_W
+            passed = vy is not None and (
+                (vy <= -_VEHICLE_PASSED_MPS and x2 < mid - margin)
+                or (vy >= _VEHICLE_PASSED_MPS and x1 > mid + margin)
+            )
+            if passed:
+                miss_m = _NO_MISS_M
+            elif in_band:
                 if course:
                     miss_m = min(miss_m, then_m)
             else:
@@ -1315,9 +1454,30 @@ class _Vehicles:
             tr["moving_frames"] = (
                 tr["moving_frames"] + 1 if (crossing or closing) else 0
             )
+            # Moving by itself, anywhere in the picture: drifting across (the wearer's turn
+            # taken off), going across the walking line, or coming at the wearer. No way past it
+            # is planned (camera_path): it will not stay where it is. A car crossing 3-4 m
+            # ahead from the right got "Car on right, turn slightly left" — toward where it
+            # was going (camera review, 2026-11-09). Nor round one not yet watched long enough
+            # to tell: that car crossed the picture in under a second.
+            drifting = bool(tr.get("heading")) or (
+                abs(across) > SIMPLE_VEHICLE_IDLE_SLIDE
+                and abs(turn_slide) <= 2.0 * SIMPLE_VEHICLE_IDLE_SLIDE
+            )
+            tr["drift_frames"] = tr.get("drift_frames", 0) + 1 if drifting else 0
+            tr["still_frames"] = (
+                0 if (drifting or coming or approach) else tr.get("still_frames", 0) + 1
+            )
+            if tr["still_frames"] >= SIMPLE_VEHICLE_CONFIRM_FRAMES:
+                still_boxes.append([round(v, 1) for v in samples[-1][1]])
             seen = {
                 "approaching": approach,
                 "side": side,
+                # The side to step away from: where it is going across, else where it is.
+                "away": tr.get("heading") or side,
+                "heading": tr.get("heading"),
+                "vy_mps": None if vy is None else round(vy, 2),
+                "own_range_m": round(own_range_m, 2),
                 "stopped": (
                     in_band
                     and abs(growth) <= SIMPLE_VEHICLE_IDLE_RATE
@@ -1344,23 +1504,43 @@ class _Vehicles:
         n = len(self._tracks)
         if approaching:
             # The soonest to arrive.
-            return {**max(approaching, key=lambda v: v["growth"]), "tracks": n}
+            return {
+                **max(approaching, key=lambda v: v["growth"]),
+                "tracks": n,
+                "still_boxes": still_boxes,
+            }
         pick = (
             max(moving or stopped, key=lambda p: p[0])[1]
             if (moving or stopped)
             else None
         )
         if pick is None:
-            return {**_NO_VEHICLE, "tracks": n}
-        return {**pick, "moving": bool(moving), "stopped": bool(stopped), "tracks": n}
+            return {**_NO_VEHICLE, "tracks": n, "still_boxes": still_boxes}
+        return {
+            **pick,
+            "moving": bool(moving),
+            "stopped": bool(stopped),
+            "tracks": n,
+            "still_boxes": still_boxes,
+        }
+
+
+def _same_box(a: Any, b: Any) -> bool:
+    """Do two boxes (x1, y1, x2, y2) overlap by at least half (intersection over union)?"""
+    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = ix * iy
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return union > 0 and inter / union >= 0.5
 
 
 def camera_path(
     camera_state: Optional[Dict[str, Any]],
     now: float,
     previous_turn: Optional[str] = None,
+    still: Optional[List[Any]] = None,
 ) -> Optional[Dict[str, Any]]:
-    """How to get past the things that can hurt the user in the front camera's view, or None when none is in the way (field request 2026-09-25)."""
+    """How to get past the things that can hurt the user in the front camera's view, or None when none is in the way (field request 2026-09-25). `still`: boxes of the vehicles _Vehicles has judged standing still — the only vehicles a way past is planned round; None (no tracker): every one."""
     cam = camera_state or {}
     if not _camera_sees(cam, now):
         return None
@@ -1376,6 +1556,12 @@ def camera_path(
             continue
         if x2 <= x1 or y2 <= y1:
             continue
+        if (
+            still is not None
+            and cls in SIMPLE_VEHICLE_CLASSES
+            and not any(_same_box((x1, y1, x2, y2), m) for m in still)
+        ):
+            continue  # moving, or not yet known not to be: the vehicle warnings are for it
         ppm_px = (y2 - y1) / _object_height_m(cls)  # pixels per metre
         range_m, cut = _box_range(det, cls, (x1, y1, x2, y2))
         if range_m > SIMPLE_STEER_RANGE_M and not cut:
@@ -1436,8 +1622,17 @@ def camera_path(
             )
     first = min(groups[0], key=lambda m: m["x1"])
     last = max(groups[-1], key=lambda m: m["x2"])
-    candidates.append({"kind": "around", "target": first["x1"] - first["need"] / 2.0})
-    candidates.append({"kind": "around", "target": last["x2"] + last["need"] / 2.0})
+    # A box the picture's side cuts off goes on past it, how far the camera cannot see: no way
+    # round it on that side (2026-11-09). A car across the path filling the frame had both,
+    # tied, and float rounding picked "turn right" toward 2.95 ft with 6.2 ft on the left
+    # (camera review). None left: no way past from the camera; the walk policy's is said.
+    edge = 2.0 / _QUAD_W
+    if first["x1"] > edge:
+        candidates.append({"kind": "around", "target": first["x1"] - first["need"] / 2.0})
+    if last["x2"] < 1.0 - edge:
+        candidates.append({"kind": "around", "target": last["x2"] + last["need"] / 2.0})
+    if not candidates:
+        return None
 
     def open_frame(left_side: bool) -> float:
         span = (0.0, 0.5) if left_side else (0.5, 1.0)
@@ -1661,8 +1856,10 @@ def _steer_allowed(
     blocked: bool,
     front_ft: Optional[float],
     turn_side: Optional[str] = None,
+    turn_room: Optional[Dict[str, float]] = None,
 ) -> bool:
-    """May this way past be said now?"""
+    """May this way past be said now? `turn_room`: the walk policy's own room each way
+    (_turn_room), which a block's turn is judged by."""
     turn = steer.get("turn")
     room = side_room.get(turn) if turn else None
     if isinstance(room, (int, float)) and room < SIMPLE_STEER_SIDE_MIN_FT:
@@ -1678,7 +1875,16 @@ def _steer_allowed(
             def ft(v: Any) -> float:
                 return float("inf") if v is None else float(v)  # None: open
 
-            mine, chosen = ft(side_room.get(turn)), ft(side_room.get(turn_side))
+            # By the walk policy's room each way where it has both (2026-11-09): side_room is
+            # capped by the 45 deg front_left/front_right sectors, which see the very car or
+            # wall in the way, so both sides read ~3 ft and the camera's turn toward 2.95 ft
+            # passed against 6.2 ft the other way (camera review).
+            rooms = (
+                turn_room
+                if turn_room and turn in turn_room and turn_side in turn_room
+                else side_room
+            )
+            mine, chosen = ft(rooms.get(turn)), ft(rooms.get(turn_side))
             if mine < WALK_MIN_TURN_FT or mine + WALK_TURN_HYSTERESIS_FT < chosen:
                 return False
     return True
@@ -1798,6 +2004,13 @@ def _sentence(
         if past:
             return past
         if obj in OBJECT_IN_FRONT:
+            # Named, with the walk policy's way out when the camera has no way past it of its
+            # own, or one that turns toward less room (camera review, 2026-11-09): "Person in
+            # front" alone, where unnamed it was "Obstacle in front, turn right".
+            if (obj, side) in STEER_IN_FRONT:
+                return STEER_IN_FRONT[(obj, side)]
+            if side == "around" and obj in OBJECT_IN_FRONT_AROUND:
+                return OBJECT_IN_FRONT_AROUND[obj]
             return OBJECT_IN_FRONT[obj]
         if side == "around":
             return OBSTACLE_IN_FRONT["around"] if in_front else TURN_AROUND
@@ -1866,11 +2079,18 @@ def decide(
     still, pace = user_motion(motion)
     yaw = float((motion or {}).get("yaw_rate_dps") or 0.0)
     seen = (
-        vehicles.update(camera_state, now, pace, yaw)
+        vehicles.update(
+            camera_state,
+            now,
+            pace,
+            yaw,
+            _laser_ranger(lidar_state) if _fresh(lidar_state, now) else None,
+        )
         if vehicles is not None
         else dict(_NO_VEHICLE)
     )
-    vehicle = seen["side"] if seen["approaching"] else None
+    # The side to step away from: the way it is going across, else where it is (2026-11-09).
+    vehicle = (seen.get("away") or seen["side"]) if seen["approaching"] else None
     vehicle_ahead = vehicle is None and (
         bool(seen.get("moving")) or (bool(seen["stopped"]) and still is True)
     )
@@ -2081,6 +2301,11 @@ def decide(
     # is the thing on the path, said as an obstacle too, not glass (2026-11-09).
     if laser_ft is None and front.get("laser_hidden") and front_ft is not None:
         laser_ft = front_ft
+    # The ToF's solid thing on the path, nearer than what the laser ranges (walk_policy
+    # tof_ft): "Obstacle ahead" at its range too (2026-11-09).
+    tof_ft = front.get("tof_ft")
+    if isinstance(tof_ft, (int, float)) and (laser_ft is None or tof_ft < laser_ft):
+        laser_ft = float(tof_ft)
     # Held out to SIMPLE_BAND_MARGIN_FT beyond, once said, like "near" (no chatter at 8 ft).
     obstacle_band = bool(
         fresh
@@ -2152,10 +2377,18 @@ def decide(
             if isinstance(mm, (int, float)) and mm > 0:
                 room = mm / MM_PER_FT if room is None else min(room, mm / MM_PER_FT)
         side_room[s] = room
+    turn_room = _turn_room(walk_decision)
     steer = (
-        camera_path(camera_state, now, previous_steer) if not (glass or wall) else None
+        camera_path(
+            camera_state,
+            now,
+            previous_steer,
+            seen.get("still_boxes") if vehicles is not None else None,
+        )
+        if not (glass or wall)
+        else None
     )
-    if steer and not _steer_allowed(steer, side_room, blocked, front_ft, side):
+    if steer and not _steer_allowed(steer, side_room, blocked, front_ft, side, turn_room):
         steer = None
     # Never steer toward glass a front board hears beside the path (review, 2026-11-06): the
     # pane is not in side_room (the laser looks through it, the cones are the cardinals'), so
@@ -2193,7 +2426,7 @@ def decide(
             "range_m": route["straight_m"],
             "cut": False,
         }
-        if not _steer_allowed(route_steer, side_room, blocked, front_ft, side):
+        if not _steer_allowed(route_steer, side_room, blocked, front_ft, side, turn_room):
             route_steer = None
         elif beside and route_steer.get("turn") == beside:
             route_steer = None  # nor the planner's, toward glass beside (as the camera's)
@@ -2324,7 +2557,12 @@ def decide(
     elif text in _VEHICLE_APPROACH:
         rule = "vehicle_approaching"
         why = (
-            f"{seen['class']} approaching from your {vehicle}"
+            f"{seen['class']} approaching from your {seen.get('side') or vehicle}"
+            + (
+                f", moving across to your {seen['heading']}: step behind it"
+                if seen.get("heading") and seen.get("heading") != seen.get("side")
+                else ""
+            )
             + (f", contact in ~{seen['ttc_s']:.0f} s" if seen.get("ttc_s") else "")
             + (
                 f" — no room to step {'right' if vehicle == 'left' else 'left'}"
@@ -2410,6 +2648,14 @@ def decide(
         "vehicles": seen,
         "steer": steer,
         "side_room": side_room,
+        # The walk policy's own room each way and the floor a turn needs from here (its
+        # choose_turn, as the side it holds): what _advice_closed judges a given way by.
+        "turn_room": turn_room,
+        "turn_floor": (
+            max(WALK_MIN_TURN_FT, front_ft + WALK_TURN_MARGIN_FT - WALK_TURN_HYSTERESIS_FT)
+            if blocked and isinstance(front_ft, (int, float))
+            else None
+        ),
         "user_still": still,
         "vehicle_no_room": vehicle_no_room,
         "vehicle_no_room_by_side": no_room_by_side,
@@ -2615,6 +2861,7 @@ class _World:
         self._in_episode = False
         self._unknown_since: Optional[float] = None
         self._last_text = ""  # the sentence the last update mapped to
+        self._sparse_since: Optional[float] = None  # sparse LiDAR scans since (offline)
         self.side: Optional[str] = None
         # The block is something standing on the path (decide's in_front), kept, as the
         # side is, while the block lasts: "Obstacle in front, turn left" (2026-11-09).
@@ -2716,6 +2963,12 @@ class _World:
         blocked = self.blocked.update(in_block, now)
         near = self.near.update(in_band, now)
         glass = self.glass.update(raw["glass"], now)
+        # The laser itself measures what blocks the way, and this poll reads no glass: the
+        # pane held from a moment ago is not what is there (2026-11-09: a person stepped in
+        # 0.5 ft away and "Blocked by glass" was said, from the 3 s hold).
+        if raw.get("lidar_block") and not raw["glass"] and self.glass.state:
+            self.glass.clear()
+            glass = False
         wall = self.wall.update(raw["wall"], now)
         left = self.drift_left.update(raw.get("drift") == "left", now)
         right = self.drift_right.update(raw.get("drift") == "right", now)
@@ -2780,10 +3033,19 @@ class _World:
             self.ground_text = None
         side_seen = bool(raw.get("close") or raw.get("drift") or raw.get("close_band"))
         on_line = raw.get("on_line_ft")
+        # The block is on the walking line: the laser's narrow line, or something standing
+        # in front by the reading that decided the block (decide's in_front: the ToF's, a
+        # radar echo the laser is hidden from, a post off the narrow line). Then the wall
+        # beside is not what to say (turn review, 2026-11-09: "Near right wall, move left"
+        # held the block back ~0.9 s; the same sentences alternated at the 4 ft line).
         line_blocked = (
             on_line is not None and on_line < WALK_BLOCK_FT + SIMPLE_BAND_MARGIN_FT
-        )
+        ) or bool(raw.get("in_front"))
         if raw["blocked"] and line_blocked and not side_seen:
+            close = drift = None
+        elif blocked and self.in_front:
+            # A poll the raw reading missed, the block held: the thing in front is still what
+            # to say, not the wall beside the raw poll saw (chatter at the 4 ft line).
             close = drift = None
         if raw["blocked"] and not raw.get("vehicle_ahead"):
             vehicle_ahead = False
@@ -2803,6 +3065,7 @@ class _World:
                 blocked,
                 front,
                 raw.get("side") or self.side,
+                raw.get("turn_room"),
             )
             or (raw.get("glass_dir") and self.steer_plan.get("turn") == raw.get("glass_dir"))
         ):
@@ -2901,7 +3164,17 @@ class _World:
         if lidar_state is not None:
             why = _not_updating(lidar_state, now)
             if why:
-                return why
+                from utils.sensor_fusion import lidar_sparse
+
+                if why != lidar_sparse(lidar_state):
+                    self._sparse_since = None
+                    return why  # not updating: its own 2 s already
+                if self._sparse_since is None or now < self._sparse_since:
+                    self._sparse_since = now
+                if now - self._sparse_since >= SIMPLE_SPARSE_CONFIRM_S:
+                    return why
+                return None  # one sparse scan: a silent stale tick (_fresh is False)
+            self._sparse_since = None
         if (
             self._unknown_since is not None
             and now - self._unknown_since >= SIMPLE_OFFLINE_S
@@ -3064,6 +3337,21 @@ def _airtime(text: str) -> float:
     )
 
 
+def _is_block(text: str) -> bool:
+    """A sentence about the front being blocked (not a vehicle, a mover, a fall or a fault)."""
+    return _way_out(text) is not None or text in (
+        BLOCKED_WALL,
+        BLOCKED_GLASS,
+    ) + tuple(OBJECT_IN_FRONT.values()) + tuple(STEER_IN_FRONT.values())
+
+
+def _way_out(text: str) -> Optional[str]:
+    """The way out a BLOCK sentence gives (left, right, around, stop), or None."""
+    if text in _WAY_OUT:
+        return _WAY_OUT[text]
+    return {TURN_LEFT: "left", TURN_RIGHT: "right", TURN_AROUND: "around", STOP_NO_WAY: "stop"}.get(text)
+
+
 def _advised_side(text: str) -> Optional[str]:
     """The side a sentence sends the wearer toward (turn or move), or None."""
     if text in (TURN_LEFT, TURN_SLIGHT_LEFT):
@@ -3083,14 +3371,40 @@ def _advised_side(text: str) -> Optional[str]:
     return None
 
 
+def _turn_room(walk_decision: Dict[str, Any]) -> Dict[str, float]:
+    """The walk policy's own room to the left and right (walk_policy._room_ft)."""
+    from utils.walk_policy import _room_ft
+
+    views = (walk_decision or {}).get("directions") or {}
+    out = {}
+    for s in ("left", "right"):
+        try:
+            if views.get(s):
+                out[s] = float(_room_ft(views[s]))
+        except Exception:
+            pass
+    return out
+
+
 def _advice_closed(spoken: str, text: str, raw: Dict[str, Any]) -> bool:
     """Has the side the last sentence sent the wearer toward closed (under WALK_MIN_TURN_FT
-    of room, or unknown) while something else is now to be said?"""
+    of room, or unknown) while something else is now to be said? While blocked, also when
+    the walk policy's room that way is under the floor a turn needs from here (2026-11-09:
+    someone stepped in 2.5 ft to the side given, 3 ft from the block, and the new way out
+    waited the 6 s flip settle)."""
     side = _advised_side(spoken)
     if not side or not text or text == spoken:
         return False
     room = (raw.get("side_room") or {}).get(side)
-    return isinstance(room, (int, float)) and room < WALK_MIN_TURN_FT
+    if isinstance(room, (int, float)) and room < WALK_MIN_TURN_FT:
+        return True
+    floor = raw.get("turn_floor")
+    way = (raw.get("turn_room") or {}).get(side)
+    return isinstance(floor, (int, float)) and isinstance(way, (int, float)) and way < floor
+
+
+# Taken only to count a cue (_Gate.next_seq): never while waiting on anything else.
+_SEQ_LOCK = threading.Lock()
 
 
 class _Gate:
@@ -3112,10 +3426,16 @@ class _Gate:
         self._status_busy_until: float = 0.0
 
     def admit(
-        self, text: str, now: float, episode: Optional[int] = None, closed: bool = False
+        self,
+        text: str,
+        now: float,
+        episode: Optional[int] = None,
+        closed: bool = False,
+        evidence: bool = True,
     ) -> Tuple[bool, int, str]:
         """(say it, sequence number, why not). `closed`: the side the last sentence sent the
-        wearer toward has no room now (_advice_closed) — its correction is news."""
+        wearer toward has no room now (_advice_closed) — its correction is news. `evidence`:
+        this poll's own reading still shows the block (False while only a hold keeps it)."""
         if not text:
             self._pending, self._pending_since = "", 0.0
             return False, self._seq, "nothing to say"
@@ -3150,6 +3470,11 @@ class _Gate:
                     self._seq,
                     f"unchanged — said {since:.0f}s ago (repeats after {window:.0f}s)",
                 )
+            # A block is said again only while it is still measured, not off a hold that is
+            # releasing: "Blocked by wall, turn right" again, facing an open path, told the
+            # wearer to turn a second time (timing review, 2026-11-09).
+            if _is_block(text) and not evidence:
+                return False, self._seq, "not repeated — the block is no longer measured"
             return self._commit(text, level, now, episode)
 
         arrived = self._spoken in (DRIFT_LEFT, DRIFT_RIGHT) and text in (
@@ -3164,6 +3489,14 @@ class _Gate:
             and level >= _BLOCKED
         )
         offline_news = text == SENSORS_OFFLINE and self._spoken != SENSORS_OFFLINE
+        # Back from "Guidance stopped": what stands now is said at once, not after the gap
+        # (2026-11-09: a block waited ~3 s behind it). A block only if still measured — not
+        # one a hold kept through the outage, from before the wearer turned.
+        recovered = (
+            self._spoken == SENSORS_OFFLINE
+            and text != SENSORS_OFFLINE
+            and (evidence or not _is_block(text))
+        )
         # Something on the path after a wall beside you is news, said once that sentence ends (2026-10-01).
         path_news = self._spoken in _SIDE_WALL + _GLASS_BESIDE and text in _PATH_AHEAD
         # And a wall beside you, or a way past, after "Obstacle ahead" (2026-10-21): until
@@ -3183,15 +3516,24 @@ class _Gate:
             or offline_news
             or path_news
             or side_news
+            or recovered
         ):
             # A block cuts into a guidance sentence like a vehicle does (2026-10-21):
             # waiting out a 2.5 s side-wall sentence cost ~3 m at walking pace, inside the
             # 4 ft block distance. Not into a vehicle or mover warning, which must be heard
             # whole, nor into a status notice (~1 s, said once, on a clear path only).
             guidance_playing = self._has_spoken and now < self._busy_until
+            # Any hazard cuts into a level-0 sentence ("Walk straight"): it warns of nothing,
+            # and waiting it out cost ~0.8 s of walking toward the thing (2026-11-09).
+            over_clear = (
+                guidance_playing
+                and self._level == 0
+                and now >= self._status_busy_until
+            )
             if (
                 level < _VEHICLE
                 and now < busy_until
+                and not over_clear
                 and (
                     level < _BLOCKED
                     or now < self._status_busy_until
@@ -3206,8 +3548,13 @@ class _Gate:
                 )
             return self._commit(text, level, now, episode)
 
+        # Nor through the gap after it: a block a hold kept through the outage is not said
+        # unless this poll still measures it (timing review, 2026-11-09: the wearer turned
+        # away during a stall, and "Blocked by glass, turn right" came on an open path).
+        if self._spoken == SENSORS_OFFLINE and _is_block(text) and not evidence:
+            return False, self._seq, "after the outage — the block is not measured now"
         held = now - self._pending_since
-        need = SIMPLE_CONFIRM_S
+        need = SIMPLE_CLEAR_SAY_CONFIRM_S if level == 0 else SIMPLE_CONFIRM_S
         # One approach warning becoming another (review, 2026-11-06): until then only a
         # vehicle's flip was news, so "Person approaching from left, stop" -> "Person coming
         # toward you, move right" waited SIMPLE_SETTLE_S (6 s), past the 5 s horizon. Still
@@ -3230,30 +3577,32 @@ class _Gate:
                 or (self._spoken in _APPROACHING and text not in _APPROACHING)
             )
             upgrade = upgrade or self._spoken in (SENSORS_OFFLINE, STOP_NO_WAY)
+            # A way out that changed while the one given still has room waits the settle: it
+            # is still good advice, and saying every change flip-flopped "turn right / turn
+            # left" near a post (turn review, 2026-11-09). One that CLOSED is `closed` below.
             # The advice just given is wrong now (review, 2026-11-06): "Turn right", then
             # someone stepped in 1.5 ft to the right, and "Turn left" waited 6 s.
             upgrade = upgrade or closed
             if not upgrade:
                 need = SIMPLE_SETTLE_S
+                if {_way_out(text), _way_out(self._spoken)} == {"left", "right"}:
+                    need = SIMPLE_FLIP_SETTLE_S
         if held < need:
             return (
                 False,
                 self._seq,
                 f"same obstacle — held {held:.1f}s of {need:.0f}s"
-                if need > SIMPLE_CONFIRM_S
+                if need >= SIMPLE_SETTLE_S
                 else f"unconfirmed — held {held:.1f}s of {need:.1f}s",
             )
-        if (
-            self._has_spoken
-            and now - self._spoken_at < SIMPLE_MIN_GAP_S
-            and not (flipped or closed)
-        ):
+        free_at = max(
+            self._spoken_at + SIMPLE_MIN_GAP_S, self._busy_until + SIMPLE_AFTER_SPEECH_S
+        )
+        if self._has_spoken and now < free_at and not (flipped or closed):
             return (
                 False,
                 self._seq,
-                f"too soon — "
-                f"{SIMPLE_MIN_GAP_S - (now - self._spoken_at):.1f}s until "
-                f"the voice is free",
+                f"too soon — {free_at - now:.1f}s until the voice is free",
             )
         if now < self._status_busy_until:
             return (
@@ -3287,8 +3636,7 @@ class _Gate:
             )
         self._status_busy_until = now + _airtime(text)
         self._counted = text
-        self._seq += 1
-        return True, self._seq, ""
+        return True, self.next_seq(), ""
 
     def _commit(
         self, text: str, level: int, now: float, episode: Optional[int] = None
@@ -3300,8 +3648,14 @@ class _Gate:
         self._busy_until = now + _airtime(text)
         self._has_spoken = True
         self._counted = text
-        self._seq += 1
-        return True, self._seq, ""
+        return True, self.next_seq(), ""
+
+    def next_seq(self) -> int:
+        """The next cue number. Under its own lock, not the guidance lock: the stall watch
+        takes one while a hung tick holds that (stall_cue, 2026-11-09)."""
+        with _SEQ_LOCK:
+            self._seq += 1
+            return self._seq
 
     def settle(self, level: int) -> None:
         """The situation the last sentence described has eased to `level`."""
@@ -3335,9 +3689,10 @@ class _Gate:
         return {"last": self._spoken, "cue_seq": self._seq, "pending": self._pending}
 
     def reset(self) -> None:
-        seq = self._seq
-        self.__init__()
-        self._seq = seq
+        with _SEQ_LOCK:
+            seq = self._seq
+            self.__init__()
+            self._seq = seq
 
 
 _lock = threading.Lock()
@@ -3510,16 +3865,13 @@ def guidance(
         offline = _world.offline(raw, lidar_state, now)
         stale = not offline and lidar_state is not None and not _fresh(lidar_state, now)
         seen = raw.get("vehicles") or {}
-        if (
-            (offline or stale)
-            and seen.get("approaching")
-            and seen.get("side") in ("left", "right")
-        ):
+        away = seen.get("away") or seen.get("side")
+        if (offline or stale) and seen.get("approaching") and away in ("left", "right"):
             text = (
                 VEHICLE_APPROACHING
-                if vehicle_move_blocked(walk_decision, lidar_state, False, seen["side"])
+                if vehicle_move_blocked(walk_decision, lidar_state, False, away)
                 else VEHICLE_FROM_LEFT
-                if seen["side"] == "left"
+                if away == "left"
                 else VEHICLE_FROM_RIGHT
             )
             raw = {
@@ -3694,7 +4046,11 @@ def guidance(
             quiet = "blocked — confirming what it is"
         else:
             speak, cue_seq, quiet = _gate.admit(
-                text, now, _world.episode, closed=_advice_closed(_gate.last, text, raw)
+                text,
+                now,
+                _world.episode,
+                closed=_advice_closed(_gate.last, text, raw),
+                evidence=bool(raw.get("blocked")) and not (offline or stale),
             )
         if raw["rule"] in ("waiting", "stale"):
             quiet = quiet if (hold and not through_hold) else raw["reason"]
@@ -3873,13 +4229,40 @@ def stall_told(now: Optional[float] = None) -> None:
         _fault["said_at"] = time.time() if now is None else now
 
 
+# The hung loop's own notice (stall_cue): (cue number, sentence), or None.
+_stall: Optional[Tuple[int, str]] = None
+
+
+def stall_cue(text: str) -> int:
+    """A cue number for `text` ("Guidance stopped, use your cane") said while the guidance
+    loop is hung (pi_voice's stall watch), WITHOUT the guidance lock, which the hung tick may
+    hold. Until 2026-11-09 the watch only spoke on the Pi: with the phone as the voice it
+    said nothing at all (timing review). latest_guidance hands it to the phone while it is
+    the newest cue; the loop's next sentence, once it runs again, is a later one."""
+    global _stall
+    seq = _gate.next_seq()
+    _stall = (seq, text)
+    return seq
+
+
+def stall_notice() -> Optional[Tuple[int, str]]:
+    """(cue number, sentence) of the hung loop's notice while no newer cue was counted."""
+    s = _stall
+    return s if s is not None and s[0] == _gate.state()["cue_seq"] else None
+
+
 def voice_failed(seq: int, text: str) -> bool:
     """The Pi voice could not play cue `seq`, which the gate counted as said when it was queued: unless something newer was said since, forget it so it is said again (pi_voice, 2026-10-23). True if forgotten."""
-    with _lock:
+    # Bounded: the voice's own thread must not wait out a hung tick holding the lock.
+    if not _lock.acquire(timeout=0.5):
+        return False
+    try:
         if _gate.state()["cue_seq"] != seq or _gate.last != text:
             return False
         _gate.forget_said()
         return True
+    finally:
+        _lock.release()
 
 
 def reset() -> None:

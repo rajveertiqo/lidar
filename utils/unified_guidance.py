@@ -134,15 +134,23 @@ def latest_guidance() -> Dict[str, Any]:
     if error:
         why += f": {error}"
     seq = simple_guidance.cue_seq()  # unchanged: nothing to announce; never waits
+    # The stall watch's "Guidance stopped" (pi_voice, simple_guidance.stall_cue), while it is
+    # the newest cue: the phone announces it from here (2026-11-09).
+    stall = simple_guidance.stall_notice()
+    try:
+        voice = {**pi_voice.status(), "accepted_seq": pi_voice.accepted_seq()}
+    except Exception:
+        voice = {"usable": False, "accepted_seq": None}
     return {
         "notify": {
-            "speak": False,
+            "speak": stall is not None,
             "cue_seq": seq,
-            "instruction": "",
-            "level": "advisory",
-            "source": None,
+            "pi_voice": voice,
+            "instruction": stall[1] if stall else "",
+            "level": "urgent" if stall else "advisory",
+            "source": "stall" if stall else None,
             "reason": why,
-            "quiet_reason": why,
+            "quiet_reason": "" if stall else why,
         },
         "path": {
             "instruction": "",

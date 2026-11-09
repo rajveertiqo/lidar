@@ -1,8 +1,8 @@
 {
  "registry": "shappe-phrases",
  "version": 1,
- "revision": 9,
- "sha": "e8238d2c89ea80c3",
+ "revision": 10,
+ "sha": "076233f4ce73eab3",
  "note": "Append-only. id 0 = no sentence; 65535 = not in this registry (use ALERT_TEXT). Generated from utils/simple_guidance.ALLOWED by ble_bridge/make_vocab.py — do not edit by hand.",
  "phrases": [
   {
@@ -3284,6 +3284,316 @@
    "urgent": true,
    "side": null,
    "obstacle": "glass",
+   "mover": false
+  },
+  {
+   "id": 329,
+   "text": "Animal in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "animal",
+   "mover": false
+  },
+  {
+   "id": 330,
+   "text": "Bear in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "bear",
+   "mover": false
+  },
+  {
+   "id": 331,
+   "text": "Bench in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "bench",
+   "mover": false
+  },
+  {
+   "id": 332,
+   "text": "Bicycle in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "bicycle",
+   "mover": false
+  },
+  {
+   "id": 333,
+   "text": "Bin in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "bin",
+   "mover": false
+  },
+  {
+   "id": 334,
+   "text": "Bollard in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "bollard",
+   "mover": false
+  },
+  {
+   "id": 335,
+   "text": "Branch in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "branch",
+   "mover": false
+  },
+  {
+   "id": 336,
+   "text": "Buffalo in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "buffalo",
+   "mover": false
+  },
+  {
+   "id": 337,
+   "text": "Bus in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "bus",
+   "mover": false
+  },
+  {
+   "id": 338,
+   "text": "Bus stop in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "bus stop",
+   "mover": false
+  },
+  {
+   "id": 339,
+   "text": "Car in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "car",
+   "mover": false
+  },
+  {
+   "id": 340,
+   "text": "Cow in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "cow",
+   "mover": false
+  },
+  {
+   "id": 341,
+   "text": "Dog in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "dog",
+   "mover": false
+  },
+  {
+   "id": 342,
+   "text": "Elephant in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "elephant",
+   "mover": false
+  },
+  {
+   "id": 343,
+   "text": "Forklift in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "forklift",
+   "mover": false
+  },
+  {
+   "id": 344,
+   "text": "Horse in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "horse",
+   "mover": false
+  },
+  {
+   "id": 345,
+   "text": "Hydrant in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "hydrant",
+   "mover": false
+  },
+  {
+   "id": 346,
+   "text": "Motorbike in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "motorbike",
+   "mover": false
+  },
+  {
+   "id": 347,
+   "text": "Person in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "person",
+   "mover": false
+  },
+  {
+   "id": 348,
+   "text": "Pillar in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "pillar",
+   "mover": false
+  },
+  {
+   "id": 349,
+   "text": "Plant in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "plant",
+   "mover": false
+  },
+  {
+   "id": 350,
+   "text": "Pole in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "pole",
+   "mover": false
+  },
+  {
+   "id": 351,
+   "text": "Post in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "post",
+   "mover": false
+  },
+  {
+   "id": 352,
+   "text": "Pothole in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "pothole",
+   "mover": false
+  },
+  {
+   "id": 353,
+   "text": "Sheep in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "sheep",
+   "mover": false
+  },
+  {
+   "id": 354,
+   "text": "Stairs in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "stairs",
+   "mover": false
+  },
+  {
+   "id": 355,
+   "text": "Stone in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "stone",
+   "mover": false
+  },
+  {
+   "id": 356,
+   "text": "Train in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "train",
+   "mover": false
+  },
+  {
+   "id": 357,
+   "text": "Tree in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "tree",
+   "mover": false
+  },
+  {
+   "id": 358,
+   "text": "Truck in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "truck",
+   "mover": false
+  },
+  {
+   "id": 359,
+   "text": "Vehicle in front, turn around",
+   "action": "turn_around",
+   "level": 2,
+   "urgent": true,
+   "side": null,
+   "obstacle": "vehicle",
    "mover": false
   }
  ]

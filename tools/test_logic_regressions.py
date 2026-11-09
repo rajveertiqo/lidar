@@ -4,6 +4,7 @@ run with venv/bin/python -m unittest tools.test_logic_regressions."""
 import math
 import time
 import unittest
+import unittest.mock
 
 from utils import drift_guidance, walk_policy
 from utils import simple_guidance as sg
@@ -169,6 +170,173 @@ class RadarEchoStrengthTests(unittest.TestCase):
                                "online": True, "degraded": False})
         front = get_radar_state()["sectors"]["front"]
         self.assertEqual(list(zip(front["peaks_mm"], front["peaks_db"])), [(900.0, None), (1200.0, 12.0)])
+
+
+class AfternoonFixTests(unittest.TestCase):
+    """2026-11-09 afternoon: the corridor glass door, a person behind a glass door, the
+    camera's way past a vehicle, and a named block's way out."""
+
+    def _front(self, segs, echoes, peaks=None):
+        from tools import glass_sim as gs
+
+        walk_policy._near_frames.clear()
+        radar = gs.radar_state(echoes)
+        for k, p in (peaks or {}).items():
+            radar["sectors"][k]["peaks_mm"] = p
+        return walk_policy.read_direction(gs.lidar_state(segs), radar, "front")
+
+    def test_corridor_glass_door_nearer_than_its_walls_echo(self):
+        from tools import glass_sim as gs
+
+        lat = 1000.0
+        for ft in (2.6, 3.0, 3.4):
+            d = ft * gs.FT
+            segs = (gs.side_wall("left", lat) + gs.side_wall("right", lat)
+                    + gs.wall_across(d, gs.DOOR_HALF_MM) + gs.back_wall())
+            wall_echo = lat * gs.BEAM_EDGE
+            both = sorted({d, wall_echo})
+            f = self._front(segs, {"deg030": d, "deg330": d},
+                            {"deg030": both, "deg330": both})
+            self.assertTrue(f["glass"], ft)
+            self.assertAlmostEqual(f["distance_ft"], ft, delta=0.3)
+
+    def test_plain_corridor_is_not_glass(self):
+        from tools import glass_sim as gs
+
+        for lat in (450.0, 750.0, 1000.0, 1500.0):
+            segs = gs.side_wall("left", lat) + gs.side_wall("right", lat) + gs.back_wall()
+            e = lat * gs.BEAM_EDGE
+            f = self._front(segs, {"deg030": e, "deg330": e})
+            self.assertFalse(f["glass"], lat)
+            self.assertFalse(f["distance_ft"] < 4.0, lat)
+
+    def test_person_just_behind_a_glass_door_blocks_at_the_glass(self):
+        from tools import glass_sim as gs
+
+        d = 3.0 * gs.FT
+        for behind_ft in (0.7, 1.3, 1.9):
+            segs = (gs.wall_across(d, gs.DOOR_HALF_MM) + gs.back_wall()
+                    + gs.post(d + behind_ft * gs.FT + 150, 0.0, 150))
+            f = self._front(segs, {"deg030": d, "deg330": d})
+            self.assertAlmostEqual(f["distance_ft"], 3.0, delta=0.15, msg=behind_ft)
+
+    def test_no_way_past_a_vehicle_not_judged_standing(self):
+        det = {"class_name": "car", "confidence": 0.9, "bbox": [500.0, 300.0, 800.0, 600.0]}
+        cam = {"front": {"frame_time": 100.0, "detections": [det]}}
+        with unittest.mock.patch.object(sg, "_camera_sees", lambda *a: True):
+            self.assertIsNone(sg.camera_path(cam, 100.0, None, []))  # moving / not yet judged
+            self.assertIsNotNone(sg.camera_path(cam, 100.0, None, [det["bbox"]]))  # standing
+            self.assertIsNotNone(sg.camera_path(cam, 100.0, None, None))  # no tracker
+
+    def test_a_box_cut_at_both_sides_gives_no_way_past(self):
+        det = {"class_name": "car", "confidence": 0.9,
+               "bbox": [0.0, 300.0, float(sg._QUAD_W), 700.0]}
+        cam = {"front": {"frame_time": 100.0, "detections": [det]}}
+        with unittest.mock.patch.object(sg, "_camera_sees", lambda *a: True):
+            self.assertIsNone(sg.camera_path(cam, 100.0))
+
+    def _desk(self, tof_solids, segs=None):
+        """The rig facing a desk (2026-11-09, 14:46): no laser return ahead, the radar hears
+        the desk and what stands on it at 0.26 and 0.53 m."""
+        from tools import glass_sim as gs
+
+        FT = gs.FT
+        segs = segs if segs is not None else (
+            [(1.4 * FT, 1.1 * FT, 1.4 * FT, 3.0 * FT)]
+            + gs.side_wall("right", 4.1 * FT, x_from=-1.3 * FT, x_to=1.5 * FT)
+        )
+        return self._front(
+            segs,
+            {"deg330": 525.9, "deg030": 263.3},
+            {"deg330": [525.9, 1288.2], "deg030": [263.3, 956.1]},
+        ) if tof_solids is None else self._front_tof(segs, tof_solids)
+
+    def _front_tof(self, segs, tof_solids):
+        from tools import glass_sim as gs
+
+        walk_policy._near_frames.clear()
+        radar = gs.radar_state({"deg330": 525.9, "deg030": 263.3})
+        radar["sectors"]["deg330"]["peaks_mm"] = [525.9, 1288.2]
+        radar["sectors"]["deg030"]["peaks_mm"] = [263.3, 956.1]
+        return walk_policy.read_direction(
+            gs.lidar_state(segs), radar, "front", None, tof_solids
+        )
+
+    def test_a_desk_the_tof_sees_and_the_radar_hears_is_not_glass(self):
+        self.assertTrue(self._desk(None)["glass"])  # without the ToF: the old false glass
+        f = self._desk([(0.547 / 0.3048, "low_obstacle"), (2.229 / 0.3048, "obstacle")])
+        self.assertFalse(f["glass"])
+        self.assertAlmostEqual(f["distance_ft"], 0.86, delta=0.05)  # still the block
+
+    def test_a_low_thing_behind_a_pane_keeps_it_glass(self):
+        from tools import glass_sim as gs
+
+        d = 3.0 * gs.FT
+        walk_policy._near_frames.clear()
+        radar = gs.radar_state({"deg030": d, "deg330": d})
+        lidar = gs.lidar_state(gs.back_wall())
+        for behind_ft in (0.5, 1.0):
+            f = walk_policy.read_direction(
+                lidar, radar, "front", None, [(3.0 + behind_ft, "low_obstacle")]
+            )
+            self.assertTrue(f["glass"], behind_ft)
+
+    def test_a_nooks_side_wall_is_not_a_pane_in_the_corridor(self):
+        """17:17 run: a 0.9 m nook facing a window blind 4.5 ft off; the right board heard its
+        wall at ~1.1 ft, inside RADAR_CONE_TRUST_MM."""
+        from tools import glass_sim as gs
+
+        FT = gs.FT
+        segs = ([(-1.0 * FT, 1.2 * FT, 4.1 * FT, 1.2 * FT)]
+                + [(4.5 * FT, -1.55 * FT, 4.5 * FT, 1.2 * FT)]
+                + [(-2.3 * FT, -4 * FT, -2.3 * FT, 4 * FT)])
+        f = self._front(segs, {"deg030": 330.0})
+        self.assertFalse(f["glass"])
+        # A pane 1 ft ahead with a wall beside it is heard by BOTH boards: still glass.
+        d, lat = 1.0 * FT, 1.1 * FT
+        f = self._front(gs.side_wall("left", lat, x_to=d) + gs.back_wall(),
+                        {"deg330": min(d, lat * gs.BEAM_EDGE), "deg030": d})
+        self.assertTrue(f["glass"])
+
+    def test_the_tof_seeing_a_solid_thing_at_the_echo_is_not_glass(self):
+        from tools import glass_sim as gs
+        from utils import ground_hazards as gh
+
+        walk_policy._near_frames.clear()
+        radar = gs.radar_state({"deg030": 410.0, "deg330": 410.0})
+        lidar = gs.lidar_state(gs.back_wall())
+        n = int(round(gh.TOF_NEAR_MAX_M / gh.TOF_NEAR_BIN_M))
+        at_echo = [0] * n
+        for b in (7, 8, 9):  # 0.35-0.50 m: the desk
+            at_echo[b] = 300
+        elsewhere = [0] * n
+        elsewhere[20] = 900  # 1.0 m: something past the echo
+        self.assertTrue(walk_policy.read_direction(lidar, radar, "front")["glass"])
+        self.assertFalse(
+            walk_policy.read_direction(lidar, radar, "front", None, None, at_echo)["glass"]
+        )
+        self.assertTrue(
+            walk_policy.read_direction(lidar, radar, "front", None, None, elsewhere)["glass"]
+        )
+
+    def test_a_laser_measured_block_drops_the_held_glass(self):
+        world = sg._World()
+        base = {"blocked": True, "near": True, "wall": False, "front_ft": 1.2,
+                "side": "left", "scan_index": 1, "in_front": True}
+        for k in range(6):
+            world.update({**base, "glass": True, "scan_index": k}, 100.0 + 0.07 * k)
+        text, _ = world.update(
+            {**base, "glass": False, "lidar_block": True, "front_ft": 0.5, "scan_index": 9},
+            100.6,
+        )
+        self.assertNotIn(text, sg.BLOCKED_GLASS_ANY)
+
+    def test_named_block_keeps_the_walk_policys_way_out(self):
+        for side, want in (("right", sg.STEER_IN_FRONT[("Person", "right")]),
+                           ("around", sg.OBJECT_IN_FRONT_AROUND["Person"])):
+            text = sg._sentence(True, True, False, False, side, obj="Person")
+            self.assertEqual(text, want)
+            self.assertIn(text, sg.ALLOWED)
 
 
 if __name__ == "__main__":

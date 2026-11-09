@@ -6,7 +6,14 @@ import time
 from fastapi import APIRouter, Response
 from fastapi.responses import StreamingResponse
 
-from config import CAMERA_WIDTH, CAMERA_HEIGHT, JPEG_QUALITY, TARGET_FPS, HEF_PATH
+from config import (
+    CAMERA_HEIGHT,
+    CAMERA_WIDTH,
+    FRAME_SECTOR_LAYOUT,
+    HEF_PATH,
+    JPEG_QUALITY,
+    TARGET_FPS,
+)
 from utils import hailo_stats
 from utils.pi_camera_utils import (
     gen_frames,
@@ -174,6 +181,14 @@ def live_picture(view: str, after: int = -1, width: int = 480, boxes: int = 0):
         "X-Frame-Id": str(fid),
         "X-Simulated": "1" if simulated else "0",
     }
+    if view == "grid":
+        # Where each camera sits in THIS picture, [row, column] (2026-11-09): the dashboard
+        # cut its tiles by a layout it fetched once — or, before that came, by the one built
+        # into the page, the cameras' order before they were moved — and showed one camera's
+        # picture under another's name, with the right camera's boxes on it.
+        headers["X-Camera-Layout"] = json.dumps(
+            {s: list(rc) for s, rc in FRAME_SECTOR_LAYOUT.items()}, separators=(",", ":")
+        )
     if boxes:
         headers["X-Detections"] = json.dumps(
             _live_boxes(view, fid, shot), separators=(",", ":")

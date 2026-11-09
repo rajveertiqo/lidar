@@ -35,8 +35,8 @@ closed vocabulary:
 | Already within 4 ft of a wall beside you (moving or not; 1.5 ft until 2026-10-01) | `Near right wall, move left` (and the mirror) |
 | Glass only one front radar board hears, within 4 ft, and room to step away (added 2026-10-01) | `Glass on right, move left` (and the mirror) |
 | Something that can hurt you on the path | `Person ahead` → `Person in front`; also vehicles, animals, `Pole` (stop sign / parking meter / traffic-light posts), `Hydrant`, `Bench` — never chairs, laptops or other furniture (still steered round, unnamed). Vehicles are named first. |
-| Something that can hurt you in the way, within ~5 m (camera) | `Person on left, turn slightly right` (and the mirror), `Person ahead, turn slightly left`; two with a gap you fit through: `Walk between them, slightly left` / `Walk straight between them`; inside 4 ft: `Person in front, turn left` |
-| A vehicle in the camera's box coming at you (its box growing faster than your own walking explains) | `Vehicle approaching, move left` if it is in the right half of the frame, `move right` if in the left — said over anything else. Just `Vehicle approaching` when the side it would send you to has under 2 ft of room or no reading (decided 2026-09-29) |
+| Something that can hurt you in the way, within ~5 m (camera) | `Person on left, turn slightly right` (and the mirror), `Person ahead, turn slightly left`; two with a gap you fit through: `Walk between them, slightly left` / `Walk straight between them`; inside 4 ft: `Person in front, turn left`. With no way past from the camera (or one toward less room), the walk policy's: `Person in front, turn right` / `Person in front, turn around` (since 2026-11-09; it was `Person in front` alone) |
+| A vehicle in the camera's box coming at you (its box growing faster than your own walking explains) | `Vehicle approaching, move left` / `move right`: away from the way it is moving across your path, so you step behind it (since 2026-11-09); one coming straight at you, away from the half of the frame it is in — said over anything else. Just `Vehicle approaching` when the side it would send you to has under 2 ft of room or no reading (decided 2026-09-29) |
 | A vehicle moving in the camera's box (crossing, or passing close) — or, while you stand still, a stopped one | `Vehicle in front, be careful` — outranks everything except a pane or wall actually blocking you |
 | The LiDAR has stopped updating (or is simulated) | `Sensors offline` — after 2 s; between 1 and 2 s stale nothing new is said |
 | The front radar (the only glass sensor) lost, fully or half its arc, for 3 s | `Glass sensor off` — once, only where "Walk straight" would be said and the raw reading is clear too; never over a hazard or steering. At a cold start it waits (up to 30 s) only while the front boards are still starting or calibrating |
@@ -1407,10 +1407,33 @@ Kept because each one explains why the code is the way it is.
    board heard one faint echo (-17 dB at 1.0 ft) on about 1 poll in 5. Only the ToF saw
    the blind: an obstacle 0.8 m ahead, 1 m wide, confirmed by the camera. Now
    `walk_policy._tof_front` takes the nearest confirmed `obstacle` or `pole` the ToF
-   has on the walking path (fresh, its worker running). It stands in for the laser's
-   front reading where the laser has no return, or ranges further by more than
-   `RADAR_AGREE_MM`. The block and the way out then follow as for a laser reading, and a
-   radar echo at the ToF's range is not glass. Here: "Obstacle in front, turn around".
+   has on the walking path (fresh, its worker running). It can only bring the front
+   reading NEARER. It never stands in for the laser in the glass tests, and never drops
+   the radar's echo. The first version did both, and a table or a frame just behind a pane
+   unnamed the pane and moved the block past it. An echo within `GLASS_TOF_SAME_MM`
+   (150 mm) of the ToF's solid thing, or past it, is that thing, not glass. Here: "Obstacle
+   in front, turn around".
+
+   The depth-camera review the same day (ToF review) tightened it further:
+   - **Only where the laser has no return ahead.** Elsewhere the laser rules, and a pane
+     it looks through keeps its name past the ToF seeing the frame.
+   - **Measured where the thing stands in the walking corridor** (`path_m`, the cluster's
+     nearest point inside it). A wall beside the path, the chest turned 5 deg toward it,
+     had read as an obstacle 2.4 ft ahead: "Obstacle in front, turn around" in an empty
+     hallway.
+   - **Only when the camera itself confirmed it.** "Unseen", below the picture, was the
+     wearer's own cane.
+
+   The faint echo itself was clutter. A glass claim from an echo within
+   `GLASS_NEAR_STEADY_FT` now needs that echo on `GLASS_NEAR_STEADY_FRAC` of the radar's
+   frames since it first appeared in the last `GLASS_NEAR_STEADY_S`, and at least 4 of them.
+   A pane that close echoes on nearly every frame; this echo came on 1 in 3-5. Until then it
+   blocks as an obstacle. A pane turned to face 1.5 ft away: "Obstacle in front, turn right"
+   at 0.3 s, renamed "Blocked by glass" ~2.7 s later. Walked up to: named from 11 ft, as before.
+
+   Open: a plain surface only the ToF sees (no edge for the camera) is dropped ~5 ft out,
+   and lost up close ("no ground seen"), so it still ends in "Walk straight". It is no worse
+   than before 2026-11-09. To fix: keep a confirmed solid thing while it fills the view.
    Overhangs and low obstacles still wait on `TOF_HAZARDS_SPEAK`. A wall alongside has
    read as an overhang, and range noise as a low obstacle.
 
@@ -1419,6 +1442,133 @@ Kept because each one explains why the code is the way it is.
    read equal, and the fixed order always gave "left": toward a wall 9 ft off with the
    right open. `choose_turn` now breaks an exact tie on the laser's own side reading. A
    scene that is the same both ways to the side readings still goes left (6 of 300).
+
+7. **A real-time voice (2026-11-09).** Timed through the real walk policy, _World and
+   _Gate, the guidance itself costs ~6 ms a poll. The voice is slow because of the gate's
+   waits. The changes:
+   - **Shorter waits.** A sentence that is not more urgent is held `SIMPLE_CONFIRM_S` 0.4 s
+     (was 1.0). A change about the same hazard is held `SIMPLE_SETTLE_S` 2 s (was 6).
+     Sentences are spaced by `SIMPLE_MIN_GAP_S` 1.5 s (was 3), and never before the last
+     one has finished, plus `SIMPLE_AFTER_SPEECH_S`.
+   - **Hazards first.** Any hazard cuts into "Walk straight". "Walk straight" itself
+     keeps 1.0 s (`SIMPLE_CLEAR_SAY_CONFIRM_S`): saying "clear" too early is the
+     dangerous direction.
+   - **Way-out changes.** A left <-> right flip, with the side given still having room,
+     keeps 6 s (`SIMPLE_FLIP_SETTLE_S`). Near a post just off centre the walk policy
+     alternates. A side that closes is said at once: under 2 ft, or under the walk
+     policy's own turn floor from here (`turn_room`, `turn_floor`).
+   - **A held block.** A block of something standing in front (`in_front`: the ToF's, a
+     hidden laser's, a post off the narrow line) clears a held "Near … wall". That
+     sentence had held the block back ~0.9 s, and alternated with it at the 4 ft line.
+   - **Sparse scans.** A LiDAR scan with almost no returns is said as "Guidance stopped"
+     only once such scans have lasted `SIMPLE_SPARSE_CONFIRM_S`. A single one cut in, then
+     held the block back ~3 s (the 09:57-10:05 log, three times). After "Guidance stopped",
+     what stands is said at once.
+   - **Repeats need the block measured.** A block is repeated, or said after an outage,
+     only while this poll still measures it. A releasing hold re-said "Blocked by wall,
+     turn right" on an open path after the wearer had turned.
+   - **Behind the wearer** (in `LIDAR_BLIND_ARCS_DEG`), the radar echo is not dismissed as
+     off-axis when the laser explains it ON that line, only beside it. A person 2.3 ft
+     directly behind got "…, turn around".
+
+   Hazard -> sentence on the desk:
+
+   | Case | Before | After |
+   |---|---|---|
+   | Crossing 8 ft -> "Obstacle ahead" | 0.76 s | 0.11 s |
+   | Crossing 4 ft -> the block | 0.12 s | 0.12 s |
+   | The way out closes -> the new one | 1.1 s | 0.5 s |
+   | The same hazard changes kind | 6.3 s | 2.3 s |
+   | Path clears -> "Walk straight" | 2.1 s | 2.1 s |
+
+8. **Camera, vehicle and stall fixes (2026-11-09, afternoon).** From the morning's reviews,
+   each reproduced on the desk first, and checked against the committed code:
+   - **The vehicle step goes behind the car.** The side came from where the car was in the
+     picture. A car from 20° right, heading left on a collision course, got "move left":
+     where it was going, contact. Now the side is the way it is moving across
+     (`_VEHICLE_HEADING_MPS`), held through cut-off boxes. Stepping as told now clears it by
+     0.75-2.2 m (headings 190-210° and mirrored); warnings still come 4.1-4.8 s out.
+   - **Turning on the spot is not a car approaching.** The turn's own growth of a box at
+     the picture's side was never taken off, and its slide was one rate across the
+     picture. Both now follow the box's bearing (pinhole). Parked cars 8-16 m off, turning
+     10-40°/s: 20 false "Vehicle approaching" in 144 scenes before, 0 now.
+   - **A short thing called "truck"** read 2.5 times as far as it was, so too little of the
+     wearer's own walking came off its growth. The ToF's distance in its box, or the
+     LiDAR's median across it, now sets that when it is much nearer
+     (`_VEHICLE_MEASURED_NEARER`). Walked toward: no "Vehicle approaching", no "be careful".
+   - **A box cut off at the picture's side** gives no way past on that side. A car across the
+     path filling the frame had both sides tied, and "Car in front, turn right" went toward
+     2.95 ft with 6.2 ft on the left. A blocked turn from the camera is now also judged by
+     the walk policy's own room each way (`turn_room`), not the 45° sectors that see the
+     car itself.
+   - **A named block keeps its way out.** "Person in front" alone is now "Person in front,
+     turn right", and in a 1 m corridor "Person in front, turn around" (new sentences;
+     registry revision 10).
+   - **A person just behind a glass door.** Their laser return "explained" the pane's echo,
+     the echo was dropped, and the block came at the person, up to 1.9 ft late or not at all.
+     The door-in-wall and single-board rules now take the echo as the distance whenever the
+     laser on the line sees past it at all; the glass NAME still needs `WALK_GLASS_GAP_FT`.
+     Glass door in a wall, and a glass wall across, now block at the pane for every
+     distance tried. Left: a pane with a wall beside it and someone within 250 mm behind
+     still blocks ~0.7 ft late (`GLASS_LASER_BEYOND_MM`).
+   - **A hung loop reaches the phone.** The stall watch's "Guidance stopped" went to the Pi
+     voice alone; with the phone as the voice, nobody heard it. It now takes its own cue
+     number (`simple_guidance.stall_cue`, under a small lock of its own, never the
+     guidance lock), and `latest_guidance` hands it to the bridge while it is the newest
+     cue. The bridge sends it urgent, flagged loop-stale.
+   - **The glass door at a corridor's end, again.** Nearer than the side walls' echo
+     (~3.8 ft in a 2 m corridor), the door's echo IS each board's nearest, and was set
+     aside as the corridor's wall; the side walls, square-on at the edge of the view,
+     also read as "something beside". A 2 m corridor said "Walk straight" from 3.8 to
+     2.2 ft, and "Blocked by glass" came at 1.5 ft. Now `walk_policy._side_walls_mm`
+     finds the corridor's walls from the laser (returns that line up along the path):
+     they are neither "beside" nor a pane, an echo the laser sees them at is theirs, and
+     a nearest echo is the door's when the laser sees the wall it is set in at that depth
+     on both sides. 1.2-3 m corridors: "Glass ahead" from ~11 ft, "Blocked by glass" at
+     3.2-3.5 ft. With someone just behind the door, the door is still the distance. The
+     scene hunt's false glass went down, 14 -> 11 of 1500 (7 -> 5 with radar ghosts), and
+     its false blocks stayed the same 22. glass_sim's two corridor "limit" scenes are now
+     required glass.
+   - **A desk read as glass.** On the rig at a desk with a monitor (14:46 run): no laser
+     return ahead, the radar steady on the desk and what stands on it (0.26 and 0.52 m),
+     "Blocked by glass, turn left" every 2 min for 14 minutes. The ToF had it: a low
+     obstacle 0.55 m ahead, camera-confirmed. Now an echo is not glass when the ToF has a
+     solid thing confirmed on the path within `RADAR_AGREE_MM` of it AND a front board hears
+     that thing itself (an echo within `GLASS_TOF_SAME_MM` of it). A low obstacle or an
+     overhang counts wherever the laser looks (what its one plane passes over or under: a
+     desk, a table, a counter, a shelf); a taller thing only where the laser has no return
+     ahead, since a glass door's frame is one at the pane's range. Still blocked, said as
+     "Obstacle in front, turn …". Checked: the glass scenes with a ToF thing 0.5-1.9 ft
+     behind the pane, as an obstacle or a low obstacle, keep "glass" in all 316.
+   - **Glass at a desk, again (17:17 run).** The rig on a desk in a 0.9 m nook, facing the
+     window blind 4.5 ft off, the laser ranging it: "Blocked by glass, turn left" at 1.2 ft.
+     Three causes, three changes:
+     - The right board heard its wall at ~1.1 ft, inside `RADAR_CONE_TRUST_MM`, and the
+       corridor-glass rule (NEW-045) took it for a pane in the walking corridor. Now it
+       does not when every board that hears that echo has a side wall on its own side the
+       laser sees at that range (`_echo_is_side_wall`); a pane ahead is heard by the board
+       with no wall beside it too.
+     - The left board heard the desk and what stands on it, below the laser's plane, and
+       the ToF said nothing: on a desk it finds no floor ("no ground seen"), so no hazards.
+       Now every ToF frame also counts its points on the walking path by distance, out to
+       1.3 m and no lower than 1.0 m below it, with no ground needed
+       (`ground_hazards.near_counts`, the snapshot's `near`). 200 or more at an echo's
+       distance (`GLASS_TOF_SAME_MM`): that echo is a solid thing, not glass. Worn, the
+       floor never comes that near in its view. A glass door's push bar within ~3.8 ft is
+       such a thing too: "Obstacle in front", still the block ("Glass ahead" before it).
+     - "Blocked by glass" was said with a person 0.5 ft away, the laser ranging them, from
+       the 3 s glass hold. A block the laser itself measures, on a poll with no glass, now
+       drops the held glass at once.
+   - **No way past a moving vehicle.** `camera_path` treated every vehicle as standing: a
+     car crossing 3-4 m ahead from the right got "Car on right, turn slightly left",
+     toward where it was going. Now it plans a way past a vehicle only once `_Vehicles` has
+     watched it long enough to judge, and judged it still (`still_boxes`); a moving one is
+     left to the vehicle warnings. A parked car is still steered past. A vehicle measured
+     going away across the line at a crossing car's pace (`_VEHICLE_PASSED_MPS`), the
+     whole box past the middle, is no longer coming at the wearer. Left as it was: a car
+     crossing 6-10 m ahead at an angle still gets "Vehicle approaching" just as it crosses
+     the middle. Clearing it there would trust the box's predicted path in the middle of the
+     picture, where a noisy one could clear a car coming straight on.
 
 ## Walking the drift layer without leaving the desk
 

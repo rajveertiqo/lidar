@@ -1529,20 +1529,15 @@
         if (all) {
           $("cam-img").removeAttribute("src");
           // One picture of all four cameras (/camera/live/grid), each tile showing its
-          // own quarter of it: [row, column] as the camera board lays them out.
-          const lay = geom.camera_layout || {
-            right: [0, 0],
-            front: [1, 1],
-            left: [0, 1],
-            back: [1, 0],
-          };
+          // own quarter of it: placed by the layout sent WITH each picture (placeTiles).
           const [W, H] = (geom.camera_px || [1164, 874]).map(Number);
           $("cam-all").innerHTML = ["front", "right", "left", "back"]
-            .map((c) => {
-              const [r, k] = (lay[c] || [0, 0]).map(Number);
-              return `<div class="cam" id="cam-all-${c}" role="img" aria-label="${c} camera" style="background-size:200% 200%;background-position:${k * 100}% ${r * 100}%"><svg id="cam-all-svg-${c}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"></svg><div class="chip" style="position:absolute;left:8px;top:8px">${c}<span id="cam-all-fps-${c}"></span></div></div>`;
-            })
+            .map(
+              (c) =>
+                `<div class="cam" id="cam-all-${c}" role="img" aria-label="${c} camera" style="background-size:200% 200%"><svg id="cam-all-svg-${c}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"></svg><div class="chip" style="position:absolute;left:8px;top:8px">${c}<span id="cam-all-fps-${c}"></span></div></div>`,
+            )
             .join("");
+          placeTiles(geom.camera_layout);
         } else {
           $("cam-all").innerHTML = "";
           $("cam-off").hidden = true;
@@ -1550,6 +1545,21 @@
         }
         startLive(view);
         drawCamOverlay();
+      }
+      // Each "All 4" tile on its camera's quarter of the grid picture: {camera: [row,
+      // column]}, as the server cut THAT picture (X-Camera-Layout, 2026-11-09). Until then
+      // the tiles were placed once, by a layout fetched later — or, before it came, by one
+      // built into this page: the cameras' order before they were moved on the rig, so the
+      // left camera's picture showed as "front" with the front's boxes on another tile.
+      function placeTiles(lay) {
+        if (!lay) return;
+        for (const c of ["front", "right", "left", "back"]) {
+          const tile = $(`cam-all-${c}`),
+            rc = lay[c];
+          if (!tile || !Array.isArray(rc)) continue;
+          const [r, k] = rc.map(Number);
+          tile.style.backgroundPosition = `${k * 100}% ${r * 100}%`;
+        }
       }
       // The live picture is PULLED, one at a time (2026-11-02): the next is asked for only
       // once this one is on screen, so nothing queues on the way and it cannot fall behind —
@@ -1613,6 +1623,11 @@
               try {
                 cams = JSON.parse(r.headers.get("X-Detections") || "{}") || {};
               } catch (e) {}
+              if (grid) {
+                try {
+                  placeTiles(JSON.parse(r.headers.get("X-Camera-Layout") || "null"));
+                } catch (e) {}
+              }
               const url = URL.createObjectURL(await r.blob());
               const img = new Image();
               img.src = url;

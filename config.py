@@ -150,6 +150,17 @@ LIDAR_SELF_PERSIST_S = 0.5
 # and a real pane with open space behind it then went unnamed on the rig.
 LIDAR_FRONT_VIEW_DEG = 10.0
 LIDAR_OCCLUDED_MM = 250.0
+# The ToF sees something solid on the path at the radar's echo, within this, or nearer: the
+# echo is that thing (a table under the laser's plane), not glass (2026-11-09). Tight on purpose:
+# 400 mm (RADAR_AGREE_MM) unnamed a pane with a table or a person 1 ft behind it.
+GLASS_TOF_SAME_MM = 150.0
+# A glass claim from an echo this near needs that echo on this share of the front radar's
+# frames over this long: a pane that close echoes nearly every frame, clutter does not
+# (2026-11-09: -17 dB at 1.0 ft, 1 frame in 3-5, in front of a window blind, said "Blocked by
+# glass"). It still blocks, as an obstacle. Too few frames to judge: glass, as before.
+GLASS_NEAR_STEADY_FT = 2.0
+GLASS_NEAR_STEADY_S = 1.5
+GLASS_NEAR_STEADY_FRAC = 0.6
 
 LIDAR_MAX_BACKLOG_S = 0.25
 LIDAR_KEEP_BACKLOG_S = 0.1
@@ -987,10 +998,12 @@ _WAS_FOCAL_PX = 480.0 / (_LENS_TAN * 3840.0 / 4656.0)
 _PER_W = 960.0 / _CAMERA_QUAD_PX[0] * _CAMERA_FOCAL_PX / _WAS_FOCAL_PX
 _PER_H = 540.0 / _CAMERA_QUAD_PX[1] * _CAMERA_FOCAL_PX / _WAS_FOCAL_PX
 FRAME_SECTOR_LAYOUT = {  # camera quadrant mapping; do not change without a physical check
-    "front": (1, 1),  # bottom-right quadrant  (top-right 2026-09-22 to 2026-11-05)
+    # Cameras moved on the rig 2026-11-09: the one that was "back" faces front, the old
+    # "front" faces left, the old "left" faces back; "right" stays.
+    "front": (1, 0),  # bottom-left quadrant   (bottom-right 2026-11-05 to 2026-11-09)
     "right": (0, 0),  # top-left quadrant      (unchanged)
-    "back": (1, 0),  # bottom-left quadrant    (bottom-right 2026-09-22 to 2026-11-05)
-    "left": (0, 1),  # top-right quadrant      (bottom-left until 2026-11-05)
+    "back": (0, 1),  # top-right quadrant      (bottom-left 2026-11-05 to 2026-11-09)
+    "left": (1, 1),  # bottom-right quadrant   (top-right 2026-11-05 to 2026-11-09)
 }
 
 
@@ -1009,8 +1022,16 @@ SIMPLE_ALERT_GAP_S = 0.5
 SIMPLE_CLEAR_CONFIRM_S = 1.0
 SIMPLE_BAND_MARGIN_FT = 1.0
 
-SIMPLE_CONFIRM_S = 1.0
-SIMPLE_MIN_GAP_S = 3.0
+# The speech gate's waits, cut for a real-time voice on 2026-11-09 (were 1.0 s, 3.0 s and 6.0 s:
+# a hazard's change of kind waited 6.3 s, a closed way out 1.1 s). A new sentence that is
+# not more urgent is held SIMPLE_CONFIRM_S, so a flicker is not said; "Walk straight" is held
+# SIMPLE_CLEAR_SAY_CONFIRM_S, since saying the way is clear too early is the dangerous
+# direction. Between sentences: SIMPLE_MIN_GAP_S from the last one's start, and never before
+# it has finished plus SIMPLE_AFTER_SPEECH_S (the old 3 s gap had covered that by itself).
+SIMPLE_CONFIRM_S = 0.4
+SIMPLE_CLEAR_SAY_CONFIRM_S = 1.0
+SIMPLE_MIN_GAP_S = 1.5
+SIMPLE_AFTER_SPEECH_S = 0.2
 
 SIMPLE_REPEAT_S = 30.0
 SIMPLE_REPEAT_MAX_S = 120.0
@@ -1284,11 +1305,20 @@ SIMPLE_VEHICLE_CAREFUL_MISS_M = 3.0
 SIMPLE_VEHICLE_RANGE_MATCH = 2.0
 SIMPLE_VEHICLE_SIDE_MARGIN = 0.05 * _PER_W
 
-SIMPLE_SETTLE_S = 6.0
+SIMPLE_SETTLE_S = 2.0  # a change about the SAME hazard that is not more urgent (6.0 until 2026-11-09)
+# ...but the way out flipping left <-> right while the side given still has room keeps the old
+# 6 s: the walk policy can alternate near a post just off centre, and the advice given is
+# still good (turn review, 2026-11-09). A side that CLOSED is said at once (_advice_closed).
+SIMPLE_FLIP_SETTLE_S = 6.0
 SIMPLE_OBJECT_RELEASE_S = 3.0
 SIMPLE_GLASS_RELEASE_S = 3.0
 # "Guidance stopped, use your cane" once neither rangefinder has reported ahead for this long.
 SIMPLE_OFFLINE_S = 3.0
+# A LiDAR scan with almost no returns (LIDAR_MIN_VALID_FRACTION) is said as "Guidance stopped"
+# only once such scans have lasted this long; a single one is held silently, like a stale
+# scan (2026-11-09: one sparse scan cut in with "Guidance stopped", then held the block
+# warning back ~3 s — three times on the rig at 09:57-10:05).
+SIMPLE_SPARSE_CONFIRM_S = 1.0
 # The guidance step failing tick after tick for this long is a fault: the wearer is told,
 # and the watchdog heartbeat is withheld so systemd restarts the app (2026-10-21). Seconds,
 # not ticks (3 at 5 Hz until 2026-10-30): ticks now follow the LiDAR's scans.

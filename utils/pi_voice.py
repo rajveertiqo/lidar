@@ -508,7 +508,17 @@ def _watch_stall() -> None:
         if said is not None and time.monotonic() - said < SIMPLE_OFFLINE_REPEAT_S:
             continue
         _stall_said_at = time.monotonic()
-        how = speak(SENSORS_OFFLINE, urgent=True)
+        # Its own cue number (2026-11-09): the phone, when it is the voice, hears of the hang
+        # through latest_guidance, which hands it on while it is the newest cue. Before, it
+        # went to this voice alone and, with no Pi speaker, nowhere.
+        seq = None
+        try:
+            from utils import simple_guidance
+
+            seq = simple_guidance.stall_cue(SENSORS_OFFLINE)
+        except Exception:
+            pass
+        how = speak(SENSORS_OFFLINE, urgent=True, seq=seq)
         print(
             f"[WARN] pi_voice: the guidance loop has finished no tick for {stalled:.1f}s "
             f'— "{SENSORS_OFFLINE}" ({how})'
@@ -516,12 +526,16 @@ def _watch_stall() -> None:
         try:
             from utils import speech_log
 
+            from utils import mobile_delivery
+
+            phone = bool(mobile_delivery.status().get("usable"))
             speech_log.say(
                 source="pi-voice",
                 text=SENSORS_OFFLINE,
                 level="urgent",
                 detail=f"the guidance loop has finished no tick for {stalled:.1f}s",
-                via="pi" if how == "queued" else "none",
+                cue_seq=seq,
+                via="pi" if how == "queued" else "phone" if phone and seq else "none",
             )
         except Exception:
             pass

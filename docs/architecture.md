@@ -30,8 +30,6 @@ app/perception/           What is around the user, and the walk decision
                             and warns 3-6 s before they veer into something
   sensor_fusion.py          LiDAR + camera -> one ranked hazard list (clock positions)
   unified_navigation_system.py  Obstacle avoidance + road-crossing policy
-  traffic_light_detection.py    Crossing state machine
-  environment_detection.py  Fog / rain / low-light from camera + LiDAR quality
   lidar_movers.py           People and vehicles MOVING in the LiDAR scan, from any
                             side: who is coming at the user, from where, and when.
                             Silent ("would say") until LIDAR_MOVERS_SPEAK
@@ -80,8 +78,7 @@ app/core/                 Shared by all: state, freshness, health, recording
   live_map.py               What every sensor sees, placed around the user, for /map
 app/api/                  The HTTP API (see api.md)
 templates/              The web pages: dashboard.html (/), tof_live.html (/tof/live),
-                        radar_test.html, radar_map.html, map_test.html, gait_test.html,
-                        index.html (the previous dashboard, /classic)
+                        radar_test.html, radar_map.html, map_test.html, gait_test.html
 model/                  yolo26m.hef (detection), best.hef (segmentation), metadata.yaml
 ble_bridge/             The phone link: a separate service (shappe-ble.service) speaking
                         the closed vocabulary to the phone over Bluetooth LE

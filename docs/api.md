@@ -12,7 +12,6 @@
 | `GET /guidance/fused`   | Ranked hazard list (clock position + distance)                                                                                                                                                                                          |
 | `GET /guidance/scene`   | On-demand "what's around me?" full readout                                                                                                                                                                                              |
 | `GET /guidance/status`  | Sensor health, in plain English                                                                                                                                                                                                         |
-| `WS  /guidance/ws`      | Push stream of fused guidance (~5 Hz)                                                                                                                                                                                                   |
 | `GET /guidance/log`     | Every line the device has SAID this run, timestamped. Written at the commit point, so it is the conversation the user had — a poller would see a different one |
 | `GET /guidance/log/text`| The same as plain text, for `curl` from a phone mid-walk |
 | `GET /guidance/latency` | How late this run's sentences were: scan and camera age, tick time, Pi voice start, front range at the warning — median and worst, urgent apart |
@@ -37,7 +36,6 @@
 | `GET /radar/health`           | One-line verdict: every board streaming, every cardinal live  |
 | `POST /radar/rediscover`      | Stop every reader and rediscover, after replugging a cable    |
 | `GET /camera/live/{camera}`   | The newest picture of one camera, or `grid` (all four), as one small JPEG; `?after=<X-Frame-Id>` waits up to 1 s for a newer one. Pulled one at a time by the dashboard, so it cannot fall behind (2026-11-02: the MJPEG stream did, ~12 s after 10 s on a slow link). `?boxes=1` adds `X-Detections`: what the detector found in that very picture (the front's, waited for, ~55 ms) or a side camera's last (`age_ms` older) |
-| `GET /camera/stream/{sector}` | MJPEG per sector (`front`/`right`/`left`/`back`) — used by `/classic` only; it falls behind on a slow link |
 | `GET /camera/seg/{sector}`    | Colorized segmentation debug view                             |
 | `GET /camera/stats`           | capture / detection / segmentation FPS, per-sector detections — each with `distance_ft`: of the things the laser ranges in the box's bearings, the one that fits the box's size (`distance_source` `lidar`), else the box-size estimate (`camera`; `camera_cut` = at most) |
 | `GET /camera/distances`       | Why each detection's distance is what it is: bearings searched, every laser range there, the size estimate (a wide person box = sitting), the choice, and the lens angle it implies (`implied_hfov_deg`) |
@@ -49,15 +47,12 @@
 | `GET /tof/rgbd.jpg`           | The front camera as a depth camera: aligned depth laid over its picture, each detection labelled with its measured distance |
 | `GET /tof/aligned.npy`        | The newest depth picture aligned to the front camera's (float32 m, NaN = none, per `TOF_ALIGNED_CELL_PX` block; `?what=ground` for along the ground) |
 | `GET /tof/hazards`            | The ToF's hazards on the ground: the fitted ground, each confirmed hazard (kind, feet, the camera's word, would it be said and why), the one the guidance would say, every sighting of the newest frame |
-| `GET /environment/status`     | Fog / rain / low light / visibility                           |
 
-**Navigation & crossing**
+**Navigation**
 
 | Endpoint                 | Returns                                        |
 | ------------------------ | ---------------------------------------------- |
 | `GET /navigation/decide` | Obstacle-avoidance decision from current state |
 | `GET /navigation/walls`  | Wall detection from the current scan           |
-| `GET /crossing/status`   | Traffic-light state machine + crossing safety  |
-| `GET /crossing/safety`   | Short "is it safe to cross?" answer            |
 
 `GET /health`, `GET /api/status` for liveness. Full schema at `/docs`.

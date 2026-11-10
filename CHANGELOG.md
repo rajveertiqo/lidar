@@ -16,6 +16,16 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
 
 ### Removed
 - `shappe_guide.egg-info/`, build metadata committed by mistake (now ignored).
+- The previous dashboard, `/classic` (`templates/index.html`), and its `/test` alias: the
+  dashboard at `/` has everything used in testing.
+- Fog / rain detection (`environment_detection`, `/environment/*`): switched off since it
+  called a lit office "fog", and so never consulted.
+- The road-crossing state machine (`traffic_light_detection`, `/crossing/*`): nothing on the
+  device ever fed it. "Traffic light ahead" is unchanged (it comes from
+  `unified_navigation_system`).
+- Unused routes: `/camera/video_feed`, `/camera/stream/{sector}`, `/camera/seg_grid`,
+  `/camera/frame`, `/camera/frames/all`, and the `/guidance/ws` websocket. Unused settings
+  `LIDAR_TO_CAMERA`, `STREAM_FPS`, `TRAFFIC_SIGN_STALE_S`, `ENV_*`.
 
 ## [3.1.0] - 2026-11-10
 

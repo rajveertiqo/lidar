@@ -31,9 +31,6 @@ CAMERA_CAPTURE_FPS = (
 
 STREAM_MAX_WIDTH = 480  # px per sector feed
 STREAM_QUALITY = 50  # JPEG quality for the display stream
-STREAM_FPS = (
-    30  # the display stream's ceiling: every camera's picture is new each frame
-)
 
 STREAM_STALL_TIMEOUT_S = 5.0
 
@@ -211,16 +208,6 @@ GUIDANCE_CORRIDOR_HALF_WIDTH_MM = 300.0
 GUIDANCE_CORRIDOR_MAX_MM = 2500.0  # only applied within this range
 
 CAMERA_SECTORS = ("front", "right", "back", "left")
-LIDAR_TO_CAMERA = {
-    "front": "front",
-    "front_right": "right",
-    "right": "right",
-    "back_right": "back",
-    "back": "back",
-    "back_left": "left",
-    "left": "left",
-    "front_left": "front",
-}
 
 RADAR_ENABLED = True
 
@@ -952,16 +939,6 @@ TOF_CAMERA_MARGIN_PX = 40
 TOF_CAMERA_EDGE_DENSITY = (
     0.04  # edge pixels, as a share of the area: an outline is there
 )
-
-TRAFFIC_SIGN_STALE_S = 5.0
-
-ENV_TRUST_ENABLED = False  # off: it called a lit office and a dead camera "fog"
-
-ENV_ANALYZE_HZ = 0.2  # every 5 s
-
-ENV_IDENTITY_MIN_VISIBILITY = 0.45
-
-ENV_STALE_S = 30.0
 
 SPEECH_LOG_ENABLED = True
 SPEECH_LOG_TO_FILE = False  # True writes logs/speech_*.log for a field test

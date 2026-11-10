@@ -50,21 +50,14 @@
   contract: act on `notify.cue_seq` advancing, never on the poll — a consumer
   that speaks `path.instruction` every poll talks over itself several times a
   second, which is the bug the gates above exist to prevent.
-- **The environment -> camera-trust gate is wired but DISABLED**
-  (`ENV_TRUST_ENABLED = False`), and the reason is the detector rather than the
-  gate. Measured on live frames, `environment_detection` called a normal lit
-  office "fog" at visibility 0.300 and returned the same verdict for a black
-  dead camera — it is not measuring visibility. Validate it against a genuinely
-  fogged scene and a clear one before switching it on; fixing the two dead
-  cameras probably matters, since a half-black mosaic poisons any contrast
-  statistic over the whole frame. The analysis itself now runs on the detection
-  thread every 5 s, which it never did before — it was only ever computed
-  inside `GET /environment/status`.
-- **The traffic-light colour is never resolved**, so the crossing code only
-  reports whether a light was seen and always says wait. The branches that
-  acted on a colour, and the debug endpoint that injected one, were removed on
-  2026-10-01. `parse_traffic_light_class` returns UNKNOWN for every class a
-  bounding-box detector can emit, by design. Anyone adding colour
+- **No fog, rain or low-light detection.** The camera's labels are believed whatever the
+  weather. A detector existed but called a normal lit office "fog" and a black dead camera
+  the same, so it was switched off, and removed on 2026-11-10. A new one would need checking
+  against a genuinely fogged scene and a clear one before it gates anything.
+- **The traffic-light colour is never resolved**: the guidance only knows a light was
+  seen ("Traffic light ahead", from `unified_navigation_system`) and says wait. The branches
+  that acted on a colour were removed on 2026-10-01, and the unused crossing state machine
+  and its `/crossing` endpoints on 2026-11-10. Anyone adding colour
   classification: the value is a VEHICLE light, so red means cars are stopped
   (the removed code once had it the other way round), and nothing may say it is
   safe to cross on the camera alone.

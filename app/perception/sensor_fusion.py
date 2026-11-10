@@ -14,9 +14,6 @@ from app.config import (
     BEV_SHAPE_IN_HAZARDS,
     BEV_SHAPE_MATCH_DEG,
     BEV_SHAPE_MATCH_MM,
-    ENV_IDENTITY_MIN_VISIBILITY,
-    ENV_STALE_S,
-    ENV_TRUST_ENABLED,
     GUIDANCE_DANGER_MM,
     GUIDANCE_WARNING_MM,
     GUIDANCE_SAFE_MM,
@@ -257,28 +254,6 @@ def _top_detection(detections: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]
 
 _SHAPE_WORD = {"wall": "wall", "pole": "post"}
 
-
-def _camera_identity_trusted() -> Tuple[bool, str]:
-    """Can the camera's LABELS be believed right now?"""
-    if not ENV_TRUST_ENABLED:
-        return True, ""
-    try:
-        from app.perception.environment_detection import get_environment_state
-
-        env = get_environment_state() or {}
-    except Exception:
-        return True, ""
-
-    from app.core.freshness import is_fresh
-
-    last = env.get("last_update") or 0
-    if not is_fresh(last, ENV_STALE_S):
-        return True, ""
-
-    vis = float(env.get("visibility") or 1.0)
-    if vis >= ENV_IDENTITY_MIN_VISIBILITY:
-        return True, ""
-    return False, f"{env.get('condition', 'poor visibility')} (visibility {vis:.2f})"
 
 
 def _bev_shapes() -> List[Dict[str, Any]]:
@@ -745,7 +720,6 @@ def build_hazards(
     hazards: List[Dict[str, Any]] = []
 
     shapes = _bev_shapes()
-    cam_trusted, cam_untrusted_why = _camera_identity_trusted()
 
     ranges: Dict[str, tuple] = {}
     for _s in SECTORS:
@@ -773,7 +747,7 @@ def build_hazards(
         candidates = [
             d for d in seen[sector] if not has_lidar or _same_thing(d, dist_mm)
         ]
-        top = _top_detection(candidates) if cam_trusted else None
+        top = _top_detection(candidates)
         obj_name = top.get("class_name") if top else None
         obj_conf = float(top.get("confidence", 0.0)) if top else None
         has_camera = obj_name is not None
@@ -834,7 +808,6 @@ def build_hazards(
             "range_source": range_source,
             "glass_suspected": glass_suspected,
             "shape": shape,
-            "identity_withheld": "" if cam_trusted else cam_untrusted_why,
         }
         hazard["message"] = _phrase(hazard)
         hazards.append(hazard)

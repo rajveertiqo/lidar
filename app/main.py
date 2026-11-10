@@ -25,10 +25,9 @@ from app.sensors.radar_utils import start_radar, stop_radar
 from app.sensors.gyro_reader import start_gyro, stop_gyro
 from app.core.shared_state import reset_all_states
 from app.api import radar_router
-from app.api import environment_router, lidar_router, navigation_router, pi_camera_router
+from app.api import lidar_router, navigation_router, pi_camera_router
 from app.api import guidance_router
 from app.api import tof_router
-from app.api import road_crossing_router
 from app.api import map_router
 
 BASE_DIR = Path(__file__).resolve().parents[1]  # the project root
@@ -124,8 +123,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Blind Assistance System - LiDAR, Vision & Road Crossing",
-    description="Combined camera detection, LiDAR visualization, navigation,  environment detection, and road crossing assistance",
+    title="Shappe Guide",
+    description="A wearable navigation aid for blind pedestrians: LiDAR, radar, cameras and a ToF depth camera, one spoken sentence at a time",
     version=APP_VERSION,
     lifespan=lifespan,
 )
@@ -273,8 +272,6 @@ app.include_router(pi_camera_router.router)
 app.include_router(lidar_router.router)
 app.include_router(radar_router.router)
 app.include_router(navigation_router.router)
-app.include_router(environment_router.router)
-app.include_router(road_crossing_router.router)
 app.include_router(guidance_router.router)
 app.include_router(tof_router.router)
 app.include_router(map_router.router)
@@ -292,18 +289,6 @@ def _page(name: str) -> HTMLResponse:
 async def root():
     """The dashboard — rebuilt for field testing (templates/dashboard.html)."""
     return _page("dashboard.html")
-
-
-@app.get("/test", response_class=HTMLResponse)
-async def field_test_page():
-    """Same page as /: it grew out of the field-test page and replaces it."""
-    return _page("dashboard.html")
-
-
-@app.get("/classic", response_class=HTMLResponse)
-async def classic_dashboard():
-    """The previous dashboard, kept for comparison (templates/index.html)."""
-    return _page("index.html")
 
 
 @app.get("/health")
@@ -396,27 +381,15 @@ def health_check():
 
 @app.get("/api/status")
 async def api_status():
-    """Get overall system statphus"""
+    """Overall system status: which sensors are active, and the navigation decision."""
     from app.core.shared_state import get_fused_sensor_state
-    from app.perception.environment_detection import get_environment_state
-    from app.perception.traffic_light_detection import get_traffic_detector
 
     state = get_fused_sensor_state()
-    env_state = get_environment_state()
-    crossing = get_traffic_detector()
 
     return {
         "status": "running",
         "sensors": state.get("sensors_active", {}),
         "navigation": state.get("navigation", {}).get("current_action", "idle"),
-        "environment": {
-            "condition": env_state.get("condition", "unknown"),
-            "visibility": env_state.get("visibility", 1.0),
-        },
-        "crossing": {
-            "state": crossing.crossing_state.value,
-            "intersection_type": crossing.intersection_type,
-        },
     }
 
 
@@ -448,10 +421,6 @@ def _get_fallback_html():
                 <a href="/camera/stats">📷 Camera Stats</a>
                 <a href="/lidar/config">📡 LiDAR Config</a>
                 <a href="/navigation/status">🧭 Navigation</a>
-                <a href="/environment/status">🌤️ Environment</a>
-                <a href="/crossing/status" class="new">🚦 Road Crossing</a>
-                <a href="/crossing/safety" class="new">✅ Crossing Safety</a>
-                <a href="/crossing/lights" class="new">🚥 Traffic Lights</a>
                 <a href="/health">❤️ Health Check</a>
             </div>
         </div>

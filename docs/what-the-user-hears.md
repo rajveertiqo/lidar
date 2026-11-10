@@ -1,9 +1,9 @@
 # What the user hears
 
 > This describes the guidance as it is NOW (since 2026-09-24). Parts of
-> [The safety model](safety-model.md) and [Dashboard](dashboard.md) describe the older multi-layer voice
+> [The safety model](safety-model.md) describe the older multi-layer voice
 > (drift correction, surface guide, BEV awareness). The drift layer still runs
-> and is shown on `/classic`, but does not speak; the surface guide and the BEV
+> and is shown on the dashboard (`/guidance/drift`), but does not speak; the surface guide and the BEV
 > caution were removed on 2026-10-05, since nothing read their output.
 
 Everything spoken comes from one module, `app/guidance/simple_guidance.py`, from a

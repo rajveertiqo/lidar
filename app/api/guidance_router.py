@@ -240,19 +240,6 @@ async def get_status():
     return get_system_health()
 
 
-@router.websocket("/ws")
-async def guidance_websocket(websocket: WebSocket):
-    """Stream fused guidance ~5x/sec for a continuous delivery layer."""
-    await websocket.accept()
-    try:
-        while True:
-            # Off the event loop, as /fused: five times a second per client.
-            await websocket.send_json(await run_in_threadpool(fuse_guidance))
-            await asyncio.sleep(0.2)
-    except WebSocketDisconnect:
-        pass
-    except Exception as e:
-        print(f"[WARN] Guidance WebSocket error: {e}")
 
 
 @router.get("/latency")

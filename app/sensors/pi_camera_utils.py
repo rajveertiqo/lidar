@@ -44,13 +44,10 @@ from app.config import (
     SEG_TARGET_FPS,
     STREAM_MAX_WIDTH,
     STREAM_QUALITY,
-    STREAM_FPS,
     STREAM_STALL_TIMEOUT_S,
     CAMERA_CAPTURE_FPS,
     SEG_VIEW_FPS,
     SEG_VIEW_PRIORITY,
-    ENV_TRUST_ENABLED,
-    ENV_ANALYZE_HZ,
     SEG_ALWAYS,
     DETECTION_FRONT_EVERY_PASS,
     DETECTION_SIDE_MIN_INTERVAL_S,
@@ -1184,7 +1181,6 @@ def _detect(engine, gen):
                             fps_stats["detection_fps"] = (len(t) - 1) / (t[-1] - t[0])
 
                         update_camera_state({"inference_time": total_inference_ms})
-                _refresh_environment(mosaic)
 
             except Exception as e:
                 warn(f"[WARN] Inference error: {e}")
@@ -1212,24 +1208,6 @@ def _detect(engine, gen):
         _close_engine(engine, "Hailo engine")
 
 
-_last_env_analysis = 0.0
-
-
-def _refresh_environment(mosaic):
-    """Keep the fog/rain/darkness reading current, on the detection thread."""
-    global _last_env_analysis
-    if not ENV_TRUST_ENABLED:
-        return
-    now = time.time()
-    if (now - _last_env_analysis) < (1.0 / max(1e-3, ENV_ANALYZE_HZ)):
-        return
-    _last_env_analysis = now
-    try:
-        from app.perception.environment_detection import detect_environment_conditions
-
-        detect_environment_conditions(image=_to_bgr(mosaic))
-    except Exception as e:
-        print(f"[WARN] environment analysis failed: {e}")
 
 
 def _make_segmenter():
@@ -1492,37 +1470,6 @@ def live_jpeg(view: str, after: int = -1, wait_s: float = 1.0, width: int = STRE
     return jpeg, fid, shot, simulated
 
 
-def gen_frames(sector: str = "front"):
-    """MJPEG generator for one sector."""
-    if sector not in _VALID:
-        sector = "front"
-
-    last_id = -1
-    last_frame_at = time.monotonic()  # an interval only (F20)
-    while _streams_live():
-        with frame_lock:
-            mosaic = current_frame
-            fid = current_frame_id
-
-        if mosaic is not None and fid != last_id:
-            last_id = fid
-            last_frame_at = time.monotonic()
-            try:
-                quad = _sector_slice(mosaic, sector)
-                # The quadrant as captured: BGR when SWAP_RB, with no copy.
-                jpeg = _encode_jpeg_stream(quad, "BGR" if SWAP_RB else "RGB")
-                yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n")
-            except Exception as e:
-                print(f"[WARN] Stream encode error: {e}")
-        elif time.monotonic() - last_frame_at > STREAM_STALL_TIMEOUT_S:
-            print(
-                f"[WARN] Camera stream ({sector}) had no new frame for "
-                f"{STREAM_STALL_TIMEOUT_S:g}s — ending the stream"
-            )
-            return
-
-        # Pace to the (lower) display framerate — saves encode CPU and WiFi.
-        time.sleep(max(0.005, 1.0 / STREAM_FPS))
 
 
 def _seg_view_active():
@@ -1624,72 +1571,6 @@ def gen_seg_frames(sector: str = "front"):
         time.sleep(0.01 if sector == "front" else max(0.05, 1.0 / SEG_VIEW_FPS))
 
 
-def gen_seg_grid(cell=(240, 135)):
-    """MJPEG stream of a 2x2 grid (front/right/left/back) of the colorized segmentation — all four sectors in ONE stream."""
-    from app.sensors.seg_inference import colorize_class_map
-    from PIL import ImageDraw
-
-    global seg_view_active_ts, seg_front_view_ts
-
-    cw, ch = cell
-    last_id = -1
-    last_yield_at = time.monotonic()  # an interval only (F20)
-    while _streams_live():
-        eng = seg_engine
-        if eng is not None:
-            seg_view_active_ts = time.time()
-        seg_front_view_ts = time.time()
-        with frame_lock:
-            mosaic = current_frame
-            fid = current_frame_id
-
-        if eng is not None and mosaic is not None and fid != last_id:
-            last_id = fid
-            try:
-                cells = {}
-                for sector in _VALID:
-                    class_map = None
-                    if sector == "front":
-                        with seg_latest_lock:
-                            class_map = seg_latest["class_map"]
-                    else:
-                        class_map, _ = _seg_view_map(eng, sector, mosaic, fid)
-
-                    if class_map is None:
-                        tile = Image.new("RGB", (cw, ch))
-                    else:
-                        tile = Image.fromarray(
-                            colorize_class_map(class_map, eng.walkable_ids)
-                        ).resize((cw, ch))
-                    ImageDraw.Draw(tile).text(
-                        (5, 4), sector.upper(), fill=(255, 255, 255)
-                    )
-                    cells[sector] = np.asarray(tile)
-
-                top = np.hstack([cells["front"], cells["right"]])
-                bot = np.hstack([cells["left"], cells["back"]])
-                grid = np.vstack([top, bot])
-
-                buf = io.BytesIO()
-                Image.fromarray(grid).save(buf, format="JPEG", quality=STREAM_QUALITY)
-                yield (
-                    b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
-                    + buf.getvalue()
-                    + b"\r\n"
-                )
-                last_yield_at = time.monotonic()
-            except Exception as e:
-                print(f"[WARN] Seg-grid error: {e}")
-
-        # Same rule as the other two streams — see STREAM_STALL_TIMEOUT_S.
-        if time.monotonic() - last_yield_at > STREAM_STALL_TIMEOUT_S:
-            print(
-                f"[WARN] Seg-grid stream produced nothing for "
-                f"{STREAM_STALL_TIMEOUT_S:g}s — ending the stream"
-            )
-            return
-
-        time.sleep(max(0.05, 1.0 / SEG_VIEW_FPS))
 
 
 def get_camera_stats():
@@ -1732,15 +1613,6 @@ def get_camera_stats():
 def _streak_seconds(streak):
     s = streak.failing_s() if streak is not None else None
     return None if s is None else round(s, 1)
-
-
-def get_current_frame():
-    """The latest full mosaic in BGR order, or None before the first frame."""
-    with frame_lock:
-        mosaic = current_frame
-    if mosaic is None:
-        return None
-    return _to_bgr(mosaic)
 
 
 def get_frame_payload(sector: str) -> dict:

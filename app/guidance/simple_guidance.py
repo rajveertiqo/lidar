@@ -920,19 +920,13 @@ def _front_stamp(cam: Dict[str, Any]) -> float:
 
 
 def _camera_sees(cam: Dict[str, Any], now: float) -> bool:
-    """Front detections fresh, and the lens able to see (sensor_fusion's visibility gate — a fogged lens still emits labels)."""
+    """Front detections fresh and real (not the simulator's). A fog/visibility gate used to
+    sit here too; it was switched off for calling a lit office fog, and removed (2026-11-10)."""
     from app.core.freshness import is_fresh
 
     if not is_fresh(_front_stamp(cam), SIMPLE_CAMERA_FRESH_S, now):
         return False
-    if ((cam or {}).get("front") or {}).get("simulated"):
-        return False
-    try:
-        from app.perception.sensor_fusion import _camera_identity_trusted
-
-        return bool(_camera_identity_trusted()[0])
-    except Exception:
-        return True
+    return not ((cam or {}).get("front") or {}).get("simulated")
 
 
 def _object_height_m(cls: str) -> float:

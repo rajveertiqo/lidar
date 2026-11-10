@@ -955,6 +955,16 @@ WALK_RECORD_MAX_MB = (
 # (compressed, on the card).
 WALK_RECORD_KEEP_FILES = 30
 WALK_RECORD_KEEP_MB = 1000
+# A tester's "Wrong" or "Missed" (/guidance/mark, the dashboard or the phone) saves a clip:
+# the guidance ticks from WALK_CLIP_BEFORE_S before the mark to WALK_CLIP_AFTER_S after,
+# in the recording's format, as logs/walks/clip-*.jsonl.gz — what the sensors saw, for
+# tools/walk_replay.py, recording or not (2026-11-10: the 17:17 false glass could not be
+# replayed, nothing was recorded). The last ticks are kept in memory for it, ~0.3 ms and
+# ~10 kB each.
+WALK_CLIP_ON_MARK = True
+WALK_CLIP_BEFORE_S = 10.0
+WALK_CLIP_AFTER_S = 2.0
+WALK_CLIP_KEEP_FILES = 50
 
 SPEECH_LOG_KEEP_RUNS = 200
 
@@ -1305,7 +1315,9 @@ SIMPLE_VEHICLE_CAREFUL_MISS_M = 3.0
 SIMPLE_VEHICLE_RANGE_MATCH = 2.0
 SIMPLE_VEHICLE_SIDE_MARGIN = 0.05 * _PER_W
 
-SIMPLE_SETTLE_S = 2.0  # a change about the SAME hazard that is not more urgent (6.0 until 2026-11-09)
+SIMPLE_SETTLE_S = (
+    2.0  # a change about the SAME hazard that is not more urgent (6.0 until 2026-11-09)
+)
 # ...but the way out flipping left <-> right while the side given still has room keeps the old
 # 6 s: the walk policy can alternate near a post just off centre, and the advice given is
 # still good (turn review, 2026-11-09). A side that CLOSED is said at once (_advice_closed).

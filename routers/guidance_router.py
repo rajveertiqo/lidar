@@ -1,5 +1,6 @@
 """Fused guidance API routes."""
 
+import os
 import asyncio
 import time
 from pathlib import Path
@@ -302,13 +303,23 @@ async def tester_mark(payload: dict):
         detail=f"{note + ' | ' if note else ''}last said: {last}",
     )
     test_console.mark(kind, f"{note + ' | ' if note else ''}last said: {last}")
+    clip = None
     try:
         from utils.walk_recorder import get_recorder
 
-        get_recorder().mark(kind, f"{note + ' | ' if note else ''}last said: {last}")
+        rec = get_recorder()
+        rec.mark(kind, f"{note + ' | ' if note else ''}last said: {last}")
+        # What the sensors saw around it, for tools/walk_replay.py (2026-11-10).
+        if kind in ("wrong", "missed"):
+            clip = rec.clip(kind, f"{note + ' | ' if note else ''}last said: {last}")
     except Exception:
         pass
-    return {"ok": True, "kind": kind, "last_said": last}
+    return {
+        "ok": True,
+        "kind": kind,
+        "last_said": last,
+        "clip": os.path.join("logs", "walks", os.path.basename(clip)) if clip else None,
+    }
 
 
 @router.get("/record")

@@ -126,6 +126,10 @@ def decide(scene, blind=True, ghosts=0.0, rnd=None):
     publish(scene, blind, ghosts, rnd)
     wp._last_turn.update(direction=None, at=0.0)
     wp._last_measured.clear()
+    # Each scene stands alone (as in glass_sim): the near-echo steadiness check otherwise
+    # judged a scene's pane against the radar frames of the ~150 scenes before it, and the
+    # verdict turned on how fast the run went (2026-11-10).
+    wp._near_frames.clear()
     lidar, radar = get_lidar_state(), get_radar_state()
     walk = wp.decide(lidar, radar)
     return walk, sg.decide(walk, lidar, time.time(), radar_state=radar, camera_state={})

@@ -188,7 +188,7 @@ def _record(
         from utils.walk_recorder import get_recorder
 
         rec = get_recorder()
-        if rec.active:
+        if rec.wants_ticks:  # recording, or keeping the last seconds for a mark
             rec.tick(
                 now,
                 mono,

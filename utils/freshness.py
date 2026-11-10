@@ -53,20 +53,27 @@ def reading_is_current(
     now: Optional[float] = None,
     stamp_key: str = "last_update",
 ) -> bool:
-    """is_fresh(state[stamp_key]) AND, when the store recorded when it received the reading (RECEIVED_KEY, monotonic), that it did so within `limit_s`."""
+    """When the store recorded when it received the reading (RECEIVED_KEY, monotonic, its
+    capture age already taken off): that it did so within `limit_s` — the wall clock does
+    not decide. Without one: is_fresh(state[stamp_key]).
+
+    Until 2026-11-10 the wall stamp had to pass too, and a wall clock stepped FORWARD (no RTC
+    battery: NTP syncing when the phone's hotspot connects, mid-walk) made a 50 ms scan
+    read 120 s old: "Guidance stopped, use your cane", the LiDAR healthy (timing review).
+    A clock stepped back is the same: the receive time rules wherever there is one."""
     if not isinstance(state, dict):
-        return False
-    if not is_fresh(state.get(stamp_key), limit_s, now):
         return False
     mono = state.get(RECEIVED_KEY)
     if mono is None:
-        return True
+        return is_fresh(state.get(stamp_key), limit_s, now)
     if (
         isinstance(mono, bool)
         or not isinstance(mono, (int, float))
         or not math.isfinite(mono)
     ):
         return False
+    if age_s(state.get(stamp_key), now) is None:
+        return False  # no capture stamp at all: no reading
     return time.monotonic() - float(mono) <= float(limit_s)
 
 

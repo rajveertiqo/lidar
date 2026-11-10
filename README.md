@@ -1570,6 +1570,24 @@ Kept because each one explains why the code is the way it is.
      the middle. Clearing it there would trust the box's predicted path in the middle of the
      picture, where a noisy one could clear a car coming straight on.
 
+9. **Evidence on every mark, and a clock that can jump (2026-11-10).**
+   - **"Wrong" and "Missed" save what the sensors saw.** The guidance ticks of the last
+     ~12 s are kept in memory (`WALK_CLIP_ON_MARK`, ~0.3 ms and ~10 kB a tick). A tester's
+     Wrong or Missed (`/guidance/mark`: the dashboard, the phone) writes those from
+     `WALK_CLIP_BEFORE_S` (10 s) before it to `WALK_CLIP_AFTER_S` (2 s) after, as
+     `logs/walks/clip-<time>-<kind>.jsonl.gz`, the recording's own format; the mark's reply
+     names the file. `tools/walk_replay.py <clip>` replays it through the current code.
+     The newest `WALK_CLIP_KEEP_FILES` (50) are kept. Until now a false alarm on the rig
+     could only be rebuilt from screenshots (the 17:17 glass, 2026-11-09).
+   - **A wall clock stepped forward is not a dead LiDAR.** With no RTC battery, the Pi's
+     clock can jump when NTP syncs mid-walk (the phone's hotspot connecting). A 50 ms scan
+     then read 120 s old, and the wearer heard "Guidance stopped, use your cane".
+     `freshness.reading_is_current` now goes by the time the store received the reading
+     (monotonic, its capture age taken off) wherever there is one.
+   - **The scene hunt is repeatable.** It now clears the near-echo history per scene, as
+     glass_sim does. Each pane had been judged against the radar frames of the ~150 scenes
+     before it, and the verdict turned on how fast the run went.
+
 ## Walking the drift layer without leaving the desk
 
 ```bash

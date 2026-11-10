@@ -2,6 +2,7 @@
 run with venv/bin/python -m unittest tools.test_logic_regressions."""
 
 import math
+import os
 import time
 import unittest
 import unittest.mock
@@ -337,6 +338,58 @@ class AfternoonFixTests(unittest.TestCase):
             text = sg._sentence(True, True, False, False, side, obj="Person")
             self.assertEqual(text, want)
             self.assertIn(text, sg.ALLOWED)
+
+
+class ClockAndClipTests(unittest.TestCase):
+    """2026-11-10: a wall clock stepped forward is not a dead LiDAR; a tester's mark saves
+    what the sensors saw."""
+
+    def _scan(self):
+        import random
+        from tools import scene_hunt as sh
+        from utils.shared_state import get_lidar_state
+
+        sh.publish({"left": 900, "right": None, "ahead": 2000, "posts": [], "glass": None}, True)
+        return get_lidar_state()
+
+    def test_a_forward_clock_step_is_not_guidance_stopped(self):
+        lidar = self._scan()
+        stepped = time.time() + 120.0  # NTP sets the clock forward mid-walk
+        self.assertIsNone(sg._not_updating(lidar, stepped))
+        self.assertTrue(sg._fresh(lidar, stepped))
+
+    def test_a_scan_received_long_ago_is_still_stale(self):
+        lidar = dict(self._scan())
+        lidar["received_mono"] = time.monotonic() - 5.0
+        self.assertIsNotNone(sg._not_updating(lidar, time.time()))
+        self.assertFalse(sg._fresh(lidar, time.time()))
+
+    def test_wrong_saves_a_replayable_clip(self):
+        import gzip
+        import json
+        import tempfile
+        from utils import walk_recorder as wr
+
+        with tempfile.TemporaryDirectory() as tmp, unittest.mock.patch.object(
+            wr, "WALK_RECORD_DIR", tmp
+        ), unittest.mock.patch.object(wr, "WALK_CLIP_AFTER_S", 0.1):
+            rec = wr.WalkRecorder()
+            m0 = time.monotonic()
+            for i in range(30):
+                rec.tick(time.time(), m0 - 1.5 + i * 0.05, {"lidar": {"i": i}}, {"speak": False})
+            path = rec.clip("wrong", "a test")
+            for i in range(2):  # after the mark
+                rec.tick(time.time(), time.monotonic() + 0.01 * (i + 1), {"lidar": {"i": 100 + i}}, {})
+            for _ in range(50):
+                if os.path.exists(path):
+                    break
+                time.sleep(0.05)
+            lines = [json.loads(x) for x in gzip.open(path, "rt")]
+        marks = [i for i, x in enumerate(lines) if "mark" in x]
+        self.assertEqual(sum(1 for x in lines if "in" in x), 32)
+        self.assertEqual(len(marks), 1)
+        self.assertEqual(lines[marks[0]]["mark"], "wrong")
+        self.assertTrue(all("in" in x for x in lines[marks[0] + 1:]))  # only after-ticks follow
 
 
 if __name__ == "__main__":

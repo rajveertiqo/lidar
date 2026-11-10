@@ -213,6 +213,20 @@ def _record(
         _warn("walk recorder", e)
 
 
+def is_urgent(simple: Dict[str, Any]) -> bool:
+    """Whether a sentence cuts into the one playing (and gets the urgent tone): a block, a
+    vehicle or mover coming at the wearer, "Guidance stopped", and a fall in front ("Stairs
+    down in front, stop", "Drop in front, stop": 2026-11-10, they waited their turn)."""
+    from app.guidance.simple_guidance import _GROUND_STOP
+
+    return simple.get("rule") in (
+        "blocked",
+        "vehicle_approaching",
+        "mover_approaching",
+        "offline",  # "Guidance stopped, use your cane" cuts in (2026-10-23)
+    ) or (simple.get("instruction") or "") in _GROUND_STOP
+
+
 def _timing(
     tick_started: float,
     admitted_at: float,
@@ -650,12 +664,7 @@ def get_unified_guidance() -> Dict[str, Any]:
         _warn("obstacle list", e)
 
     instruction = simple.get("instruction") or ""
-    urgent = simple.get("rule") in (
-        "blocked",
-        "vehicle_approaching",
-        "mover_approaching",
-        "offline",  # "Guidance stopped, use your cane" cuts in (2026-10-23)
-    )
+    urgent = is_urgent(simple)
 
     say = bool(simple.get("speak"))
     notify_seq = simple.get("cue_seq", 0)

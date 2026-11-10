@@ -329,6 +329,12 @@ RADAR_AGREE_MM = 400
 GLASS_DOOR_MAX_BEARING_DEG = 45.0  # laser returns matching a centred echo within this of ahead are the wall beside a pane; corridor side walls echo at ~62 deg
 GLASS_DOOR_WALL_DEPTH_MM = 200.0  # a return farther round that still lies this close to the echo's distance straight ahead is the wall the pane sits in, not a side wall
 GLASS_LASER_BEYOND_MM = 250.0  # a laser return farther than an echo by more than this cannot be what the radar heard (radar/laser timing, board mount offset)
+# No part of a wall is nearer than its perpendicular distance: a side wall the laser has
+# found (walk_policy._side_walls_mm), L mm to the side, cannot explain an echo nearer than L
+# less this (a board's place on the ring, ~50 mm, and range error). 2026-11-10: in a 0.9-1.8 m
+# passage the side walls "explained" a pane across it 1.5-3 ft ahead, and it said "Walk
+# straight": GLASS_LASER_BEYOND_MM let a wall up to 250 mm farther than the echo explain it.
+GLASS_SIDE_WALL_NEAREST_TOL_MM = 100.0
 GLASS_BOARD_VIEW_MARGIN_DEG = 10.0  # a board hears a little past the edge of its beam
 GLASS_SAME_ECHO_MM = (
     60.0  # two front boards ranging within this of each other heard the same thing

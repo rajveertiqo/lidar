@@ -16,6 +16,7 @@ from app.config import (
     GLASS_GRAZING_DEG,
     GLASS_LASER_BEYOND_MM,
     GLASS_SAME_ECHO_MM,
+    GLASS_SIDE_WALL_NEAREST_TOL_MM,
     GUIDANCE_CONE_CENTRES,
     GUIDANCE_SECTORS,
     LIDAR_BLIND_ARCS_DEG,
@@ -444,9 +445,10 @@ def _facing(angles: List[Any], dists: List[Any], i: int) -> bool:
 def _laser_explains(
     lidar_state: Dict[str, Any], bearing: float, echo_mm: float, widen_deg: float = 0.0
 ) -> bool:
-    """Does the laser see, inside this board's view (widened by `widen_deg`), something the echo could have come off — at its range, or nearer, and not seen edge-on?"""
+    """Does the laser see, inside this board's view (widened by `widen_deg`), something the echo could have come off — at its range, or nearer, and not seen edge-on, and not a side wall that lies farther off than the echo (_wall_too_far)?"""
     angles, dists = _laser_points(lidar_state)
     half = RADAR_BEAM_H_DEG / 2.0 + GLASS_BOARD_VIEW_MARGIN_DEG + widen_deg
+    side_lat: Optional[Dict[bool, float]] = None
     for i, (a, d) in enumerate(zip(angles, dists)):
         if (
             isinstance(d, (int, float))
@@ -454,7 +456,10 @@ def _laser_explains(
             and abs((float(a) - bearing + 180.0) % 360.0 - 180.0) <= half
             and not _grazing(angles, dists, i)
         ):
-            return True
+            if side_lat is None:
+                side_lat = _side_walls_mm(angles, dists)
+            if not _wall_too_far(a, d, side_lat, echo_mm):
+                return True
     return False
 
 
@@ -530,6 +535,16 @@ def _on_side_wall(a: float, d: float, side_lat: Dict[bool, float]) -> bool:
     )
 
 
+def _wall_too_far(a: float, d: float, side_lat: Dict[bool, float], echo_mm: float) -> bool:
+    """Is the laser return (a, d) on a side wall that lies too far to the side to have sent an
+    echo from `echo_mm`? No part of a wall is nearer than its perpendicular distance
+    (GLASS_SIDE_WALL_NEAREST_TOL_MM less, for the board's place on the ring and range error)."""
+    if not _on_side_wall(a, d, side_lat):
+        return False
+    signed = (float(a) + 180.0) % 360.0 - 180.0
+    return echo_mm < side_lat[signed > 0] - GLASS_SIDE_WALL_NEAREST_TOL_MM
+
+
 def _side_wall_echo(
     angles: List[float],
     dists: List[float],
@@ -545,7 +560,11 @@ def _side_wall_echo(
             continue
         if not any(abs((float(a) - b + 180.0) % 360.0 - 180.0) <= half for b in bearings):
             continue
-        if _on_side_wall(a, d, side_lat) and not _grazing(angles, dists, i):
+        if (
+            _on_side_wall(a, d, side_lat)
+            and not _wall_too_far(a, d, side_lat, e)
+            and not _grazing(angles, dists, i)
+        ):
             return True
     return False
 
@@ -798,12 +817,42 @@ def read_direction(
         and _front_view_blocked(lidar_state)
     )
 
+    # A side board's 65 deg beam reaches round to a wall AHEAD at its edge, ~1.86 x the front's
+    # distance: facing a flat wall 1.0-1.5 ft off in open space, both sides read 1.9-2.8 ft,
+    # under the turn floor, and it said "turn around" with the laser seeing the right wide open
+    # (turn review; fixed 2026-11-10). An echo the laser explains in that board's view, while
+    # the laser's own line that way sees WALK_GLASS_GAP_FT past it, is that surface off the
+    # line: the side's room is its next echo, or none. Not where the laser is blind that way
+    # (the wearer's body): there the radar is all there is, and a person standing there would
+    # be dropped along with the wall.
+    side_off_line = False
+    if (
+        direction in ("left", "right")
+        and radar_measured
+        and not lidar_blind(direction)
+        and isinstance(lidar_ft, (int, float))
+    ):
+        echoes = sorted(_board_echoes(radar_state, direction, all_peaks=True), key=lambda be: be[1])
+        kept = [
+            e
+            for b, e in echoes
+            if not (
+                lidar_ft - e / MM_PER_FT >= WALK_GLASS_GAP_FT
+                and _laser_explains(lidar_state, b, e)
+            )
+        ]
+        if echoes and len(kept) < len(echoes):
+            if kept:
+                radar_ft = round(min(kept) / MM_PER_FT, 2)
+            else:
+                side_off_line = True
+
     # Where the laser cannot see down the line itself (LIDAR_BLIND_ARCS_DEG: behind, the
     # wearer's body), an echo the laser explains ON that line is not off-axis: a person 2.3 ft
     # directly behind, seen only by their edge at the blind arc's border, was dismissed and
     # "…, turn around" said into them (turn review, 2026-11-09). One the laser explains
     # beside the line (a corridor's walls at the back boards' beam edges) still is.
-    radar_off_axis = (
+    radar_off_axis = side_off_line or (
         radar_measured
         and not _radar_drives_block(radar_state, direction, radar_ft, arc_corroborates)
         and not (lidar_blind(direction) and _echo_on_line(lidar_state, direction, radar_ft))

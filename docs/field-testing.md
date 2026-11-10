@@ -30,7 +30,8 @@ at (`front 3.6 ft`: a block should come near `WALK_BLOCK_FT`, 4 ft). The test co
 and worst cases, urgent sentences apart. The audio path after that (PipeWire, a Bluetooth
 earpiece waking) is not in these figures: time it once by ear against the console.
 
-**The urgent tone.** "Blocked…", "Vehicle approaching…" and "Guidance stopped…" start with a
+**The urgent tone.** "Blocked…", "Vehicle approaching…", "Guidance stopped…" and the falls
+("Stairs down in front, stop", "Drop in front, stop") start with a
 0.1 s tone (`PI_VOICE_URGENT_TONE`), on the Pi and on the dashboard's phone voice (after one
 tap on the page), so the wearer can react before the words are understood.
 

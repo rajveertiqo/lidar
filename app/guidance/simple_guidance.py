@@ -3325,6 +3325,18 @@ class _SensorNotice:
             self._losses += 1
         self._since = None
 
+    def unsay(self, text: str) -> None:
+        """`text` was cut off by a block before it was heard (2026-11-10): it is told again,
+        with no new wait, the next time the path is clear and it still holds."""
+        if text == self._off and not self.announced_ok:
+            self.announced_ok = True
+            self._losses = max(self._losses - 1, 0)
+        elif text == self._on and self.announced_ok:
+            self.announced_ok = False
+        else:
+            return
+        self._since = float("-inf")
+
     def state(self) -> Dict[str, Any]:
         return {
             "announced": "on" if self.announced_ok else "off",
@@ -3491,6 +3503,10 @@ class _Gate:
         # The sentence the latest cue_seq counted: guidance OR a status notice.
         self._counted: str = ""
         self._status_busy_until: float = 0.0
+        self._status: str = ""  # the last status notice admitted
+        # A status notice a block cut off before it was heard, for guidance() to tell again
+        # (take_cut_status).
+        self._cut_status: str = ""
 
     def admit(
         self,
@@ -3588,7 +3604,8 @@ class _Gate:
             # A block cuts into a guidance sentence like a vehicle does (2026-10-21):
             # waiting out a 2.5 s side-wall sentence cost ~3 m at walking pace, inside the
             # 4 ft block distance. Not into a vehicle or mover warning, which must be heard
-            # whole, nor into a status notice (~1 s, said once, on a clear path only).
+            # whole. Into a status notice too (2026-11-10: a post 1 m ahead waited 1.1 s
+            # behind "Power low"); the notice it cut is told again (take_cut_status).
             guidance_playing = self._has_spoken and now < self._busy_until
             # Any hazard cuts into a level-0 sentence ("Walk straight"): it warns of nothing,
             # and waiting it out cost ~0.8 s of walking toward the thing (2026-11-09).
@@ -3603,7 +3620,6 @@ class _Gate:
                 and not over_clear
                 and (
                     level < _BLOCKED
-                    or now < self._status_busy_until
                     or (guidance_playing and self._spoken in _APPROACHING)
                 )
             ):
@@ -3701,13 +3717,19 @@ class _Gate:
                 f"status — waiting "
                 f"{busy_until - now:.1f}s for the last sentence to end",
             )
+        if now < self._status_busy_until and self._status != text:
+            self._cut_status = self._status  # "Guidance stopped" cut it off
         self._status_busy_until = now + _airtime(text)
+        self._status = text
         self._counted = text
         return True, self.next_seq(), ""
 
     def _commit(
         self, text: str, level: int, now: float, episode: Optional[int] = None
     ) -> Tuple[bool, int, str]:
+        if now < self._status_busy_until:  # said over a status notice: the voice cuts it
+            self._cut_status = self._status
+            self._status_busy_until = now
         same = text == self._spoken and (episode is None or episode == self._episode)
         self._repeats = self._repeats + 1 if same else 0
         self._spoken, self._level, self._spoken_at = text, level, now
@@ -3728,6 +3750,11 @@ class _Gate:
         """The situation the last sentence described has eased to `level`."""
         if 0 <= level < self._level:
             self._level = level
+
+    def take_cut_status(self) -> str:
+        """The status notice a sentence cut off before it was heard, once ("" if none)."""
+        cut, self._cut_status = self._cut_status, ""
+        return cut
 
     def forget_pending(self) -> None:
         """Drop the candidate waiting out the debounce, as an empty poll does."""
@@ -4146,6 +4173,7 @@ def guidance(
             )
         if raw["rule"] in ("waiting", "stale"):
             quiet = quiet if (hold and not through_hold) else raw["reason"]
+        _tell_cut_status_again(_gate.take_cut_status())
         announced = _gate.counted
         shadow = (
             _shadow.update((raw.get("mover") or {}).get("would_say"), now)
@@ -4350,6 +4378,18 @@ def voice_failed(seq: int, text: str) -> bool:
         return True
     finally:
         _lock.release()
+
+
+def _tell_cut_status_again(text: str) -> None:
+    """A status notice a block cut off before it was heard (_Gate.take_cut_status): its
+    notifier tells it again the next time the path is clear. "Ready" needs nothing: the
+    block itself says guidance has begun."""
+    if not text:
+        return
+    for notifier in (_glass, _camera, _power, _heat):
+        notifier.unsay(text)
+    if text == TRAFFIC_LIGHT_AHEAD:
+        _world.crossing_told = False
 
 
 def reset() -> None:

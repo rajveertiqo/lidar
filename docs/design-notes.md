@@ -331,3 +331,45 @@ Kept because each one explains why the code is the way it is.
     Replayed with it, the 10:23 clip says "Wall ahead" on 247 of its 252 ticks, against 215
     "Obstacle in front" recorded. Worn, nothing level is that near under the ToF; tests check
     that four worn scenes find no such surface. `/tof/live` says when it thinks it is set down.
+
+13. **A block waited behind a status notice (2026-11-10).** A status notice ("Power low",
+    "Glass sensor off", "Camera on", "Traffic light ahead") is said only on a clear path, and a
+    block that came while it played waited for its airtime: a post 1 m ahead, appearing 0.1 s
+    into "Power low", was warned of 1.1 s later, against 0.2 s with nothing playing (~1.2 m at
+    walking pace, inside the 4 ft block distance). Notices were left uncut on purpose, as they
+    are said once. Now a block cuts into a notice as it does into any guidance sentence
+    (`_Gate.admit`), and the notice it cut is told again the next time the path is clear
+    (`_Gate.take_cut_status`, `_SensorNotice.unsay`), unless what it reported has already
+    ended: power back before "Power low" was heard means nothing is told. A calmer sentence
+    ("Wall ahead") still waits for the notice. Separately, "Stairs down in front, stop" and
+    "Drop in front, stop" were not urgent: once spoken (`TOF_HAZARDS_SPEAK`) they would have
+    waited for the sentence playing, even a 2.5 s one. They now cut in with the urgent tone
+    (`unified_guidance.is_urgent`).
+
+14. **A pane across a narrow passage (2026-11-10).** A pane spanning a whole passage, with no
+    frame the laser sees, said "Walk straight" 1.5-3 ft from it in passages 0.9-1.8 m wide. Each
+    front board's echo was "explained" by the side walls: `_laser_explains` takes any laser
+    return in a board's view from 400 mm nearer to `GLASS_LASER_BEYOND_MM` (250) farther than
+    the echo, and in a narrow passage the walls fill that window. But no part of a wall is
+    nearer than its perpendicular distance: a side wall the laser has found
+    (`_side_walls_mm`) L mm to the side no longer explains an echo nearer than L less
+    `GLASS_SIDE_WALL_NEAREST_TOL_MM` (100: a board's place on the ring, ~50 mm, and range
+    error), in `_laser_explains` and `_side_wall_echo` (`_wall_too_far`). A 1.8 m passage now
+    says "Blocked by glass" at 2.6 ft (was "Walk straight"), a 0.9 m nook with walls 1.2 / 2.0
+    ft at 1.5 ft. The glass scenes, the scene hunt's false glass (5 of 1500, 5 with radar
+    ghosts) and its mirror check (6 of 400) are unchanged. Left as a limit: a pane farther
+    than the walls are to the side (see Known limits).
+
+15. **Facing a wall close up, the open side was missed (2026-11-10).** In open space, a flat
+    wall 1.0-1.5 ft ahead gave "Blocked by wall, turn around", and an inside corner (a wall on
+    the left, the right open) "Stop, no clear way". Each side board's 65 deg beam hears the
+    wall ahead at its edge, ~1.86 x the front's distance, and `fuse` took that echo as the
+    side's room: 1.9-2.8 ft, under the turn floor (front + `WALK_TURN_MARGIN_FT`). The laser's
+    own side line (+-5 deg) saw the right open to 39 ft. Now, for a side the laser can see, an
+    echo the laser explains in that board's view (`_laser_explains`) while its line that way
+    sees `WALK_GLASS_GAP_FT` past it is that surface off the line: the side's room is the
+    board's next echo, or none (`read_direction`, `side_off_line`). Both cases now say "turn
+    right". Not on the left, the LiDAR's blind arc (the wearer's body): there the radar is all
+    there is, and a person standing there would be dropped with the wall, so facing a close
+    wall with only the left open still says "turn around". The scene hunt never sends a turn
+    toward a side with under 2 ft of room, before or after.

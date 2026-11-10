@@ -140,19 +140,21 @@ def lidar_state(segments):
 
 
 def radar_state(echoes):
-    """echoes: {board key: mm or None}; every board online, deaf past its reach."""
+    """echoes: {board key: mm, a list of mm (every echo it lists), or None}; every board
+    online, deaf past its reach."""
     from app import config as c
 
     now = time.time()
     secs = {}
     for key in ("deg030", "deg090", "deg150", "deg210", "deg270", "deg330"):
         d = echoes.get(key)
-        d = None if d is None or d > c.RADAR_END_MM else d
+        heard = d if isinstance(d, (list, tuple)) else [] if d is None else [d]
+        heard = sorted(e for e in heard if e <= c.RADAR_END_MM)
         secs[key] = {
             "online": True,
             "degraded": False,
-            "min_dist": d,
-            "peaks_mm": [] if d is None else [d],
+            "min_dist": heard[0] if heard else None,
+            "peaks_mm": heard,
             "last_update": now,
         }
     for card, keys in (
@@ -214,6 +216,35 @@ def scenes():
             + wall_across(d, DOOR_HALF_MM)
             + back_wall(),
             {"deg030": min(d, lat * BEAM_EDGE), "deg330": min(d, lat * BEAM_EDGE)},
+        )
+    # A pane across a narrow passage, its whole width (no frame the laser sees): each front
+    # board hears the pane and its own side's wall. Until 2026-11-10 the walls "explained" the
+    # pane's echo, and it said "Walk straight" (walk_policy._wall_too_far).
+    for lat_l, lat_r, ft in ((914.0, 914.0, 2.0), (914.0, 914.0, 2.6), (366.0, 600.0, 1.5)):
+        d = ft * FT
+        add(
+            "glass",
+            f"pane across a passage, walls {lat_l / FT:.1f} / {lat_r / FT:.1f} ft, {ft} ft",
+            side_wall("left", lat_l) + side_wall("right", lat_r) + back_wall(),
+            {"deg330": [d, lat_l * BEAM_EDGE], "deg030": [d, lat_r * BEAM_EDGE]},
+        )
+    # Farther than the walls are to the side, a wall can echo from the pane's range too: the
+    # radar's range cannot tell them apart (docs/known-limits.md).
+    for lat_l, lat_r, ft in ((914.0, 914.0, 3.0), (600.0, 366.0, 1.8), (457.0, 457.0, 1.8)):
+        d = ft * FT
+        add(
+            "limit",
+            f"pane across a passage, walls {lat_l / FT:.1f} / {lat_r / FT:.1f} ft, {ft} ft",
+            side_wall("left", lat_l) + side_wall("right", lat_r) + back_wall(),
+            {"deg330": [d, lat_l * BEAM_EDGE], "deg030": [d, lat_r * BEAM_EDGE]},
+        )
+    # The same passages with no pane must stay clear.
+    for lat_l, lat_r in ((914.0, 914.0), (366.0, 600.0), (600.0, 366.0), (457.0, 457.0)):
+        add(
+            "clear",
+            f"passage, walls {lat_l / FT:.1f} / {lat_r / FT:.1f} ft, no pane",
+            side_wall("left", lat_l) + side_wall("right", lat_r) + back_wall(),
+            {"deg330": [lat_l - 50.0, lat_l * BEAM_EDGE], "deg030": [lat_r - 50.0, lat_r * BEAM_EDGE]},
         )
     for ft in (2.0, 4.0, 6.0, 9.5, 12.0):
         d = ft * FT

@@ -16,6 +16,23 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   "Camera dim", and `label_report.py` scores labels in good light and dim light apart.
   Nothing said changes.
 
+### Fixed
+- **A block warning no longer waits behind a status notice.** A post appearing while
+  "Power low" (or "Glass sensor off", "Camera on", ...) was being said was warned of 1.1 s
+  late; now 0.2 s, as with nothing playing. The notice it cut is said again once the path is
+  clear.
+- "Stairs down in front, stop" and "Drop in front, stop" now cut in as urgent, with the
+  urgent tone, once the ToF's ground warnings are spoken.
+- **A glass pane across a narrow passage** (no frame the laser sees) is now found once it
+  is nearer than the passage's walls: a 1.8 m passage says "Blocked by glass" at 2.6 ft, where
+  it said "Walk straight". A side wall can no longer "explain" an echo nearer than itself
+  (`GLASS_SIDE_WALL_NEAREST_TOL_MM`). Farther panes in narrow passages are still a known
+  limit.
+- **Facing a wall close up, an open right is offered.** A flat wall 1.0-1.5 ft ahead in
+  open space said "Blocked by wall, turn around", and an inside corner "Stop, no clear way":
+  the side radar heard the wall ahead at its beam's edge. Both now say "turn right". The left
+  (the LiDAR's blind side) is unchanged.
+
 ### Changed
 - **The app is one package, `app/`**, split by job: `app/sensors/` (hardware), `app/perception/`
   (what is around, the walk decision), `app/guidance/` (what is said), `app/core/` (shared

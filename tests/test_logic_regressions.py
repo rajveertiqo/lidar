@@ -769,5 +769,162 @@ class CameraLightTests(unittest.TestCase):
         self.assertRegex(text, r"dim\s+1\s+0 \(  0%\)")
 
 
+
+class PaneAcrossANarrowPassageTests(unittest.TestCase):
+    """2026-11-10: a pane across a whole narrow passage (no frame the laser sees) said "Walk
+    straight": its echo was "explained" by side walls lying farther off than it. No part of a
+    wall is nearer than its perpendicular distance (walk_policy._wall_too_far)."""
+
+    def _front(self, lat_l, lat_r, echo_l, echo_r):
+        from tools.sim import glass_sim as gs
+
+        walk_policy._near_frames.clear()
+        segs = gs.side_wall("left", lat_l) + gs.side_wall("right", lat_r) + gs.back_wall()
+        radar = gs.radar_state({"deg330": echo_l, "deg030": echo_r})
+        return walk_policy.read_direction(gs.lidar_state(segs), radar, "front")
+
+    def test_a_pane_nearer_than_the_walls_is_glass(self):
+        from tools.sim import glass_sim as gs
+
+        for lat_l, lat_r, ft in ((914.0, 914.0, 2.0), (914.0, 914.0, 2.6), (366.0, 600.0, 1.5)):
+            d = ft * gs.FT
+            f = self._front(lat_l, lat_r, [d, lat_l * gs.BEAM_EDGE], [d, lat_r * gs.BEAM_EDGE])
+            with self.subTest(walls=(lat_l, lat_r), ft=ft):
+                self.assertTrue(f["glass"])
+                self.assertAlmostEqual(f["distance_ft"], ft, delta=0.3)
+
+    def test_the_walls_own_echoes_are_not_glass(self):
+        from tools.sim import glass_sim as gs
+
+        for lat in (457.0, 914.0, 1500.0):
+            for wall_echo in (lat - 50.0, lat * gs.BEAM_EDGE):  # abeam, the beam's edge
+                f = self._front(lat, lat, [wall_echo], [wall_echo])
+                with self.subTest(lat=lat, echo=wall_echo):
+                    self.assertFalse(f["glass"])
+
+    def test_a_wall_cannot_explain_an_echo_nearer_than_itself(self):
+        side = {True: 914.0}
+        self.assertTrue(walk_policy._wall_too_far(60.0, 914.0 / math.sin(math.radians(60)), side, 792.0))
+        self.assertFalse(walk_policy._wall_too_far(60.0, 914.0 / math.sin(math.radians(60)), side, 850.0))
+        self.assertFalse(walk_policy._wall_too_far(10.0, 900.0, side, 500.0))  # not on the wall
+
+
+class CloseWallOpenSideTests(unittest.TestCase):
+    """2026-11-10: facing a flat wall 1.0-1.5 ft off in open space it said "turn around": each
+    side board's beam heard the wall ahead at its edge (~1.86 x the front) and that echo was
+    taken as the side's room, under the turn floor. An echo the laser places off the side's
+    line, with that line clear past it, is not the side's room."""
+
+    def _say(self, scene):
+        from tools.sim import scene_hunt as sh
+        from app.core.shared_state import get_lidar_state, get_radar_state
+
+        walk_policy._last_turn.update(direction=None, at=0.0)
+        walk_policy._last_measured.clear()
+        walk_policy._near_frames.clear()
+        sh.publish(scene, True)
+        lidar, radar = get_lidar_state(), get_radar_state()
+        walk = walk_policy.decide(lidar, radar)
+        return sg.decide(walk, lidar, time.time(), radar_state=radar, camera_state={})["instruction"]
+
+    def test_the_open_side_is_offered(self):
+        ft = 304.8
+        for f in (1.0, 1.3, 1.5):
+            with self.subTest(wall_ft=f):
+                said = self._say({"left": None, "right": None, "ahead": f * ft, "posts": [], "glass": None})
+                self.assertEqual(said, sg.BLOCKED_WALL_TURN["right"])
+        corner = {"left": 1.7 * ft, "right": None, "ahead": 1.0 * ft, "posts": [], "glass": None}
+        self.assertEqual(self._say(corner), sg.BLOCKED_WALL_TURN["right"])  # was "Stop, no clear way"
+
+    def test_something_on_the_sides_line_still_closes_it(self):
+        ft = 304.8
+        post_right = {"left": None, "right": None, "ahead": 1.0 * ft, "glass": None,
+                      "posts": [(0.0, 1.9 * ft, 150.0)]}  # a post 1.9 ft to the right, abeam
+        self.assertNotEqual(self._say(post_right), sg.BLOCKED_WALL_TURN["right"])
+
+    def test_the_blind_side_keeps_the_radar(self):
+        ft = 304.8  # the left is the LiDAR's blind arc: the radar is all there is
+        corner = {"left": None, "right": 1.7 * ft, "ahead": 1.0 * ft, "posts": [], "glass": None}
+        self.assertNotEqual(self._say(corner), sg.BLOCKED_WALL_TURN["left"])
+
+
+class StatusNoticeCutTests(unittest.TestCase):
+    """2026-11-10: a block waited out a status notice's airtime ("Power low", "Glass sensor
+    off": ~1.1 s, ~1.4 m at walking pace). Now a block cuts into it, as into any guidance
+    sentence, and the notice it cut is told again once the path is clear."""
+
+    def test_a_block_cuts_into_a_status_notice(self):
+        gate = sg._Gate()
+        gate.admit(sg.WALK_STRAIGHT, 100.0)
+        self.assertTrue(gate.admit(sg.WALK_STRAIGHT, 102.5)[0])  # held 2.5 s: said
+        self.assertTrue(gate.admit_status(sg.POWER_LOW, 105.0)[0])
+        block = sg.OBSTACLE_IN_FRONT["left"]
+        self.assertTrue(gate.admit(block, 105.3)[0])  # 0.3 s into "Power low"
+        self.assertEqual(gate.take_cut_status(), sg.POWER_LOW)
+        self.assertEqual(gate.take_cut_status(), "")  # once
+
+    def test_a_calmer_sentence_still_waits_and_cuts_nothing(self):
+        gate = sg._Gate()
+        gate.admit(sg.WALK_STRAIGHT, 100.0)
+        gate.admit(sg.WALK_STRAIGHT, 102.5)
+        gate.admit_status(sg.POWER_LOW, 105.0)
+        said, _, why = gate.admit(sg.WALL_AHEAD, 105.3)
+        self.assertFalse(said, why)
+        self.assertEqual(gate.take_cut_status(), "")
+        # a block once the notice has ended cut nothing either
+        self.assertTrue(gate.admit(sg.OBSTACLE_IN_FRONT["left"], 107.0)[0])
+        self.assertEqual(gate.take_cut_status(), "")
+
+    def test_a_cut_notice_is_told_again_only_while_it_still_holds(self):
+        n = sg._SensorNotice(sg.POWER_LOW, sg.POWER_NORMAL, 3.0, 10.0, 160.0, 20.0)
+        n.pending(True, 0.0)
+        n.pending(False, 1.0)
+        self.assertEqual(n.pending(False, 4.0), sg.POWER_LOW)
+        n.said(sg.POWER_LOW)
+        self.assertIsNone(n.pending(False, 4.1))  # told
+        n.unsay(sg.POWER_LOW)
+        self.assertEqual(n.pending(False, 4.2), sg.POWER_LOW)  # again, no new 3 s wait
+        n.unsay(sg.POWER_LOW)  # a second cut before it is said is the same one
+        n.pending(True, 4.3)  # power back before it was heard: nothing to tell
+        self.assertIsNone(n.pending(True, 30.0))
+        n.unsay(sg.CAMERA_OFF)  # not its notice: ignored
+        self.assertIsNone(n.pending(True, 31.0))
+
+    def test_walking_into_a_post_during_power_low(self):
+        from tools.sim import scene_hunt as sh
+        from app.core.shared_state import get_lidar_state, get_radar_state
+
+        sg.reset()
+        t0, dt, said, post_at = time.time(), 1 / 15, [], None
+        for i in range(int(12 / dt)):
+            now = t0 + i * dt
+            post = post_at is not None and post_at <= now < post_at + 3.0
+            sh.publish({"left": None, "right": None, "ahead": None,
+                        "posts": [(1000, 0, 250)] if post else [], "glass": None}, True)
+            lidar, radar = get_lidar_state(), get_radar_state()
+            got = sg.guidance(walk_policy.decide(lidar, radar), lidar, now=now,
+                              system={"readable": True, "power_low": i > 5})
+            if got.get("speak"):
+                said.append((now - t0, got["instruction"]))
+                if got["instruction"] == sg.POWER_LOW and post_at is None:
+                    post_at = now + 0.1  # the post appears 0.1 s into the notice
+        texts = [t for _, t in said]
+        blocks = [at for at, t in said if t in sg.OBSTACLE_IN_FRONT.values()]
+        self.assertTrue(blocks, texts)
+        self.assertLess(blocks[0] - (post_at - t0), 0.4, texts)  # was 1.1 s
+        self.assertEqual(texts.count(sg.POWER_LOW), 2, texts)  # cut, then told again...
+        again = [at for at, t in said if t == sg.POWER_LOW][1]
+        self.assertGreater(again, (post_at - t0) + 3.0, texts)  # ...once the post is gone
+
+    def test_a_fall_in_front_cuts_in(self):
+        from app.guidance.unified_guidance import is_urgent
+
+        self.assertTrue(is_urgent({"rule": "ground_hazard", "instruction": sg.DROP_STOP}))
+        self.assertTrue(is_urgent({"rule": "ground_hazard", "instruction": sg.STAIRS_DOWN_STOP}))
+        self.assertFalse(is_urgent({"rule": "ground_hazard", "instruction": sg.STAIRS_UP_AHEAD}))
+        self.assertTrue(is_urgent({"rule": "blocked", "instruction": sg.OBSTACLE_IN_FRONT["left"]}))
+        self.assertFalse(is_urgent({"rule": "status", "instruction": sg.POWER_LOW}))
+
+
 if __name__ == "__main__":
     unittest.main()

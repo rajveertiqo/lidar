@@ -23,6 +23,20 @@
   ever says it is safe to cross. It used to announce "No traffic lights detected" while doing
   so, because an unreadable colour lands in the same branch as an empty
   intersection; those two cases are now distinguished.
+- **A pane across a narrow passage, farther than its walls.** A pane spanning a whole
+  passage, with no frame the laser sees, is found only once it is nearer than the passage's
+  walls are to the side (less ~100 mm): in a 1.8 m passage from ~2.6 ft, in a 0.9 m one from
+  ~1.2-1.5 ft. Farther than that, a side wall can echo from the pane's range too, and the
+  radar's range alone cannot tell them apart; it says "Walk straight". A frame or a wall
+  around a door the laser sees is found sooner (the door-in-a-wall rule). The left wall,
+  half in the LiDAR's blind arc, is often not found as a side wall at all, so a pane is found
+  later in a passage whose nearer wall is on the left. Telling them apart further would take
+  the echo's motion: a pane's range closes at walking pace, a wall beside stays put
+  (`tools/sim/glass_sim.py`'s "limit" passage scenes).
+- **Close to a wall, the left is not offered.** Facing a flat wall nearer than ~1.7 ft with
+  only the left open, it says "turn around": the left side radar hears the wall ahead at its
+  beam's edge, and the LiDAR cannot see to the left (the wearer's body) to place that echo.
+  The right is offered (design note 15).
 - **The 2D LiDAR sees one plane.** Overhead branches and low obstacles at foot
   height are missed. The radar helps with glass, not with height. The ToF now covers
   the ground 1–4 m ahead up to ~1.1 m (stairs, kerbs, drops, low and waist-high things:

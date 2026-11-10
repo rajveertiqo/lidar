@@ -3,7 +3,7 @@ r"""What was really there: score the guidance code against the testers' labels, 
 them for training.
 
 A tester's label button on the dashboard ("What was really there?": wall, glass, obstacle,
-person, nothing) saves a clip of the sensor data around the press, its mark line carrying
+person, nothing, stairs, kerb) saves a clip of the sensor data around the press, its mark line carrying
 the label (app/core/walk_recorder.py, config.MARK_LABELS). This reads those clips (and any
 full recordings with labels in them), replays each one through the CURRENT code
 (tools/field/walk_replay.py), and for every label compares:
@@ -14,7 +14,8 @@ full recordings with labels in them), replays each one through the CURRENT code
 What a press is about: the last thing it SAID in the LABEL_SAID_WINDOW_S before the press
 (a status notice such as "Camera off" skipped), or what it stood on at the press if it said
 nothing. Its sentence is turned into one of the labels: "Obstacle in front, turn left" is
-obstacle, "Walk straight" nothing, a chair or a car obstacle, stairs a "ground" (no label).
+obstacle, "Walk straight" nothing, a chair or a car obstacle, "Stairs down ahead" stairs,
+"Step up ahead" or "Drop ahead" kerb.
 
 On the Pi or, better, on a laptop with the repo checked out (training is never done on the
 Pi). Copy the clips across first:
@@ -25,7 +26,10 @@ Pi). Copy the clips across first:
     venv/bin/python tools/field/label_report.py ~/shappe-walks --export labels.jsonl
 
 --turn-on tof-wall replays as if the ToF's wall naming were spoken: compare its "right now"
-column with a run without it before turning TOF_WALL_SPEAK on.
+column with a run without it before turning TOF_WALL_SPEAK on. The ToF's stairs, kerb and
+drop warnings are not spoken yet either (TOF_HAZARDS_SPEAK), so the stairs and kerb labels
+are scored with --turn-on tof-hazards; the other labels in that run show what turning them
+on would cost (a wall taken for stairs).
 
 --export writes one JSON line per label: the label, what was said, and every tick's inputs
 from LABEL_EXPORT_S before the press (lidar, radar, camera, ToF ground, ...): the rows a
@@ -52,14 +56,15 @@ sys.path.insert(0, str(ROOT))
 LABEL_SAID_WINDOW_S = 6.0  # a press is about what was said this long before it, at most
 LABEL_EXPORT_S = 2.0  # the ticks exported with each label: this long before the press
 
-# Things the device names that a tester labels "obstacle"; stairs, steps and drops are
-# "ground" (no button: they are told apart by the ToF, not labelled here yet).
-_GROUND = ("stairs", "step", "drop")
+# The ToF's ground warnings, as the label a tester presses for them: a single step and a
+# drop are both "kerb" (the tester cannot tell a drop's depth); a low obstacle or an
+# overhang is an obstacle.
+_GROUND = {"stairs": "stairs", "step": "kerb", "drop": "kerb"}
 
 
 def label_class(text):
-    """The label a sentence amounts to: one of config.MARK_LABELS, "ground", or "other"
-    for one that is not about what is there (a status notice, a traffic light)."""
+    """The label a sentence amounts to: one of config.MARK_LABELS, or "other" for one that
+    is not about what is there (a status notice, a traffic light)."""
     from app.guidance import simple_guidance as sg
 
     if not text:
@@ -68,7 +73,7 @@ def label_class(text):
     if named in ("wall", "glass", "person"):
         return named
     if named in _GROUND:
-        return "ground"
+        return _GROUND[named]
     if named:  # a chair, a car, "something", a low obstacle, an overhang
         return "obstacle"
     if text in sg._WALK_ON:
@@ -131,8 +136,9 @@ def _has_labels(path):
 
 def labels_in(path, replay=True, export_s=LABEL_EXPORT_S, turn_on=()):
     """One dict per label in a recording or clip: file, t, label, said (what the device had
-    said, as recorded), then/now ({"instruction", "class"}; now only when replayed), and
-    ticks: the last `export_s` seconds of ticks before the press, each {t, mono, in, out}."""
+    said, as recorded), then/now ({"instruction", "class"}; now only when replayed), lux (the
+    front camera's light at the press; None in recordings before 2026-11-10), and ticks: the
+    last `export_s` seconds of ticks before the press, each {t, mono, in, out}."""
     if not _has_labels(path):
         return []
     if replay:
@@ -144,6 +150,7 @@ def labels_in(path, replay=True, export_s=LABEL_EXPORT_S, turn_on=()):
     then, now = _About(), _About()
     recent = collections.deque()  # (mono, tick) for the export
     found = []
+    lux = None  # the front camera's light, as of the last tick
     for rec, got in stream:
         mono = float(rec.get("mono", 0.0))
         if "mark" in rec:
@@ -157,6 +164,7 @@ def labels_in(path, replay=True, export_s=LABEL_EXPORT_S, turn_on=()):
                 "label": label,
                 "said": rec.get("said", ""),
                 "then": {"instruction": said_then, "class": label_class(said_then)},
+                "lux": lux,
                 "ticks": [tick for m, tick in recent if mono - m <= export_s],
             }
             if replay:
@@ -165,6 +173,9 @@ def labels_in(path, replay=True, export_s=LABEL_EXPORT_S, turn_on=()):
             found.append(row)
             continue
         then.tick(mono, rec.get("out"))
+        tick_lux = _front_lux(rec.get("in"))
+        if tick_lux is not None:
+            lux = tick_lux
         if got is not None:
             now.tick(mono, got)
         recent.append(
@@ -173,6 +184,13 @@ def labels_in(path, replay=True, export_s=LABEL_EXPORT_S, turn_on=()):
         while recent and mono - recent[0][0] > max(export_s, 0.0):
             recent.popleft()
     return found
+
+
+def _front_lux(inputs):
+    """The front camera's light (lux) in a tick's inputs, or None."""
+    view = (((inputs or {}).get("camera") or {}).get("front") or {}).get("view") or {}
+    lux = view.get("lux")
+    return float(lux) if isinstance(lux, (int, float)) else None
 
 
 def _files(paths):
@@ -198,14 +216,14 @@ def _dedupe(rows):
     return out
 
 
-def report(rows, replay=True):
+def report(rows, replay=True, turn_on=()):
     """Print the scores; returns how many labels right then are wrong now."""
-    from app.config import MARK_LABELS
+    from app.config import CAMERA_DIM_LUX, MARK_LABELS, TOF_HAZARDS_SPEAK
 
     if not rows:
         print("No labels yet: press What was really there? on the dashboard while walking.")
         return 0
-    cols = list(MARK_LABELS) + ["ground", "other"]
+    cols = list(MARK_LABELS) + ["other"]
     by = collections.defaultdict(list)
     for r in rows:
         by[r["label"]].append(r)
@@ -229,6 +247,19 @@ def report(rows, replay=True):
     print(line)
 
     side = "now" if replay else "then"
+    lit = [r for r in rows if r.get("lux") is not None and r["lux"] >= CAMERA_DIM_LUX]
+    dim = [r for r in rows if r.get("lux") is not None and r["lux"] < CAMERA_DIM_LUX]
+    if lit or dim:  # does the camera's light make it worse? (no light in older recordings)
+
+        def right(rs):
+            return sum(r[side]["class"] == r["label"] for r in rs)
+
+        print(
+            f"\n  By the front camera's light, right {side}:"
+            f"\n    good light {len(lit):>4}   {pct(right(lit), len(lit))}"
+            f"\n    dim        {len(dim):>4}   {pct(right(dim), len(dim))}"
+            f"   (under {CAMERA_DIM_LUX:g} lux)"
+        )
     print(f"\n  What it named {side} (rows: really there)")
     print("  " + " " * 13 + "".join(f"{c:>9}" for c in cols))
     for label in MARK_LABELS:
@@ -251,6 +282,16 @@ def report(rows, replay=True):
                 else ""
             )
             print(f"    {r['file']}  really {r['label']}, named {r[side]['class']}: “{said}”{extra}")
+
+    if (
+        any(r["label"] in _GROUND.values() for r in rows)
+        and not TOF_HAZARDS_SPEAK
+        and "tof-hazards" not in turn_on
+    ):
+        print(
+            "\n  stairs / kerb: the ToF's ground warnings are not spoken yet (TOF_HAZARDS_SPEAK),"
+            "\n  so these come out wrong here. --turn-on tof-hazards scores what they would say."
+        )
 
     show("BROKEN — right then, wrong now:", broken)
     show("Fixed — wrong then, right now:", fixed)
@@ -308,7 +349,7 @@ def main():
             print(f"  {path}: could not read — {type(e).__name__}: {e}")
     rows = _dedupe(rows)
     print(f"{len(files)} files read")
-    broken = report(rows, replay=not args.recorded)
+    broken = report(rows, replay=not args.recorded, turn_on=turn_on)
     if args.export:
         with open(args.export, "w", encoding="utf-8") as fh:
             for r in rows:

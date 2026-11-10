@@ -481,7 +481,11 @@ class LabelTests(unittest.TestCase):
             (sg.OBJECT_IN_FRONT["Person"], "person"),
             (sg.OBJECT_AHEAD["Bench"], "obstacle"),
             (sg.WALK_STRAIGHT, "nothing"),
-            (sg.STAIRS_DOWN_STOP, "ground"),
+            (sg.STAIRS_DOWN_STOP, "stairs"),
+            (sg.STAIRS_UP_AHEAD, "stairs"),
+            (sg.STEP_UP_AHEAD, "kerb"),
+            (sg.DROP_AHEAD, "kerb"),
+            (sg.LOW_OBSTACLE_AHEAD, "obstacle"),
             (sg.SENSORS_OFFLINE, "other"),
             ("", "nothing"),
         ):
@@ -661,6 +665,108 @@ class RestingOnADeskTests(unittest.TestCase):
         got = self._front(short)
         self.assertFalse(got["rest_echo"])
         self.assertLess(got["distance_ft"], 1.5)
+
+
+class CameraLightTests(unittest.TestCase):
+    """2026-11-10: the sensor's own light reading (lux), per camera, so a walk can show whether
+    the camera names less in dim light. Shown and recorded only; nothing said changes."""
+
+    def setUp(self):
+        from app.sensors import pi_camera_utils as pc
+
+        self.pc = pc
+        self._saved = (pc._light, dict(pc._views))
+        pc._views.clear()
+
+    def tearDown(self):
+        self.pc._light, views = self._saved
+        self.pc._views.clear()
+        self.pc._views.update(views)
+
+    def _lit(self, lux):
+        self.pc._light = {"lux": lux, "exposure_ms": 30.0, "gain": 2.0, "mono": time.monotonic()}
+
+    def test_the_sensor_reading_is_kept_and_never_raises(self):
+        class Request:
+            def __init__(self, md):
+                self.md = md
+
+            def get_metadata(self):
+                if self.md is None:
+                    raise RuntimeError("request already released")
+                return self.md
+
+        self.pc._light = {**self.pc._light, "mono": float("-inf")}
+        self.pc._note_light(Request({"Lux": 382.4, "ExposureTime": 30000, "AnalogueGain": 2.0}))
+        self.assertEqual(self.pc.light_reading(), {"lux": 382.4, "exposure_ms": 30.0, "gain": 2.0})
+        self.pc._light = {**self.pc._light, "mono": float("-inf")}
+        self.pc._note_light(Request(None))  # a failed read is dropped, not raised
+        self.pc._light = {**self.pc._light, "mono": time.monotonic() - 5.0}
+        self.assertIsNone(self.pc.light_reading()["lux"])  # stale: no reading
+
+    def _check(self, front_level, whole_level=100.0, lux=400.0, after_s=0.0):
+        import numpy as np
+
+        self._lit(lux)
+        mosaic = np.full((80, 80, 3), whole_level, dtype=np.uint8)
+        quad = np.full((40, 40, 3), front_level, dtype=np.uint8)
+        v = self.pc._view_check("front", quad, mosaic)
+        if after_s:
+            with self.pc._view_lock:
+                held = self.pc._views["front"]
+                held["mono"] -= after_s
+                held["dim_since"] = held["dim_since"] and held["dim_since"] - after_s
+            v = self.pc._view_check("front", quad, mosaic)
+        return v
+
+    def test_a_dim_camera_is_told_once_it_has_lasted(self):
+        first = self._check(front_level=20)  # a fifth of the picture's light: 80 lux, ...
+        self.assertFalse(first["dim"])
+        self.pc._views.clear()
+        first = self._check(front_level=14, lux=300.0)  # ... this one 42 lux
+        self.assertLess(first["lux"], 45.0)
+        self.assertFalse(first["dim"])  # not yet: CAMERA_DIM_CONFIRM_S
+        later = self._check(front_level=14, lux=300.0, after_s=4.0)
+        self.assertTrue(later["dim"])
+        self.assertFalse(later["dark"])
+
+    def test_a_lit_room_and_no_reading_are_not_dim(self):
+        lit = self._check(front_level=100, after_s=4.0)
+        self.assertAlmostEqual(lit["lux"], 400.0, delta=60.0)
+        self.assertFalse(lit["dim"])
+        self.pc._views.clear()
+        self.pc._light = {**self.pc._light, "mono": time.monotonic() - 5.0}
+        import numpy as np
+
+        v = self.pc._view_check("front", np.full((40, 40, 3), 30, np.uint8), None)
+        self.assertIsNone(v["lux"])
+        self.assertFalse(v["dim"])
+
+    def test_the_report_splits_labels_by_light(self):
+        import gzip
+        import io
+        import json
+        import tempfile
+        from tools.field.label_report import labels_in, report
+
+        rows = []
+        with tempfile.TemporaryDirectory() as tmp:
+            for i, (lux, said) in enumerate(((380.0, sg.WALL_AHEAD), (20.0, sg.WALK_STRAIGHT))):
+                path = os.path.join(tmp, f"clip-20261110-10000{i}-000-wall.jsonl.gz")
+                with gzip.open(path, "wt") as fh:
+                    for k in range(10):
+                        cam = {"front": {"view": {"lux": lux}}}
+                        out = {"instruction": said, "speak": k == 2}
+                        fh.write(json.dumps({"t": k, "mono": k, "in": {"camera": cam}, "out": out}) + "\n")
+                    fh.write(json.dumps({"t": 10, "mono": 10.0, "mark": "label", "label": "wall"}) + "\n")
+                rows += labels_in(path, replay=False)
+        self.assertEqual([r["lux"] for r in rows], [380.0, 20.0])
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            report(rows, replay=False)
+        text = printed.getvalue()
+        self.assertRegex(text, r"good light\s+1\s+1 \(100%\)")
+        self.assertRegex(text, r"dim\s+1\s+0 \(  0%\)")
 
 
 if __name__ == "__main__":

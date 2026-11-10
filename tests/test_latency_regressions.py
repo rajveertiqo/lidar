@@ -417,8 +417,9 @@ class FrontFirstDetectionTests(unittest.TestCase):
                     pc.current_frame_simulated = False
                 pictures[0] += 1
 
-        with patch.object(pc, "_sector_slice", slice_), patch.object(pc, "_view_check", lambda s, q: {
-            "brightness": 100, "sharpness": 100, "dark": False, "blurred": False
+        with patch.object(pc, "_sector_slice", slice_), patch.object(pc, "_view_check", lambda s, q, m=None: {
+            "brightness": 100, "sharpness": 100, "lux": None, "dark": False, "blurred": False,
+            "dim": False,
         }), patch.object(pc, "update_camera_state", lambda d: None):
             cam = threading.Thread(target=camera, daemon=True)
             cam.start()

@@ -420,7 +420,7 @@
       }
       .labels {
         display: grid;
-        grid-template-columns: repeat(5, 1fr);
+        grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
         gap: 8px;
         margin-top: 8px;
       }
@@ -446,11 +446,6 @@
       }
       .labels button:active {
         transform: scale(0.97);
-      }
-      @media (max-width: 480px) {
-        .labels {
-          grid-template-columns: repeat(3, 1fr); /* "Obstacle" fits a phone */
-        }
       }
       #label-counts {
         margin-top: 6px;
@@ -834,6 +829,12 @@
             </button>
             <button data-label="person">Person<span class="k">P</span></button>
             <button data-label="nothing">Nothing<span class="k">N</span></button>
+            <button data-label="stairs" title="Stairs up or down">
+              Stairs<span class="k">S</span>
+            </button>
+            <button data-label="kerb" title="One step up or down, a kerb, or a drop">
+              Kerb / step<span class="k">K</span>
+            </button>
           </div>
           <div id="label-counts" class="muted mono"></div>
           <div id="mark-ack" class="muted"></div>

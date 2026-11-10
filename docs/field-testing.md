@@ -37,9 +37,10 @@ tap on the page), so the wearer can react before the words are understood.
 ## Labelling what was really there (added 2026-11-10)
 
 The dashboard's verdict card has a second row, **What was really there?**: Wall, Glass,
-Obstacle, Person, Nothing (keys `W G O P N`). Press the one that names the thing the device
+Obstacle, Person, Nothing, Stairs, Kerb / step (keys `W G O P N S K`). Press the one that names the thing the device
 just talked about, or what is ahead if it named nothing. Press it whether the device was
-right or wrong; "Nothing" means nothing was there (a false alarm). Each press saves a clip
+right or wrong; "Nothing" means nothing was there (a false alarm). "Stairs" is a flight up
+or down; "Kerb / step" is a single step up or down, a kerb, or a drop. Each press saves a clip
 of the sensor data around it, `logs/walks/clip-<time>-<label>.jsonl.gz`, with the label
 and what the device had said. The card counts the labels saved so far. Labelled clips are
 kept apart from Wrong/Missed ones (`WALK_LABEL_KEEP_FILES`, 3000), so they are never
@@ -60,7 +61,7 @@ has numpy (conda's base does):
 ```powershell
 mkdir $HOME\shappe-walks -Force
 scp "shappe@<pi-address>:Documents/lidar/logs/walks/*.jsonl.gz" $HOME\shappe-walks\
-python tools\label_report.py $HOME\shappe-walks
+python tools\field\label_report.py $HOME\shappe-walks
 ```
 
 The report replays every labelled clip through the current code. It prints how many of
@@ -70,6 +71,19 @@ label that was right is now wrong, so run it before and after every threshold ch
 clip starts mid-walk without the device's held state, so run it once on unchanged code
 first. `--export` writes one JSON line per label, with every tick's inputs from 2 s
 (`--seconds`) before the press: the rows a classifier is trained on.
+
+**Stairs and kerbs** (added 2026-11-10). The ToF's ground warnings ("Stairs down ahead",
+"Step up ahead", "Drop in front, stop") are not spoken yet (`TOF_HAZARDS_SPEAK`), so the
+device says nothing about them and these labels score as misses. Score what they would say:
+
+```bash
+./venv/bin/python tools/field/label_report.py ~/shappe-walks --turn-on tof-hazards
+```
+
+Its stairs and kerb rows say how often they would be right. Its other rows say what turning
+them on would cost, such as a wall taken for stairs or a false "Drop ahead" on a flat floor
+(press Nothing for those). Turn `TOF_HAZARDS_SPEAK` on only when both look right. A good walk
+for this: stairs up and down, kerbs both ways, and some flat floor and walls in between.
 
 ## Walking the drift layer without leaving the desk
 

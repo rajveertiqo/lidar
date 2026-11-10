@@ -6,6 +6,16 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
 
 ## [Unreleased]
 
+### Added
+- **Stairs** and **Kerb / step** label buttons on the dashboard (keys `S`, `K`), so a walk can
+  score the ToF's stair, kerb and drop warnings before they are spoken
+  (`label_report.py --turn-on tof-hazards`). Walk recordings now keep what those warnings
+  would have said (`ground_shadow`).
+- **The camera's light, in lux**, from the sensor's own reading, for each camera: on
+  `/camera/stats` and in every walk recording. Under `CAMERA_DIM_LUX` (45) `/health` warns
+  "Camera dim", and `label_report.py` scores labels in good light and dim light apart.
+  Nothing said changes.
+
 ### Changed
 - **The app is one package, `app/`**, split by job: `app/sensors/` (hardware), `app/perception/`
   (what is around, the walk decision), `app/guidance/` (what is said), `app/core/` (shared

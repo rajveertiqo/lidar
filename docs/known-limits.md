@@ -50,10 +50,17 @@
   contract: act on `notify.cue_seq` advancing, never on the poll — a consumer
   that speaks `path.instruction` every poll talks over itself several times a
   second, which is the bug the gates above exist to prevent.
-- **No fog, rain or low-light detection.** The camera's labels are believed whatever the
-  weather. A detector existed but called a normal lit office "fog" and a black dead camera
-  the same, so it was switched off, and removed on 2026-11-10. A new one would need checking
-  against a genuinely fogged scene and a clear one before it gates anything.
+- **No fog or rain detection; low light is measured, not acted on.** The camera's labels
+  are believed whatever the weather. A fog detector existed but called a normal lit office
+  "fog" and a black dead camera the same, so it was switched off, and removed on 2026-11-10.
+  A new one would need checking against a genuinely fogged scene and a clear one before it
+  gates anything. Light is now measured (2026-11-10): each camera's lux, from the sensor's own
+  reading, on `/camera/stats` and in every walk recording. Under `CAMERA_DIM_LUX` (45: the
+  sensor runs out of exposure there at 15 pictures a second) `/health` warns "Camera dim", and
+  `label_report.py` splits its scores into good light and dim. Nothing said changes yet: in
+  dim light a detector mostly names less rather than naming wrongly, and the LiDAR and radar
+  carry on, so whether the wearer should be told waits on a dim walk's labels. Under ~5 lux
+  (`CAMERA_DARK_LEVEL`) the picture is black and "Camera off" is said, as before.
 - **The traffic-light colour is never resolved**: the guidance only knows a light was
   seen ("Traffic light ahead", from `unified_navigation_system`) and says wait. The branches
   that acted on a colour were removed on 2026-10-01, and the unused crossing state machine

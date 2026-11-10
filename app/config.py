@@ -69,6 +69,15 @@ CAMERA_DARK_CONFIRM_S = 3.0
 # is smooth too, hence the long confirmation; it is shown on /health, never spoken.
 CAMERA_BLUR_VAR = 20.0
 CAMERA_BLUR_CONFIRM_S = 60.0
+# Too dim for the camera to see well (2026-11-10): the sensor's own light reading (libcamera's
+# "Lux", for the whole 2x2 picture), scaled to each camera by its picture level. Measured in
+# the office that day: ~380 lux at 30 ms x 2.0 gain. The most the sensor gives at 15 pictures a
+# second is 60 ms x 8.0, 8x that, so under ~47 lux it runs out: pictures get darker, noisier,
+# and (60 ms while walking) blurred, and the detector names less, and later. CAMERA_DARK_LEVEL
+# is ~5 lux. Shown on /health, recorded with every walk, and split out by the label report;
+# nothing said changes. NEEDS a dim walk before anything acts on it.
+CAMERA_DIM_LUX = 45.0
+CAMERA_DIM_CONFIRM_S = 3.0
 # No frame at all for this long: close and reopen the camera, which a stuck stream
 # sometimes needs (2026-10-09: the capture froze and never recovered by itself). Each
 # further reopen waits twice as long, up to CAMERA_STALL_REOPEN_MAX_S.
@@ -976,9 +985,12 @@ WALK_CLIP_KEEP_FILES = 50
 # just talked about — or what is ahead, if it named nothing — and saves a clip the same way,
 # named clip-...-<label>.jsonl.gz. tools/field/label_report.py scores the current code against the
 # labels and exports them for training on a laptop (never on the Pi). "nothing": nothing
-# was there (a false alarm). Labelled clips are the training data: kept apart from the
-# Wrong/Missed ones, WALK_LABEL_KEEP_FILES of them (~0.2 MB each).
-MARK_LABELS = ("wall", "glass", "obstacle", "person", "nothing")
+# was there (a false alarm). "stairs" (up or down) and "kerb" (one step up or down, or a
+# drop) score the ToF's ground warnings, still unspoken (TOF_HAZARDS_SPEAK): label_report
+# --turn-on tof-hazards. Each label's first letter is its key on the dashboard, so no two
+# may share one. Labelled clips are the training data: kept apart from the Wrong/Missed
+# ones, WALK_LABEL_KEEP_FILES of them (~0.2 MB each).
+MARK_LABELS = ("wall", "glass", "obstacle", "person", "nothing", "stairs", "kerb")
 WALK_LABEL_KEEP_FILES = 3000
 
 SPEECH_LOG_KEEP_RUNS = 200

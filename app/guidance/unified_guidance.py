@@ -205,6 +205,7 @@ def _record(
                         "mover_shadow",
                         "route_shadow",
                         "wall_shadow",
+                        "ground_shadow",
                     )
                 },
             )

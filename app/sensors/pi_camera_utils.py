@@ -71,6 +71,8 @@ from app.config import (
     CAMERA_DARK_CONFIRM_S,
     CAMERA_BLUR_VAR,
     CAMERA_BLUR_CONFIRM_S,
+    CAMERA_DIM_LUX,
+    CAMERA_DIM_CONFIRM_S,
     CAMERA_STALL_REOPEN_S,
     CAMERA_STALL_REOPEN_MAX_S,
     TOF_ENABLED,
@@ -332,10 +334,58 @@ def _set_board_mode() -> bool:
 _view_lock = threading.Lock()
 _views = {}  # sector -> what _view_check last measured
 
+# The sensor's light reading (_note_light): libcamera's lux for the whole 2x2 picture and the
+# exposure that gave it. Replaced whole, never changed in place, so a reader needs no lock.
+_light = {"lux": None, "exposure_ms": None, "gain": None, "mono": float("-inf")}
+_LIGHT_EVERY_S = 0.5  # read at most this often (~0.1 ms each)
+_LIGHT_FRESH_S = 2.0  # older than this: no light reading
 
-def _view_check(sector, quad) -> dict:
-    """Can this camera see? Picture level and sharpness, measured at most every
-    CAMERA_VIEW_CHECK_S; "dark" / "blurred" only once they have lasted their
+
+def _note_light(request):
+    """Picamera2's post_callback, on its own thread with each picture: keep the sensor's light
+    reading. Never raises: a light reading is not worth a lost picture."""
+    global _light
+    try:
+        now = time.monotonic()
+        if now - _light["mono"] < _LIGHT_EVERY_S:
+            return
+        md = request.get_metadata() or {}
+        lux = md.get("Lux")
+        _light = {
+            "lux": float(lux) if lux is not None else None,
+            "exposure_ms": float(md.get("ExposureTime") or 0) / 1000.0,
+            "gain": float(md.get("AnalogueGain") or 0) * float(md.get("DigitalGain") or 1.0),
+            "mono": now,
+        }
+    except Exception:
+        pass
+
+
+def light_reading() -> dict:
+    """The sensor's latest light reading, or Nones when there is none (simulated, stalled)."""
+    light = _light
+    if time.monotonic() - light["mono"] > _LIGHT_FRESH_S:
+        return {"lux": None, "exposure_ms": None, "gain": None}
+    return {
+        "lux": None if light["lux"] is None else round(light["lux"], 1),
+        "exposure_ms": round(light["exposure_ms"], 1),
+        "gain": round(light["gain"], 2),
+    }
+
+
+def _camera_lux(level, mosaic):
+    """How much light one camera sees: the sensor's lux for the whole picture, scaled by how
+    bright this camera's part is against the whole (one exposure serves all four)."""
+    lux = light_reading()["lux"]
+    if lux is None or mosaic is None:
+        return None
+    whole = float(mosaic[::16, ::16].mean())
+    return lux * level / whole if whole > 1.0 else lux
+
+
+def _view_check(sector, quad, mosaic=None) -> dict:
+    """Can this camera see? Picture level, sharpness and light (lux), measured at most every
+    CAMERA_VIEW_CHECK_S; "dark" / "blurred" / "dim" only once they have lasted their
     CAMERA_*_CONFIRM_S. ~2 ms on a camera's picture (every 4th pixel)."""
     now = time.monotonic()
     with _view_lock:
@@ -347,23 +397,29 @@ def _view_check(sector, quad) -> dict:
     g = s.mean(axis=2) if s.ndim == 3 else s
     lap = 4.0 * g[1:-1, 1:-1] - g[:-2, 1:-1] - g[2:, 1:-1] - g[1:-1, :-2] - g[1:-1, 2:]
     sharpness = float(lap.var())
+    lux = _camera_lux(level, mosaic)
     with _view_lock:
-        v = _views.get(sector) or {"dark_since": None, "blur_since": None}
+        v = _views.get(sector) or {}
         dark_now = level < CAMERA_DARK_LEVEL
         blur_now = not dark_now and sharpness < CAMERA_BLUR_VAR
-        dark_since = (v["dark_since"] or now) if dark_now else None
-        blur_since = (v["blur_since"] or now) if blur_now else None
+        dim_now = not dark_now and lux is not None and lux < CAMERA_DIM_LUX
+        dark_since = (v.get("dark_since") or now) if dark_now else None
+        blur_since = (v.get("blur_since") or now) if blur_now else None
+        dim_since = (v.get("dim_since") or now) if dim_now else None
         v = {
             "mono": now,
             "at": time.time(),
             "brightness": round(level, 1),
             "sharpness": round(sharpness, 1),
+            "lux": None if lux is None else round(lux, 1),
             "dark_since": dark_since,
             "blur_since": blur_since,
+            "dim_since": dim_since,
             "dark": dark_since is not None
             and now - dark_since >= CAMERA_DARK_CONFIRM_S,
             "blurred": blur_since is not None
             and now - blur_since >= CAMERA_BLUR_CONFIRM_S,
+            "dim": dim_since is not None and now - dim_since >= CAMERA_DIM_CONFIRM_S,
         }
         _views[sector] = v
         return dict(v)
@@ -373,7 +429,10 @@ def camera_views() -> dict:
     """What each camera's picture looked like at its last check (see _view_check)."""
     with _view_lock:
         return {
-            s: {k: v[k] for k in ("at", "brightness", "sharpness", "dark", "blurred")}
+            s: {
+                k: v.get(k)
+                for k in ("at", "brightness", "sharpness", "lux", "dark", "blurred", "dim")
+            }
             for s, v in _views.items()
         }
 
@@ -506,6 +565,7 @@ def _open_camera():
                     controls={"FrameRate": float(CAMERA_CAPTURE_FPS)},
                 )
             )
+            cam.post_callback = _note_light  # the sensor's light reading, with each picture
             # Let the sensor run as fast as the mode allows; capture loop paces us.
             cam.start()
             _set_focus()  # once streaming: the lens driver is powered while it streams
@@ -1121,7 +1181,7 @@ def _detect(engine, gen):
 
                 for sector in sectors:
                     quad = _sector_slice(mosaic, sector)  # view, free
-                    view = _view_check(sector, quad)
+                    view = _view_check(sector, quad, mosaic)
                     npu_started = time.monotonic()
                     try:
                         detections, inference_ms = engine.infer_array(quad, bgr=SWAP_RB)
@@ -1148,8 +1208,10 @@ def _detect(engine, gen):
                         "view": {
                             "brightness": view["brightness"],
                             "sharpness": view["sharpness"],
+                            "lux": view["lux"],
                             "dark": view["dark"],
                             "blurred": view["blurred"],
+                            "dim": view["dim"],
                         },
                     }
                     total_inference_ms += inference_ms
@@ -1600,6 +1662,7 @@ def get_camera_stats():
         "capture_stalled": capture_stalled,
         "detection_coverage": detection_coverage(),
         "views": camera_views(),
+        "light": light_reading(),  # the sensor's, for the whole 2x2 picture
         "stall_reopens": _stall_reopens,
         "camera_px": list(_QUAD),  # one camera's picture, width x height
         "focus_code": _focus_code,  # lens position set at start (None: not set)

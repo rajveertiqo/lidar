@@ -1018,6 +1018,18 @@ def get_system_health() -> Dict[str, Any]:
                 f"Camera picture blurred ({', '.join(blurred)}) — lens dirty, "
                 f"covered or out of focus; objects may not be named"
             )
+        dim = [
+            c
+            for c in ("front", "right", "left", "back")
+            if (looked.get(c) or {}).get("dim")
+        ]
+        if dim:
+            from app.config import CAMERA_DIM_LUX
+
+            warnings.append(
+                f"Camera dim ({', '.join(dim)}, under {CAMERA_DIM_LUX:g} lux) — objects are "
+                f"named less, and later; the LiDAR and radar are unaffected"
+            )
     except Exception:
         pass
     tof = None

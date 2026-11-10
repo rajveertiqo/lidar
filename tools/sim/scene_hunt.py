@@ -30,13 +30,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 os.chdir(Path(__file__).resolve().parents[2])
 
-import config as c  # noqa: E402
-import utils.lidar_utils as lu  # noqa: E402
-import utils.radar_utils as ru  # noqa: E402
-import utils.route_planner as rp  # noqa: E402
-import utils.simple_guidance as sg  # noqa: E402
-from utils import walk_policy as wp  # noqa: E402
-from utils.shared_state import get_lidar_state, get_radar_state, update_lidar_state  # noqa: E402
+from app import config as c  # noqa: E402
+import app.sensors.lidar_utils as lu  # noqa: E402
+import app.sensors.radar_utils as ru  # noqa: E402
+import app.perception.route_planner as rp  # noqa: E402
+import app.guidance.simple_guidance as sg  # noqa: E402
+from app.perception import walk_policy as wp  # noqa: E402
+from app.core.shared_state import get_lidar_state, get_radar_state, update_lidar_state  # noqa: E402
 
 FT = 304.8
 GLASS_HALF_MM = 600.0  # a pane 1.2 m wide, centred on the path

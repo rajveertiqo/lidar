@@ -43,7 +43,7 @@ right or wrong; "Nothing" means nothing was there (a false alarm). Each press sa
 of the sensor data around it, `logs/walks/clip-<time>-<label>.jsonl.gz`, with the label
 and what the device had said. The card counts the labels saved so far. Labelled clips are
 kept apart from Wrong/Missed ones (`WALK_LABEL_KEEP_FILES`, 3000), so they are never
-pruned by Wrong presses. The labels are `MARK_LABELS` in `config.py`.
+pruned by Wrong presses. The labels are `MARK_LABELS` in `app/config.py`.
 
 On a laptop (training is never done on the Pi), copy the clips across and score the current
 code against them:

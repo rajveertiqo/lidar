@@ -10,7 +10,7 @@ StartLimitIntervalSec=0
 Type=notify
 NotifyAccess=main
 WorkingDirectory=@APP_DIR@
-# SHAPPE_ADMIN_TOKEN, and anything else set per device (see config.py).
+# SHAPPE_ADMIN_TOKEN, and anything else set per device (see app/config.py).
 EnvironmentFile=-%h/.config/shappe-guide.env
 # start_lidar.sh runs the pre-flight checks, then execs uvicorn in its own PID.
 ExecStart=@APP_DIR@/start_lidar.sh

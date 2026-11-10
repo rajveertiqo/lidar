@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Hardware test for the Arducam Time-of-Flight camera on the Pi's CSI port (from
-~/tof/test_tof.py, 2026-11-03; the node search is utils/tof_camera's, the app's own).
+~/tof/test_tof.py, 2026-11-03; the node search is app/sensors/tof_camera's, the app's own).
 Walks the chain the camera needs, in order, and says what to fix at the first
 broken link:
 
@@ -47,8 +47,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from config import TOF_MIN_CONFIDENCE, TOF_RANGE_MM, TOF_VIDEO_INDEX  # noqa: E402
-from utils.tof_camera import CSI_NODE_NAMES, DRIVER, node_via_media_ctl  # noqa: E402
+from app.config import TOF_MIN_CONFIDENCE, TOF_RANGE_MM, TOF_VIDEO_INDEX  # noqa: E402
+from app.sensors.tof_camera import CSI_NODE_NAMES, DRIVER, node_via_media_ctl  # noqa: E402
 
 CONFIG_PATHS = ("/boot/firmware/config.txt", "/boot/config.txt")
 # Overlay names that claim a camera port - enough to spot two on one port.
@@ -230,7 +230,7 @@ def check_driver(cfg_ok):
 
 
 # --- 3. video node -------------------------------------------------------
-# node_via_media_ctl() is utils/tof_camera's: the node found here is the one the app opens.
+# node_via_media_ctl() is app/sensors/tof_camera's: the node found here is the one the app opens.
 def find_node(args):
     if args.index is not None:
         index = args.index

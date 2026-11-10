@@ -46,7 +46,7 @@ authorize speaking an old instruction. New cue numbers still generate notificati
 | `core.py` | `Bridge`: snapshots in, protocol messages out; commands in, responses out. Has no Bluetooth or network code, so it is fully testable. |
 | `sources.py` | `HttpSource` (the live service on `127.0.0.1:8000`) and `MockSource` (scripted scenarios with no sensors). |
 | `gatt_server.py` | BlueZ D-Bus front end: GATT application, advertisement, pairing agent and the poll thread. |
-| `make_vocab.py` | Builds the append-only phrase registry `contract/vocab_v1.json` from `utils/simple_guidance.ALLOWED`. |
+| `make_vocab.py` | Builds the append-only phrase registry `contract/vocab_v1.json` from `app/guidance/simple_guidance.ALLOWED`. |
 | `make_test_vectors.py` | Writes `contract/test_vectors.json`: golden frames that any mobile decoder must reproduce. |
 | `test_ble_bridge.py` | Desk tests (`unittest`). |
 | `shappe-ble.service` | systemd **user** unit. **Not installed.** |

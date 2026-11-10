@@ -1,6 +1,0 @@
-ble_bridge
-config
-main
-routers
-tools
-utils

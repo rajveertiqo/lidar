@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """The Kalman tracker and the route planner without leaving the desk.
 
-Tracker scenes (utils/motion_tracker): synthetic scans from tools/sim/movers_sim (the rig's
+Tracker scenes (app/perception/motion_tracker): synthetic scans from tools/sim/movers_sim (the rig's
 density, angle creep, range noise and back-left blind arc) plus a synthetic front camera.
 Is each person or vehicle coming at the user caught, from the right side, its speed right,
 and is nothing still ever called moving?
 
-Planner scenes (utils/route_planner through walk_policy and simple_guidance.decide, with
+Planner scenes (app/perception/route_planner through walk_policy and simple_guidance.decide, with
 ROUTE_PLANNER_SPEAK and LIDAR_MOVERS_SPEAK turned on for the test): does it go straight
 when the way is clear, steer past a post, turn the open way in a corner, turn around in a
 dead end, stay off glass, wait for a person crossing, and step aside from one coming?
@@ -21,14 +21,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import config  # noqa: E402
+from app import config  # noqa: E402
 from tools.sim import movers_sim as ms  # noqa: E402
 from tools.sim import glass_sim as gs  # noqa: E402
-from utils import simple_guidance as sg  # noqa: E402
-from utils import walk_policy  # noqa: E402
-from utils.lidar_movers import MoverTracker  # noqa: E402
-from utils.motion_tracker import MotionTracker, VEHICLE  # noqa: E402
-from utils.route_planner import get_planner  # noqa: E402
+from app.guidance import simple_guidance as sg  # noqa: E402
+from app.perception import walk_policy  # noqa: E402
+from app.perception.lidar_movers import MoverTracker  # noqa: E402
+from app.perception.motion_tracker import MotionTracker, VEHICLE  # noqa: E402
+from app.perception.route_planner import get_planner  # noqa: E402
 
 FT = 304.8
 CAM_HZ = 10.0
@@ -301,7 +301,7 @@ def blind(lidar):
 
 def person_track(x, y, vx, vy, word="Person"):
     """A moving track as motion_tracker's snapshot gives one."""
-    from utils.motion_tracker import body
+    from app.perception.motion_tracker import body
 
     rad, half = body(word, "car" if word == VEHICLE else None)
     return {

@@ -48,9 +48,10 @@ LOCK="${XDG_RUNTIME_DIR:-/tmp}/shappe-guide.lock"
 # finds the port taken (2026-10-21). So refuse, before anything touches the hardware.
 already_running() {
     local pids p
-    # The app as launched (".../venv/bin/uvicorn main:app"), not any command line that
+    # The app as launched (".../venv/bin/uvicorn app.main:app"; "main:app" before the app/
+    # package, 2026-11-10, so one started by an older checkout is still found), not any command line that
     # merely mentions it, such as a grep for it.
-    pids="$(pgrep -u "$(id -u)" -f '/bin/uvicorn main:app( |$)' || true)"
+    pids="$(pgrep -u "$(id -u)" -f '/bin/uvicorn (app\.)?main:app( |$)' || true)"
     if [ -n "$pids" ]; then
         echo -e "${RED}Shappe Guide is already running — not starting a second copy:${NC}"
         for p in $pids; do
@@ -200,13 +201,13 @@ fi
 echo -e "${GREEN}[1/6] Activating virtual environment...${NC}"
 source venv/bin/activate
 
-if [ ! -f "main.py" ]; then
-    echo -e "${RED}Error: main.py not found!${NC}"
+if [ ! -f "app/main.py" ]; then
+    echo -e "${RED}Error: app/main.py not found!${NC}"
     exit 1
 fi
 
 echo -e "${GREEN}[2/6] Checking LiDAR device...${NC}"
-LIDAR_DEV="$(python3 -c 'import os, config; print(next((p for p in config.LIDAR_PORT_CANDIDATES if os.path.exists(p)), config.LIDAR_PORT))' 2>/dev/null || echo /dev/ttyUSB0)"
+LIDAR_DEV="$(python3 -c 'import os; from app import config; print(next((p for p in config.LIDAR_PORT_CANDIDATES if os.path.exists(p)), config.LIDAR_PORT))' 2>/dev/null || echo /dev/ttyUSB0)"
 if [ ! -e "$LIDAR_DEV" ]; then
     echo -e "${YELLOW}Warning: LiDAR device $LIDAR_DEV not found${NC}"
     echo -e "${YELLOW}System will start but LiDAR may not function${NC}"
@@ -216,7 +217,7 @@ fi
 
 echo -e "${GREEN}[3/6] Checking radar array...${NC}"
 RADAR_ERR=$(mktemp)
-RADAR_OUT=$(python -m utils.radar_utils --check 2>"$RADAR_ERR") && RADAR_RC=0 || RADAR_RC=$?
+RADAR_OUT=$(python -m app.sensors.radar_utils --check 2>"$RADAR_ERR") && RADAR_RC=0 || RADAR_RC=$?
 echo -e "${BLUE}${RADAR_OUT}${NC}"
 
 if [ "$RADAR_RC" -eq 4 ] || grep -q '^Traceback' "$RADAR_ERR"; then
@@ -274,6 +275,6 @@ if [ -t 0 ]; then
     echo ""
 fi
 
-GRACE="$(python3 -c 'import config; print(config.SERVER_GRACEFUL_SHUTDOWN_S)' 2>/dev/null || echo 5)"
-WS_MAX="$(python3 -c 'import config; print(config.SERVER_MAX_BODY_BYTES)' 2>/dev/null || echo 1048576)"
-exec uvicorn main:app --host "$HOST" --port "$PORT" --no-access-log --log-level warning --timeout-graceful-shutdown "${GRACE%.*}" --ws-max-size "$WS_MAX"
+GRACE="$(python3 -c 'from app import config; print(config.SERVER_GRACEFUL_SHUTDOWN_S)' 2>/dev/null || echo 5)"
+WS_MAX="$(python3 -c 'from app import config; print(config.SERVER_MAX_BODY_BYTES)' 2>/dev/null || echo 1048576)"
+exec uvicorn app.main:app --host "$HOST" --port "$PORT" --no-access-log --log-level warning --timeout-graceful-shutdown "${GRACE%.*}" --ws-max-size "$WS_MAX"

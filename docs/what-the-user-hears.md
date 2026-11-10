@@ -6,7 +6,7 @@
 > and is shown on `/classic`, but does not speak; the surface guide and the BEV
 > caution were removed on 2026-10-05, since nothing read their output.
 
-Everything spoken comes from one module, `utils/simple_guidance.py`, from a
+Everything spoken comes from one module, `app/guidance/simple_guidance.py`, from a
 closed vocabulary:
 
 | Situation | Sentence |
@@ -49,7 +49,7 @@ How it decides, in one paragraph each:
   `tools/sim/glass_sim.py` replays these scenes. Objects are
   named only for something the rangefinders already have on the path, in the
   middle half of the front camera, and big enough to be near — and only for
-  things that can hurt you (`SIMPLE_NAMED_OBJECTS` in `config.py`). The
+  things that can hurt you (`SIMPLE_NAMED_OBJECTS` in `app/config.py`). The
   detector reports nothing else at all (`DETECTION_CLASSES`): a chair, table or
   laptop is dropped inside the engine, so it is not in the hazard list, the BEV
   labels or the dashboard either — the laser still steers round it. The
@@ -71,7 +71,7 @@ How it decides, in one paragraph each:
   off, so walking up to a parked car is not "approaching". It must also be on
   course to pass within 2 m of your walking line, so a car in the next lane
   going past a footpath is not announced. Tunables: `SIMPLE_VEHICLE_*` in
-  `config.py`; the lens (`SIMPLE_CAMERA_HFOV_DEG`, 70°) is unmeasured.
+  `app/config.py`; the lens (`SIMPLE_CAMERA_HFOV_DEG`, 70°) is unmeasured.
 - **Warn fast, clear slowly.** A hazard is believed after two polls; it is let go
   after a second; the block and approach edges have 1 ft hysteresis. A more
   urgent sentence is said the moment the previous one finishes; anything calmer
@@ -79,7 +79,7 @@ How it decides, in one paragraph each:
 - **One obstacle, one announcement.** Within one obstacle, a change that is not
   more urgent (a name flickering, the side flipping, a step back) must hold 6 s.
   Blocked sentences repeat after 30 s, 60 s, then every 2 min.
-- **The Pi speaks for itself** (`utils/pi_voice.py`): the guidance loop runs on
+- **The Pi speaks for itself** (`app/guidance/pi_voice.py`): the guidance loop runs on
   the device on every LiDAR scan as it lands (~15 Hz; at least `PI_VOICE_TICK_HZ`, 10 Hz,
   without one — a 5 Hz timer until 2026-10-30). A block the LiDAR measures in two different
   scans is warned of at once (`SIMPLE_LIDAR_CONFIRM_SCANS`): an obstacle appearing 3 ft ahead
@@ -93,4 +93,4 @@ How it decides, in one paragraph each:
 - **Startup.** Silent until the LiDAR has settled. The radar and camera are waited
   for up to 15 s, then guidance starts without them rather than never.
 
-Every threshold is a `SIMPLE_*` / `PI_VOICE_*` constant in `config.py`.
+Every threshold is a `SIMPLE_*` / `PI_VOICE_*` constant in `app/config.py`.

@@ -190,7 +190,7 @@ def verdict(per_view, tolerance):
             f"is anchors at genuinely different depths in one view — "
             f"which a planar scanner facing a wall cannot produce, and "
             f"which accumulating the band ACROSS MOTION can "
-            f"(utils/heading_tracker already supplies the pose)."
+            f"(app/perception/heading_tracker already supplies the pose)."
         )
     return "\n".join(out)
 

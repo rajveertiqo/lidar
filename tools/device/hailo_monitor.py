@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Live NPU utilization/FPS for the running server — what `hailortcli monitor` would have shown if the Hailo-10 runtime populated /tmp/hmon_files (it does not; see utils/hailo_stats.py for the evidence)."""
+"""Live NPU utilization/FPS for the running server — what `hailortcli monitor` would have shown if the Hailo-10 runtime populated /tmp/hmon_files (it does not; see app/sensors/hailo_stats.py for the evidence)."""
 
 import argparse
 import json

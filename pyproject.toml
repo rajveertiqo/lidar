@@ -13,12 +13,14 @@ requires-python = ">=3.11"
 dynamic = ["version", "dependencies"]
 
 [tool.setuptools.dynamic]
-version = { attr = "config.APP_VERSION" }
+version = { attr = "app.config.APP_VERSION" }
 dependencies = { file = ["requirements.txt"] }
 
 [tool.setuptools]
-py-modules = ["main", "config"]
-packages = ["utils", "routers", "ble_bridge", "tools", "tools.sim", "tools.field", "tools.device"]
+packages = [
+  "app", "app.api", "app.sensors", "app.perception", "app.guidance", "app.core",
+  "ble_bridge", "tools", "tools.sim", "tools.field", "tools.device",
+]
 
 # ---------------------------------------------------------------- lint: ruff check .
 [tool.ruff]
@@ -35,7 +37,7 @@ select = ["E9", "F"]
 # ---------------------------------------------------------------- types: mypy
 [tool.mypy]
 python_version = "3.11"
-files = ["main.py", "config.py", "utils", "routers"]
+files = ["app"]
 ignore_missing_imports = true   # picamera2, hailo_platform, rplidar, acconeer: no stubs
 follow_imports = "silent"
 # Informational for now: ~270 findings on 2026-11-10, most of them imprecise hints rather

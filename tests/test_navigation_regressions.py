@@ -7,10 +7,10 @@ from unittest.mock import patch
 import numpy as np
 from fastapi import WebSocketDisconnect
 
-from config import LIDAR_SECTOR_ORDER
-from routers import navigation_router as navigation
+from app.config import LIDAR_SECTOR_ORDER
+from app.api import navigation_router as navigation
 from tools.sim.drift_sim import ray_cast
-from utils import heading_tracker
+from app.perception import heading_tracker
 
 
 class HeadingMotionTests(unittest.TestCase):

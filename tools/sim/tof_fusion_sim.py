@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The camera + ToF merge (utils/depth_fusion.py) and its bench calibration
+"""The camera + ToF merge (app/perception/depth_fusion.py) and its bench calibration
 (tools/device/tof_calibrate.py) without the sensor, which is not bought yet (2026-10-13).
 
 A synthetic street seen from the shoulder: ground, a person, a pole, a table and a wall,
@@ -29,8 +29,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import config  # noqa: E402
-from utils import depth_fusion as df  # noqa: E402
+from app import config  # noqa: E402
+from app.perception import depth_fusion as df  # noqa: E402
 from tools.device import tof_calibrate as tc  # noqa: E402
 
 CAM_HEIGHT_M = 1.45  # the camera above the ground
@@ -573,7 +573,9 @@ def test_wall():
 
 def test_wiring():
     print("the detection pass, the distances and the guidance")
-    from utils import tof_camera, simple_guidance as sg, sensor_fusion as sf
+    from app.sensors import tof_camera
+    from app.guidance import simple_guidance as sg
+    from app.perception import sensor_fusion as sf
 
     person = box(0.05, 0.55, 1.70, 0.0, 1.85, 2.15)
     depth, conf, _ = render([person], wall_z=3.5)

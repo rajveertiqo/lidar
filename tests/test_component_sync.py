@@ -15,10 +15,12 @@ import time
 import unittest
 from unittest.mock import patch
 
-import config as c
-from utils import lidar_utils as lu, radar_utils as ru, sensor_fusion as sf
-from utils import shared_state as ss, simple_guidance as sg
-from utils import bev_grid, heading_tracker as ht
+from app import config as c
+from app.sensors import lidar_utils as lu, radar_utils as ru
+from app.perception import sensor_fusion as sf
+from app.core import shared_state as ss
+from app.guidance import simple_guidance as sg
+from app.perception import bev_grid, heading_tracker as ht
 
 POST_MM, ROOM_MM, POST_R = 1500.0, 6000.0, 120.0
 
@@ -165,7 +167,7 @@ class MotionSignTests(unittest.TestCase):
 class SettingsAgreeTests(unittest.TestCase):
     def test_relations(self):
         from ble_bridge import core as ble, gatt_server
-        from utils import mobile_delivery
+        from app.guidance import mobile_delivery
 
         from pathlib import Path
 

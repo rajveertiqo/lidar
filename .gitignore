@@ -1,5 +1,10 @@
 __pycache__/
 venv/
+venv
+# Build metadata (pip install -e ., or a build): never committed.
+*.egg-info/
+build/
+dist/
 
 
 # Walking-test logs written by tools/field/walk_logger.py, and the speech logs.

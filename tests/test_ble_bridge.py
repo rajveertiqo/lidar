@@ -203,7 +203,7 @@ class ProtocolTests(unittest.TestCase):
 
 class VocabTests(unittest.TestCase):
     def test_registry_matches_the_device(self):
-        from utils import simple_guidance as sg
+        from app.guidance import simple_guidance as sg
 
         vocab = load_vocab()
         self.assertEqual(

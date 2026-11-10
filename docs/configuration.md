@@ -1,6 +1,6 @@
 # Configuration
 
-Everything lives in `config.py`, grouped by subsystem. The values worth knowing:
+Everything lives in `app/config.py`, grouped by subsystem. The values worth knowing:
 
 | Setting                             | Meaning                                                                                              |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------- |

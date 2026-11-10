@@ -10,8 +10,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from utils import drift_guidance as dg  # noqa: E402
-from utils import heading_tracker as ht  # noqa: E402
+from app.perception import drift_guidance as dg  # noqa: E402
+from app.perception import heading_tracker as ht  # noqa: E402
 
 
 def ray_cast(

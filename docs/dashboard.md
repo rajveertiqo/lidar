@@ -5,11 +5,11 @@
 ✓ / ✗ / ⚠ / ✎ into the speech log (keys 1-4), the laser view drawn with the
 same corridor and rings the guide decides on, the front camera with the band
 where objects get named, the speech log (kept in memory; written to
-`logs/speech_*.log` only with `SPEECH_LOG_TO_FILE = True` in `config.py`), and
+`logs/speech_*.log` only with `SPEECH_LOG_TO_FILE = True` in `app/config.py`), and
 per-board sensor health. It is
 also the voice when no earpiece is connected: one aria-live region for the
 phone's screen reader, silent while the Pi speaks. The Pi's own voice
-(`utils/pi_voice.py`, espeak-ng) is the production delivery path.
+(`app/guidance/pi_voice.py`, espeak-ng) is the production delivery path.
 
 **The rest of this section describes the previous dashboard**, still served at
 `/classic` (`templates/index.html`).

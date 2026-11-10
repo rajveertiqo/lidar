@@ -1,22 +1,53 @@
 # Architecture
 
 ```
-main.py                 FastAPI app + lifespan (starts camera, LiDAR, radar, gyro, voice)
-config.py               Every threshold, in one place — the single source of truth
+app/main.py                 FastAPI app + lifespan (starts camera, LiDAR, radar, gyro, voice)
+app/config.py               Every threshold, in one place — the single source of truth
 
-utils/
+app/guidance/             What is said, and when
   simple_guidance.py        THE ONE SPEAKER: the closed vocabulary, warn-fast /
                             clear-slowly smoothing, and the gate that decides what is said
   pi_voice.py               The guidance loop (each LiDAR scan) and espeak-ng, so the device talks
                             without a browser; hands the voice to the phone when no
                             earpiece is connected
   startup_gate.py           Silent until the sensors have settled ("scan before you speak")
+  test_console.py           The terminal during a field test: one line per sentence
+  unified_guidance.py       Merges every source into ONE instruction
+  speech_log.py             WHAT THE DEVICE SAID, with wall and elapsed clocks.
+                            Written where speech is committed, never by polling
+  mobile_delivery.py        Whether the phone can speak, as the BLE bridge reports it
+
+app/perception/           What is around the user, and the walk decision
   spatial_scan.py           Corridor / room / open, and doorways from fitted walls —
                             a tie-break for "Turn left" vs "Turn right", never a new sentence
-  service.py                systemd notify, heartbeats and the shutdown backstop
-  access.py                 Admin-token guards for the endpoints that change how
-                            the device steers
-  test_console.py           The terminal during a field test: one line per sentence
+  walkable_guidance.py      Which segmentation classes are walkable ground (the
+                            segmentation view draws them bright)
+  walk_policy.py            THE decision, in FEET: walk straight unless blocked;
+                            the nearer of LiDAR and radar wins; a gap names glass
+  heading_tracker.py        Yaw, walking speed and sideways slip. Speed from
+                            scan matching; yaw fused with the gyro below
+  drift_guidance.py         Predictive: projects the user's ACTUAL motion forward
+                            and warns 3-6 s before they veer into something
+  sensor_fusion.py          LiDAR + camera -> one ranked hazard list (clock positions)
+  unified_navigation_system.py  Obstacle avoidance + road-crossing policy
+  traffic_light_detection.py    Crossing state machine
+  environment_detection.py  Fog / rain / low-light from camera + LiDAR quality
+  lidar_movers.py           People and vehicles MOVING in the LiDAR scan, from any
+                            side: who is coming at the user, from where, and when.
+                            Silent ("would say") until LIDAR_MOVERS_SPEAK
+  radar_movers.py           Echoes only the radar hears closing in — the LiDAR's blind
+                            arc, things above/below its plane ("Something …")
+  bev_grid.py               Ego-centred BEV occupancy grid — obstacle SHAPE, doorways,
+                            radar-stamped glass, blind arcs. ADVISORY, never stops
+  route_planner.py          The best way through what is around the user, now and as things
+                            move. ADVISORY ("would say") until ROUTE_PLANNER_SPEAK
+  motion_tracker.py         Moving things followed with a Kalman filter: where, how fast, how sure
+  depth_fusion.py           Camera + ToF: each depth pixel placed on the front camera's picture
+  ground_hazards.py         The ToF's view of the path: stairs, steps, drops, poles, walls, and
+                            the surface the rig rests on when set down
+  gait_calibration.py       Where the measured walking stride is kept
+
+app/sensors/              The hardware: LiDAR, radar, cameras, ToF, NPU, IMU
   lidar_utils.py            Scanning, motor PWM soft-start, sector/cone bucketing,
                             cluster filtering (a lone reflection cannot fire a STOP)
   radar_utils.py            A121 array acquisition, 6 boards -> 4 directions
@@ -28,52 +59,26 @@ utils/
   seg_inference.py          Walkable-surface segmentation engine
   yoloseg_decode.py         Pure-NumPy YOLO11-seg decoder (the HEF is exported
                             `nms:false`, so all post-processing is ours)
-  walkable_guidance.py      Which segmentation classes are walkable ground (the
-                            segmentation view draws them bright)
-  walk_policy.py            THE decision, in FEET: walk straight unless blocked;
-                            the nearer of LiDAR and radar wins; a gap names glass
-  heading_tracker.py        Yaw, walking speed and sideways slip. Speed from
-                            scan matching; yaw fused with the gyro below
   gyro_reader.py            MPU-6500 on SPI — yaw rate at 100 Hz, gait from the
                             accelerometer, and gravity-referenced tilt. Its bias
                             is corrected against the scan matcher
-  drift_guidance.py         Predictive: projects the user's ACTUAL motion forward
-                            and warns 3-6 s before they veer into something
-  sensor_fusion.py          LiDAR + camera -> one ranked hazard list (clock positions)
-  unified_navigation_system.py  Obstacle avoidance + road-crossing policy
-  unified_guidance.py       Merges every source into ONE instruction
-  traffic_light_detection.py    Crossing state machine
-  environment_detection.py  Fog / rain / low-light from camera + LiDAR quality
-  lidar_movers.py           People and vehicles MOVING in the LiDAR scan, from any
-                            side: who is coming at the user, from where, and when.
-                            Silent ("would say") until LIDAR_MOVERS_SPEAK
-  radar_movers.py           Echoes only the radar hears closing in — the LiDAR's blind
-                            arc, things above/below its plane ("Something …")
-  bev_grid.py               Ego-centred BEV occupancy grid — obstacle SHAPE, doorways,
-                            radar-stamped glass, blind arcs. ADVISORY, never stops
+  tof_camera.py             The ToF depth camera, captured in a child process
+  hailo_stats.py            NPU utilisation and FPS, in-process (hailortcli monitor's job)
+  mpu6500.py                MPU-6500 register driver (gyro_reader runs it)
+  radar_calibration.py      Where the radar bearing table is kept
+
+app/core/                 Shared by all: state, freshness, health, recording
+  service.py                systemd notify, heartbeats and the shutdown backstop
+  access.py                 Admin-token guards for the endpoints that change how
+                            the device steers
   shared_state.py           Thread-safe state shared between all sensor threads
-  speech_log.py             WHAT THE DEVICE SAID, with wall and elapsed clocks.
-                            Written where speech is committed, never by polling
   walk_recorder.py          Every guidance tick's inputs and what was said, for replay at the
                             desk; the clips saved on a tester's Wrong / Missed / label press
   freshness.py              Is this reading current? (monotonic receive time: a clock jump
                             is not a dead sensor)
-  route_planner.py          The best way through what is around the user, now and as things
-                            move. ADVISORY ("would say") until ROUTE_PLANNER_SPEAK
-  motion_tracker.py         Moving things followed with a Kalman filter: where, how fast, how sure
-  tof_camera.py             The ToF depth camera, captured in a child process
-  depth_fusion.py           Camera + ToF: each depth pixel placed on the front camera's picture
-  ground_hazards.py         The ToF's view of the path: stairs, steps, drops, poles, walls, and
-                            the surface the rig rests on when set down
   pi_health.py              SoC temperature and the under-voltage / throttle flags
-  hailo_stats.py            NPU utilisation and FPS, in-process (hailortcli monitor's job)
   live_map.py               What every sensor sees, placed around the user, for /map
-  mobile_delivery.py        Whether the phone can speak, as the BLE bridge reports it
-  mpu6500.py                MPU-6500 register driver (gyro_reader runs it)
-  gait_calibration.py       Where the measured walking stride is kept
-  radar_calibration.py      Where the radar bearing table is kept
-
-routers/                API layer (see api.md)
+app/api/                  The HTTP API (see api.md)
 templates/              The web pages: dashboard.html (/), tof_live.html (/tof/live),
                         radar_test.html, radar_map.html, map_test.html, gait_test.html,
                         index.html (the previous dashboard, /classic)

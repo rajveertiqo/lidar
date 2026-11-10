@@ -9,8 +9,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from utils.lidar_movers import MoverTracker  # noqa: E402
-from utils.radar_movers import RadarMoverTracker  # noqa: E402
+from app.perception.lidar_movers import MoverTracker  # noqa: E402
+from app.perception.radar_movers import RadarMoverTracker  # noqa: E402
 
 HZ = 15.0  # scans a second
 BEAMS = 264  # the rig's density: ~264 returns a revolution
@@ -305,7 +305,7 @@ SCENES = [
 ]
 
 
-# ---------------------------------------------------------------- the radar (utils/radar_movers)
+# ---------------------------------------------------------------- the radar (app/perception/radar_movers)
 
 RADAR_HZ = 6.0  # each board's frame rate
 RADAR_BOARDS = (30.0, 90.0, 150.0, 210.0, 270.0, 330.0)

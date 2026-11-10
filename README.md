@@ -41,9 +41,15 @@ at boot as a service, see [docs/running.md](docs/running.md).
 ## Project layout
 
 ```
-main.py, config.py      The FastAPI app, and every threshold in one place
-utils/                  Sensors, perception and guidance (docs/architecture.md lists each)
-routers/                The HTTP API (docs/api.md)
+app/                    The guidance service (docs/architecture.md lists every module)
+  main.py                 The FastAPI app: starts the sensors, the voice and the API
+  config.py               Every threshold, in one place
+  sensors/                LiDAR, radar, cameras, ToF, NPU and IMU drivers
+  perception/             What is around: the walk decision, the ToF's hazards and walls,
+                          drift, movers, the route planner, sensor fusion
+  guidance/               What is said: the closed vocabulary, the speech gate, the voice
+  core/                   Shared state, freshness, health, the walk recorder, access
+  api/                    The HTTP API (docs/api.md)
 templates/              The web pages: the dashboard at /, /tof/live, the radar pages
 model/                  The Hailo models (.hef)
 ble_bridge/             The phone link over Bluetooth LE (its own service)
@@ -70,7 +76,7 @@ requirements.txt        What the device runs (pinned); requirements-dev.txt adds
 ```
 
 CI runs all three on every push (`.github/workflows/tests.yml`). Settings live in
-`pyproject.toml`, the version in `config.py` (`APP_VERSION`), and what changed in
+`pyproject.toml`, the version in `app/config.py` (`APP_VERSION`), and what changed in
 [CHANGELOG.md](CHANGELOG.md).
 
 ## Documentation
@@ -85,7 +91,7 @@ CI runs all three on every push (`.github/workflows/tests.yml`). Settings live i
 | [Field testing](docs/field-testing.md) | Test walks, timings, the label buttons, replaying walks at the desk |
 | [Dashboard](docs/dashboard.md) | The pages and what each panel shows |
 | [API](docs/api.md) | The HTTP endpoints |
-| [Configuration](docs/configuration.md) | The settings in `config.py` that matter most |
+| [Configuration](docs/configuration.md) | The settings in `app/config.py` that matter most |
 | [Design notes](docs/design-notes.md) | Bugs found and fixed, and why the code is the way it is |
 | [Known limits](docs/known-limits.md) | What it cannot do yet |
 | [The phone link](ble_bridge/README.md) | The BLE bridge and its protocol |

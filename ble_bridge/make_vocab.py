@@ -1,5 +1,5 @@
 """Build / extend the phrase registry (contract/vocab_v1.json) from the device's
-closed vocabulary (utils/simple_guidance.ALLOWED).
+closed vocabulary (app/guidance/simple_guidance.ALLOWED).
 
 PROTOTYPE tool. The registry is APPEND-ONLY: an id, once given to a sentence, is
 never reused or renumbered. A sentence the device no longer says is marked
@@ -122,7 +122,7 @@ def build(existing: Dict[str, Any], current: List[Dict[str, Any]]) -> Dict[str, 
         "sha": digest,
         "note": (
             "Append-only. id 0 = no sentence; 65535 = not in this registry (use "
-            "ALERT_TEXT). Generated from utils/simple_guidance.ALLOWED by "
+            "ALERT_TEXT). Generated from app/guidance/simple_guidance.ALLOWED by "
             "ble_bridge/make_vocab.py — do not edit by hand."
         ),
         "phrases": ordered,
@@ -136,9 +136,7 @@ def main() -> int:
     )
     args = ap.parse_args()
     sys.path.insert(0, REPO)
-    from utils import (
-        simple_guidance as sg,
-    )  # import only: starts no thread, opens no device
+    from app.guidance import simple_guidance as sg  # import only: starts no thread, opens no device
 
     existing = {}
     if os.path.exists(VOCAB_PATH):

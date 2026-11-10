@@ -9,11 +9,13 @@ from unittest.mock import patch
 
 import numpy as np
 
-import config
-from utils import gyro_reader, lidar_utils, pi_voice, simple_guidance as sg
-from utils import unified_guidance, walk_policy
-from utils import pi_camera_utils as pc
-from utils.unified_navigation_system import detect_traffic_lights_from_detections
+from app import config
+from app.sensors import gyro_reader, lidar_utils
+from app.guidance import pi_voice, simple_guidance as sg
+from app.guidance import unified_guidance
+from app.perception import walk_policy
+from app.sensors import pi_camera_utils as pc
+from app.perception.unified_navigation_system import detect_traffic_lights_from_detections
 
 
 class SentenceOrderTests(unittest.TestCase):
@@ -93,7 +95,7 @@ class ScanDrivenTickTests(unittest.TestCase):
     """The guidance loop decides on a new LiDAR scan at once, not at its next timer tick."""
 
     def test_tick_follows_the_scan(self):
-        from utils import shared_state
+        from app.core import shared_state
 
         ticks = []
 
@@ -541,7 +543,7 @@ class LiveBoxesTests(unittest.TestCase):
             self.assertLess(time.monotonic() - t0, 0.05)  # nothing would come
 
     def test_side_boxes_aged_old_ones_dropped_header_small(self):
-        from routers import pi_camera_router as r
+        from app.api import pi_camera_router as r
 
         now = time.time()
         many = [
@@ -552,7 +554,7 @@ class LiveBoxesTests(unittest.TestCase):
         self.publish("left", 7, now - 1.0)
         self.publish("right", 5, now - (r.LIVE_BOXES_MAX_AGE_S + 1))
         self.publish("back", 8, now - 0.5)
-        with patch("utils.sensor_fusion.get_lidar_state", lambda: {}):
+        with patch("app.perception.sensor_fusion.get_lidar_state", lambda: {}):
             got = r._live_boxes("grid", 10, now)
         self.assertEqual(got["front"]["age_ms"], 0)
         self.assertEqual(len(got["front"]["detections"]), r.LIVE_BOXES_PER_CAMERA)
@@ -775,7 +777,7 @@ class SentenceTimingTests(unittest.TestCase):
         self.assertNotIn("camera_age_ms", wall)
 
     def test_voice_start_and_summary(self):
-        from utils import speech_log
+        from app.guidance import speech_log
 
         t = time.time()
         seq = 9_000_001
@@ -789,7 +791,7 @@ class SentenceTimingTests(unittest.TestCase):
         self.assertIn("front_ft", urgent)
 
     def test_events_stamped_when_they_happen(self):
-        from utils import speech_log
+        from app.guidance import speech_log
 
         stamps, first = [], threading.Event()
 

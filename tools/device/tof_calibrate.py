@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bench calibration of the ToF depth camera against the front camera (2026-10-13).
 
-Gives utils/depth_fusion.py its numbers: each lens's K (focal length in pixels, image
+Gives app/perception/depth_fusion.py its numbers: each lens's K (focal length in pixels, image
 centre) and distortion, and R, t — where the ToF sits and how it points, seen from the
 camera. Until this has run, the dots are placed by the design and /health says so.
 
@@ -42,8 +42,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import config  # noqa: E402
-from utils import depth_fusion as df  # noqa: E402
+from app import config  # noqa: E402
+from app.perception import depth_fusion as df  # noqa: E402
 
 TOF_UPSCALE = 4  # the 240 x 180 picture is enlarged this much to find the corners
 

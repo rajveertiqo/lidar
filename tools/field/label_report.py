@@ -4,7 +4,7 @@ them for training.
 
 A tester's label button on the dashboard ("What was really there?": wall, glass, obstacle,
 person, nothing) saves a clip of the sensor data around the press, its mark line carrying
-the label (utils/walk_recorder.py, config.MARK_LABELS). This reads those clips (and any
+the label (app/core/walk_recorder.py, config.MARK_LABELS). This reads those clips (and any
 full recordings with labels in them), replays each one through the CURRENT code
 (tools/field/walk_replay.py), and for every label compares:
 
@@ -60,7 +60,7 @@ _GROUND = ("stairs", "step", "drop")
 def label_class(text):
     """The label a sentence amounts to: one of config.MARK_LABELS, "ground", or "other"
     for one that is not about what is there (a status notice, a traffic light)."""
-    from utils import simple_guidance as sg
+    from app.guidance import simple_guidance as sg
 
     if not text:
         return "nothing"
@@ -79,7 +79,7 @@ def label_class(text):
 
 
 def _is_notice(text):
-    from utils import simple_guidance as sg
+    from app.guidance import simple_guidance as sg
 
     return text in sg._STATUS_NOTICES + sg._STARTUP_NOTICES + (sg.SENSORS_OFFLINE,)
 
@@ -200,7 +200,7 @@ def _dedupe(rows):
 
 def report(rows, replay=True):
     """Print the scores; returns how many labels right then are wrong now."""
-    from config import MARK_LABELS
+    from app.config import MARK_LABELS
 
     if not rows:
         print("No labels yet: press What was really there? on the dashboard while walking.")

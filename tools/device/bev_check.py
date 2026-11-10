@@ -56,7 +56,7 @@ def checks(a, b, dt, guidance, radar, fused=None):
             (
                 FAIL,
                 "grid available",
-                a.get("error") or "BEV_ENABLED is False in config.py",
+                a.get("error") or "BEV_ENABLED is False in app/config.py",
             )
         )
         return out

@@ -6,9 +6,13 @@ from unittest.mock import patch, Mock
 from fastapi import HTTPException
 from starlette.requests import Request
 
-from utils import drift_guidance as drift, gyro_reader, mobile_delivery, pi_voice
-from utils.motion_tracker import MotionTracker
-from routers.guidance_router import MobileDeliveryReport, mobile_delivery_report
+from app.perception import drift_guidance as drift
+
+from app.sensors import gyro_reader
+
+from app.guidance import mobile_delivery, pi_voice
+from app.perception.motion_tracker import MotionTracker
+from app.api.guidance_router import MobileDeliveryReport, mobile_delivery_report
 
 
 class GyroFreshnessTests(unittest.TestCase):
@@ -87,8 +91,10 @@ class MobileReadinessTests(unittest.TestCase):
             self.assertTrue(pi_voice.status()["delivery_available"])
 
     def test_health_is_down_without_any_confirmed_audio_route(self):
-        import main
-        from utils import pi_health, sensor_fusion, startup_gate
+        from app import main
+        from app.core import pi_health
+        from app.perception import sensor_fusion
+        from app.guidance import startup_gate
         with (
             patch.object(sensor_fusion, "get_system_health", return_value={"lidar_ok": True, "all_ok": True}),
             patch.object(pi_voice, "loop_status", return_value={"last_ok_age_s": 0.1}),

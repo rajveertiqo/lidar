@@ -10,8 +10,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from utils import simple_guidance as sg  # noqa: E402
-from utils import walk_policy  # noqa: E402
+from app.guidance import simple_guidance as sg  # noqa: E402
+from app.perception import walk_policy  # noqa: E402
 
 FT = 304.8
 LASER_STEP_DEG = 360.0 / 260.0  # the rig's density: ~260 returns a revolution
@@ -98,7 +98,7 @@ def _gap(a, b):
 
 
 def lidar_state(segments):
-    import config as c
+    from app import config as c
 
     angles, dists = ray_cast(segments)
     sectors = {}
@@ -141,7 +141,7 @@ def lidar_state(segments):
 
 def radar_state(echoes):
     """echoes: {board key: mm or None}; every board online, deaf past its reach."""
-    import config as c
+    from app import config as c
 
     now = time.time()
     secs = {}

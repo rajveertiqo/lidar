@@ -43,7 +43,7 @@
   scan is slightly skewed. Under 10 cm at walking pace, and not corrected for.
 - **Segmentation is front-only.** The other three sectors are segmented on
   demand for the debug view and cost extra NPU time.
-- **The voice is espeak-ng, and only audio.** `utils/pi_voice.py` speaks every
+- **The voice is espeak-ng, and only audio.** `app/guidance/pi_voice.py` speaks every
   committed sentence through the default PipeWire output (an earpiece when one
   is paired); with no earpiece the dashboard's screen-reader region carries it.
   There is no haptic output. Any other delivery layer must honour the same

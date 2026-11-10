@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Replay a recorded walk through the CURRENT guidance code — what would it say now?
 
-A recording (logs/walks/*.jsonl.gz, see utils/walk_recorder.py) holds every guidance
+A recording (logs/walks/*.jsonl.gz, see app/core/walk_recorder.py) holds every guidance
 tick's inputs and what was said. This feeds the inputs back, in order and on the
 recorded clocks, through simple_guidance (and by default walk_policy too), and lists
 every announcement that is now different: changed, no longer said, or newly said.
@@ -16,7 +16,7 @@ differences it lists are not all yours.
 
 --turn-on replays the walk with features that run on the device but are not yet spoken
 switched on (2026-11-06): what the wearer WOULD have heard from them, and when — the
-evidence for turning each one on in config.py. Each changed line names its feature:
+evidence for turning each one on in app/config.py. Each changed line names its feature:
 
     venv/bin/python tools/field/walk_replay.py --turn-on tof-hazards logs/walks/walk-*.jsonl.gz
     venv/bin/python tools/field/walk_replay.py --turn-on all logs/walks/walk-*.jsonl.gz
@@ -42,7 +42,7 @@ sys.path.insert(0, str(ROOT))
 # What runs on the device but is said only once a walk shows it is right: --turn-on name ->
 # the config flag that lets it speak.
 FEATURES = {
-    "tof-hazards": "TOF_HAZARDS_SPEAK",  # stairs, steps, drops, poles (utils/ground_hazards)
+    "tof-hazards": "TOF_HAZARDS_SPEAK",  # stairs, steps, drops, poles (app/perception/ground_hazards)
     "movers": "LIDAR_MOVERS_SPEAK",  # people and vehicles coming at the wearer
     "route": "ROUTE_PLANNER_SPEAK",  # the route planner's turns and steers
     "tof-distance": "TOF_USE_DISTANCE",  # the ToF's distance for what the camera names
@@ -53,14 +53,14 @@ FEATURES = {
 def turned_on(names):
     """The named features' flags True everywhere they are read: config, and every loaded
     utils module that imported one by value (simple_guidance, motion_tracker, ...)."""
-    import config  # noqa: F401  (loaded, so it is patched with the rest)
-    from utils import simple_guidance  # noqa: F401
+    from app import config  # noqa: F401  (loaded, so it is patched with the rest)
+    from app.guidance import simple_guidance  # noqa: F401
 
     stack = contextlib.ExitStack()
     for name in names:
         flag = FEATURES[name]
         for modname, mod in list(sys.modules.items()):
-            if (modname == "config" or modname.startswith("utils.")) and hasattr(mod, flag):
+            if (modname == "app.config" or modname.startswith("app.")) and hasattr(mod, flag):
                 stack.enter_context(mock.patch.object(mod, flag, True))
     return stack
 
@@ -103,9 +103,9 @@ def replay_ticks(path, recompute_policy=True, turn_on=()):
     guidance now) per tick, (line, None) per tester mark. time.time and time.monotonic are
     the recording's while the caller looks at each, so read no real clock there.
     tools/field/label_report.py replays the labelled clips with it."""
-    from utils import ground_hazards
-    from utils import simple_guidance as sg
-    from utils import walk_policy
+    from app.perception import ground_hazards
+    from app.guidance import simple_guidance as sg
+    from app.perception import walk_policy
 
     sg.reset()
     walk_policy._last_measured.clear()
@@ -159,7 +159,7 @@ def replay_ticks(path, recompute_policy=True, turn_on=()):
 def replay(path, recompute_policy=True, show_all=False, turn_on=()):
     """Print the differences; returns (ticks, said before, said now, differences).
     `turn_on`: FEATURES names to replay as if spoken."""
-    from utils import simple_guidance as sg
+    from app.guidance import simple_guidance as sg
 
     rows = []  # (t, before, now, why now, feature) — announcements only
     ticks = same_ticks = 0

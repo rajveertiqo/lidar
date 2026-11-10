@@ -8,8 +8,8 @@ import time
 import unittest
 import unittest.mock
 
-from utils import drift_guidance, walk_policy
-from utils import simple_guidance as sg
+from app.perception import drift_guidance, walk_policy
+from app.guidance import simple_guidance as sg
 
 
 def _ranges(ahead_mm, post):
@@ -147,13 +147,13 @@ class RadarEchoStrengthTests(unittest.TestCase):
     the board's row through the cardinal's (2026-11-02; only the nearest's was kept)."""
 
     def tearDown(self):
-        from utils.shared_state import reset_all_states
+        from app.core.shared_state import reset_all_states
 
         reset_all_states()
 
     def test_strengths_stay_with_their_echoes(self):
-        from utils import radar_utils as ru
-        from utils.shared_state import get_radar_state
+        from app.sensors import radar_utils as ru
+        from app.core.shared_state import get_radar_state
 
         ru._publish("deg330", {"min_dist": 900.0, "peaks_mm": [900.0, 2400.0],
                                "peaks_db": [18.5, 31.0], "online": True, "degraded": False})
@@ -164,8 +164,8 @@ class RadarEchoStrengthTests(unittest.TestCase):
                          [(900.0, 18.5), (1200.0, 12.0), (2400.0, 31.0), (3100.0, 9.0)])
 
     def test_a_row_without_strengths_does_not_shift_them(self):
-        from utils import radar_utils as ru
-        from utils.shared_state import get_radar_state
+        from app.sensors import radar_utils as ru
+        from app.core.shared_state import get_radar_state
 
         ru._publish("deg330", {"min_dist": 900.0, "peaks_mm": [900.0], "online": True, "degraded": False})
         ru._publish("deg030", {"min_dist": 1200.0, "peaks_mm": [1200.0], "peaks_db": [12.0],
@@ -302,7 +302,7 @@ class AfternoonFixTests(unittest.TestCase):
 
     def test_the_tof_seeing_a_solid_thing_at_the_echo_is_not_glass(self):
         from tools.sim import glass_sim as gs
-        from utils import ground_hazards as gh
+        from app.perception import ground_hazards as gh
 
         walk_policy._near_frames.clear()
         radar = gs.radar_state({"deg030": 410.0, "deg330": 410.0})
@@ -347,7 +347,7 @@ class ClockAndClipTests(unittest.TestCase):
 
     def _scan(self):
         from tools.sim import scene_hunt as sh
-        from utils.shared_state import get_lidar_state
+        from app.core.shared_state import get_lidar_state
 
         sh.publish({"left": 900, "right": None, "ahead": 2000, "posts": [], "glass": None}, True)
         return get_lidar_state()
@@ -368,7 +368,7 @@ class ClockAndClipTests(unittest.TestCase):
         import gzip
         import json
         import tempfile
-        from utils import walk_recorder as wr
+        from app.core import walk_recorder as wr
 
         with tempfile.TemporaryDirectory() as tmp, unittest.mock.patch.object(
             wr, "WALK_RECORD_DIR", tmp
@@ -398,7 +398,7 @@ class LabelTests(unittest.TestCase):
     saved with what the sensors saw, kept apart from Wrong clips, and scored against."""
 
     def _rec(self, tmp):
-        from utils import walk_recorder as wr
+        from app.core import walk_recorder as wr
 
         stack = contextlib.ExitStack()
         stack.enter_context(unittest.mock.patch.object(wr, "WALK_RECORD_DIR", tmp))
@@ -457,7 +457,7 @@ class LabelTests(unittest.TestCase):
     def test_the_mark_route_takes_a_label_and_refuses_an_unknown_one(self):
         import asyncio
         import tempfile
-        from routers.guidance_router import tester_mark
+        from app.api.guidance_router import tester_mark
 
         with tempfile.TemporaryDirectory() as tmp:
             wr, stack = self._rec(tmp)
@@ -511,7 +511,7 @@ class LabelTests(unittest.TestCase):
 
     def test_the_dashboard_has_a_button_for_every_label(self):
         import re
-        from config import MARK_LABELS
+        from app.config import MARK_LABELS
 
         with open(os.path.join(os.path.dirname(__file__), "..", "templates", "dashboard.html")) as fh:
             html = fh.read()
@@ -544,7 +544,7 @@ class ToFWallTests(unittest.TestCase):
             self.assertEqual(found is not None, want, f"{name}: {why}")
 
     def test_a_wall_must_hold_over_frames_and_be_fresh(self):
-        from utils.ground_hazards import confirmed_wall
+        from app.perception.ground_hazards import confirmed_wall
 
         wall = {"ahead_m": 1.2, "length_m": 2.0, "flat_m": 0.01, "reaches_top": True, "height_m": 1.2}
         snap = lambda surfaces, t=100.0: {"ok": True, "t": t, "front_surfaces": surfaces}
@@ -560,7 +560,7 @@ class ToFWallTests(unittest.TestCase):
     def _block(self, ground_at=None, speak=False):
         """An unnamed thing 3.9 ft ahead (a round post: no laser wall), the ToF's wall."""
         from tools.sim import scene_hunt as sh
-        from utils.shared_state import get_lidar_state, get_radar_state
+        from app.core.shared_state import get_lidar_state, get_radar_state
 
         sg.reset()
         got = None
@@ -618,8 +618,8 @@ class RestingOnADeskTests(unittest.TestCase):
         return gs.render_tof(boxes, pitch=-46.0)
 
     def test_the_desk_under_the_tof_is_found_and_left_out_of_what_is_near(self):
-        from utils import depth_fusion as df
-        from utils import ground_hazards as gh
+        from app.perception import depth_fusion as df
+        from app.perception import ground_hazards as gh
         from tools.sim import ground_hazard_sim as gs
 
         depth, conf = self._desk_frame()
@@ -629,8 +629,8 @@ class RestingOnADeskTests(unittest.TestCase):
         self.assertEqual(sum(res["near"][: int(0.45 / gh.TOF_NEAR_BIN_M)]), 0)
 
     def test_worn_there_is_no_resting_surface(self):
-        from utils import depth_fusion as df
-        from utils import ground_hazards as gh
+        from app.perception import depth_fusion as df
+        from app.perception import ground_hazards as gh
         from tools.sim import ground_hazard_sim as gs
 
         for name in ("wall_near", "wall_close", "person_near", "table"):
@@ -641,7 +641,7 @@ class RestingOnADeskTests(unittest.TestCase):
     def _front(self, rest):
         """A wall 4 ft ahead in a 3 ft nook, and an echo 0.29 m ahead the laser sees past."""
         from tools.sim import scene_hunt as sh
-        from utils.shared_state import get_lidar_state, get_radar_state
+        from app.core.shared_state import get_lidar_state, get_radar_state
 
         sh.publish({"left": 450, "right": 430, "ahead": 1225, "posts": [], "glass": 290}, True)
         walk_policy._near_frames.clear()

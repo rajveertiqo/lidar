@@ -31,7 +31,7 @@ This is the part worth reading before any code.
   and ~30 ft on LiDAR, because the laser goes through it and ranges the room
   beyond; that disagreement (`WALK_GLASS_GAP_FT` or more) is what names the
   glass. When only one sensor measured anything, its reading is used.
-  (`utils/walk_policy.fuse`)
+  (`app/perception/walk_policy.fuse`)
 - For the same reason, blocking is never decided on the two sensors
   **agreeing**: that would let a glass wall — which only the radar sees — pass
   as clear.
@@ -76,7 +76,7 @@ and stays quiet until an obstacle is inside `WALK_BLOCK_FT` (4 ft since 2026-10-
 destroys the user's line of travel.
 
 So there is a layer that works in **time** rather than distance
-(`utils/drift_guidance.py`), and it warns 3–6 seconds out, where the fix is a
+(`app/perception/drift_guidance.py`), and it warns 3–6 seconds out, where the fix is a
 few degrees of steering:
 
 1. **Collision course.** Project the user forward along how they are _actually_
@@ -96,7 +96,7 @@ because of the user's own turn, the instruction is _"you are veering left —
 straighten up"_, not a new heading to aim at.
 
 **Walking speed comes from the LiDAR**, recovered by matching consecutive scans
-(`utils/heading_tracker.py`). Two details are load-bearing:
+(`app/perception/heading_tracker.py`). Two details are load-bearing:
 
 - The obvious model — treat each return as a fixed point, so advancing `d`
   shortens its range by `d·cos(bearing)` — is **wrong for a wall**, and walls
@@ -128,7 +128,7 @@ places, which is the entire reason for carrying both:
 
 So the gyro takes the yaw, and whenever the scan match is independently trusted,
 the disagreement between the two is fed back as a slow correction to the gyro's
-bias (`utils/gyro_reader.py`). Same complementary structure the attitude filter
+bias (`app/sensors/gyro_reader.py`). Same complementary structure the attitude filter
 uses to hold tilt steady, one level up. Measured on the bench: **0.06° of yaw
 drift over 20 seconds**, against the 15° over 6 s that counts as a veer.
 
@@ -169,7 +169,7 @@ heading tracker ignores it completely and runs exactly as it did before one was
 fitted. This is a switch rather than a note because guessing the mounting is
 worse than waiting for it — a wrong axis or sign does not degrade the guidance,
 it **inverts** it, and tells a user veering right to bear right. The
-commissioning procedure is four steps in `config.py`, and the last one is
+commissioning procedure is four steps in `app/config.py`, and the last one is
 setting that flag.
 
 **Verified working 2026-09-04**, against a standalone probe of the same part:
@@ -178,7 +178,7 @@ across 350k+ samples, bias calibrated at rest (0.04 dps spread). Two things that
 look like faults and are not:
 
 - **`bias_dps` reads 0.0** while a direct probe measures a real per-axis bias
-  (e.g. −3.65 dps on Z). Expected: `utils/mpu6500.py` returns *"gyro in deg/s
+  (e.g. −3.65 dps on Z). Expected: `app/sensors/mpu6500.py` returns *"gyro in deg/s
   (bias removed)"* and subtracts its own calibration on every read, so the
   reader's *additional* residual correction is legitimately ~0. The probe's own
   live output shows the same thing — rates near zero once calibrated.
@@ -187,7 +187,7 @@ look like faults and are not:
 
 **Still outstanding: the board is loose and off level** — tilt was observed
 swinging 4.7°–15.3°, past the 12° `GYRO_TILT_WARN_DEG` threshold and worse than
-the 9.1° recorded in `config.py`. Yaw barely cares (cos 15° ≈ 0.97), but
+the 9.1° recorded in `app/config.py`. Yaw barely cares (cos 15° ≈ 0.97), but
 cross-axis leak does: sin 15° ≈ 0.26, so a quarter of every pitch and roll rate
 lands in the yaw channel, and a walking torso pitches and rolls hard with every
 step. Until it is mounted flat, tilt and cadence are not trustworthy — the step
@@ -282,7 +282,7 @@ All three splits above answer the same question at different widths: **how far
 is the nearest thing this way.** None of them can answer **what shape is it**,
 and some things worth knowing are only visible as a shape.
 
-`utils/bev_grid.py` adds a fourth view: an ego-centred bird's-eye occupancy
+`app/perception/bev_grid.py` adds a fourth view: an ego-centred bird's-eye occupancy
 grid, 16 m across at 50 mm per cell, accumulated over several scans and moved
 under the user each frame by the heading tracker's ego-motion. Clusters in it
 have an extent and an orientation, so they can be named.
@@ -365,7 +365,7 @@ stop because of something only the grid can see.
 ## Things that move — LiDAR movers (added 2026-10-07, silent for now)
 
 The camera sees one direction, and on the rig two of the four cameras are dark.
-The LiDAR sees all the way round, so `utils/lidar_movers.py` follows what moves
+The LiDAR sees all the way round, so `app/perception/lidar_movers.py` follows what moves
 in it: each scan is cut into blobs (a person, a bike, the front of a car — up to
 2 m wide; anything wider is a wall), each blob is followed from scan to scan,
 and its speed is fitted over ~1.2 s.
@@ -401,7 +401,7 @@ counted as speech), and the terminal prints them. Setting it True puts the same
 sentences through the one voice and its gate (level 2: said as soon as the
 sentence playing ends).
 
-**The radar fills the LiDAR's gaps** (`utils/radar_movers.py`). Each board's
+**The radar fills the LiDAR's gaps** (`app/perception/radar_movers.py`). Each board's
 echoes are followed in distance, and one closing in by itself is a mover — but
 only where the LiDAR has no blob (a thing up to 2 m wide) at that distance inside
 that board's beam: its blind back-left arc, or something above or below the

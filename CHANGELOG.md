@@ -1,8 +1,21 @@
 # Changelog
 
-What changed in each release of Shappe Guide. The version is `APP_VERSION` in `config.py`
+What changed in each release of Shappe Guide. The version is `APP_VERSION` in `app/config.py`
 (the API reports it). Why each change was made is in
 [docs/design-notes.md](docs/design-notes.md); every commit is in `git log`.
+
+## [Unreleased]
+
+### Changed
+- **The app is one package, `app/`**, split by job: `app/sensors/` (hardware), `app/perception/`
+  (what is around, the walk decision), `app/guidance/` (what is said), `app/core/` (shared
+  state, freshness, recording), `app/api/` (was `routers/`). `main.py` and `config.py` moved
+  into it: settings are now in **`app/config.py`**. Module names are unchanged.
+- It starts as `uvicorn app.main:app` (`./start_lidar.sh` does this; nothing to change in how
+  you start it or in the service). The radar check is `python -m app.sensors.radar_utils`.
+
+### Removed
+- `shappe_guide.egg-info/`, build metadata committed by mistake (now ignored).
 
 ## [3.1.0] - 2026-11-10
 

@@ -50,7 +50,7 @@ journalctl --user-unit=shappe-guide -f      # its log
 - **Starts at boot** with nobody logged in (the installer enables lingering).
 - **Restarts** on a crash, and on a **hang**: the watchdog is pinged only while
   the guidance loop and the web server's event loop are both alive
-  (`utils/service.py`). A missing sensor does not restart it; the app already
+  (`app/core/service.py`). A missing sensor does not restart it; the app already
   recovers from that and says "Sensors offline".
 - **Never wedges on the way out.** A shutdown that has not finished in
   `SHUTDOWN_TIMEOUT_S` ends with `os._exit`, so a stuck camera cannot keep
@@ -64,7 +64,7 @@ LiDAR, or the guidance loop is not guiding) with HTTP 503.
 `/guidance/gait/stride` change how it steers, so they need `SHAPPE_ADMIN_TOKEN`
 in an `X-Admin-Token` header (the installer and `start_lidar.sh` write one to
 `~/.config/shappe-guide.env`; the test pages ask for it once per browser). With
-NO token configured (uvicorn or `python main.py` by hand) they are refused with
+NO token configured (uvicorn or `python app/main.py` by hand) they are refused with
 503 — they used to be left open. Any state-changing request or WebSocket
 handshake whose `Origin` is another site is refused (403 / close 1008), whatever
 the token; and one that carries an Origin must reach the device by an IP
@@ -78,7 +78,7 @@ Hardware check: the LiDAR (by its `/dev/serial/by-id/` name, falling back to
 boards on the USB hub. To find which radar board is physically where:
 
 ```bash
-./venv/bin/python -m utils.radar_utils --identify
+./venv/bin/python -m app.sensors.radar_utils --identify
 ```
 
 ## Six radar boards, four guidance directions
@@ -182,7 +182,7 @@ Wave a hand ~1.5 ft in front of one sensor: its distance drops and its bar
 jumps. That is how a physical board is mapped to a serial — and the same page's
 CALIBRATE panel is where that measurement is recorded, writing the one bearing
 table the guidance layer actually steers on (see `RADAR_BEARINGS` in
-`config.py` for why a bearing is measured and never inferred).
+`app/config.py` for why a bearing is measured and never inferred).
 
 A board reports in one of three conditions, because they need different repairs:
 
@@ -205,7 +205,7 @@ real sensor:
 
 - **Its own process.** The SDK holds Python's GIL while it waits for a frame: beside it
   a 1 ms timer thread ran once every 32 ms. In the app that would stall the LiDAR
-  reader and the guidance loop, so `utils/tof_camera.py` runs the SDK in a spawned
+  reader and the guidance loop, so `app/sensors/tof_camera.py` runs the SDK in a spawned
   child, as `tof_live.py` does, and frames come up a pipe. With it the same timer
   runs every 1.05 ms. A sensor that stops sending is reopened; a child that dies or
   says nothing for 30 s is restarted (`restarts` in `/tof/status`).
@@ -232,7 +232,7 @@ real sensor:
   cannot switch it.
 - **The front camera as a depth camera** (2026-11-06). The placed depth points also make
   a depth picture aligned to the camera's, as an RGB-D camera gives:
-  `DepthFrame.depth_map()` in `utils/depth_fusion.py`, one distance per 4 × 4 block of
+  `DepthFrame.depth_map()` in `app/perception/depth_fusion.py`, one distance per 4 × 4 block of
   camera pixels (`TOF_ALIGNED_CELL_PX`; a ToF pixel spans ~4.3), the nearest point
   winning where several land in one block, a one-block gap taking its nearer neighbour's.
   `/tof/rgbd.jpg` lays it over the picture with each front detection boxed and labelled
@@ -241,7 +241,7 @@ real sensor:
   overlap — the ToF looks 20° lower, so roughly the lower half of the picture — and it
   is placed by the design until the bench calibration below.
 - **What the user hears does not change yet.** Each front detection gets a measured
-  `depth` (the nearest surface in its box, `utils/depth_fusion.py`), shown beside the
+  `depth` (the nearest surface in its box, `app/perception/depth_fusion.py`), shown beside the
   box-size distance (`tof_ft`). It replaces it only with `TOF_USE_DISTANCE`, after the
   bench calibration (`tools/device/tof_calibrate.py`: capture 15–25 checkerboard pairs with
   `POST /tof/calibrate/capture`, `solve`, then `POST /tof/calibrate/reload`). Until
@@ -258,7 +258,7 @@ for numpy < 2, and a plain install swaps the app's numpy 2.2.4 for 1.26; it runs
 
 The LiDAR is worn on the shoulder and measures one plane there, so stairs, kerbs, drops,
 holes and everything below the shoulder — a chair, a bin, a bollard, a table — never
-reach it. The ToF looks down at the ground ~1–4 m ahead, and `utils/ground_hazards.py`
+reach it. The ToF looks down at the ground ~1–4 m ahead, and `app/perception/ground_hazards.py`
 reads it there, 10 times a second in a thread of its own (~15 ms each), so the guidance
 tick pays nothing for it:
 

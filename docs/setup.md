@@ -65,8 +65,8 @@ python3 -m venv --system-site-packages venv    # REQUIRED: picamera2 and hailo c
 
 ```bash
 python -m rplidar /dev/ttyUSB0 256000          # LiDAR (stop the app first: one owner per port)
-./venv/bin/python -m utils.radar_utils --check # radar boards present / measured
-./venv/bin/python -m utils.gyro_reader --check # IMU: turn right, yaw must go POSITIVE
+./venv/bin/python -m app.sensors.radar_utils --check # radar boards present / measured
+./venv/bin/python -m app.sensors.gyro_reader --check # IMU: turn right, yaw must go POSITIVE
 ./venv/bin/python -m tools.device.tof_check    # ToF depth camera, step by step (stop the app first)
 hailortcli scan                                # NPU
 rpicam-hello --list-cameras                    # camera and its sensor modes

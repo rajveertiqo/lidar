@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ground hazards (utils/ground_hazards.py) on ray-traced scenes, without the sensor
+"""Ground hazards (app/perception/ground_hazards.py) on ray-traced scenes, without the sensor
 (2026-11-06).
 
 Each scene is boxes in the level frame (x right, y down, z ahead, the front camera's lens at
@@ -28,9 +28,9 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import config  # noqa: E402
-from utils import depth_fusion as df  # noqa: E402
-from utils import ground_hazards as gh  # noqa: E402
+from app import config  # noqa: E402
+from app.perception import depth_fusion as df  # noqa: E402
+from app.perception import ground_hazards as gh  # noqa: E402
 
 H = config.TOF_MOUNT_HEIGHT_M
 CAL = df.design_calibration()

@@ -26,7 +26,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from config import CAMERA_DARK_LEVEL  # noqa: E402
+from app.config import CAMERA_DARK_LEVEL  # noqa: E402
 
 
 def _thumb(img: Image.Image) -> np.ndarray:

@@ -93,7 +93,7 @@
       #overlay { width: 100%; display: block; border-radius: 6px; margin-top: 8px; }
       #overlay[hidden] { display: none; }
       #overlay-msg:empty { display: none; }
-      /* The wall check (utils/ground_hazards, 2026-11-10) */
+      /* The wall check (app/perception/ground_hazards, 2026-11-10) */
       #wall-verdict { font-size: 20px; font-weight: 700; margin: 2px 0 4px; }
       #wall-verdict.yes { color: var(--success); }
       #wall-verdict.no { color: var(--fg); }
@@ -232,7 +232,7 @@
         if (!live) $("s-fps").textContent = "0";
       }
 
-      // Layout from utils/tof_camera._HEADER: <dHHHH> capture time, width, height, range mm,
+      // Layout from app/sensors/tof_camera._HEADER: <dHHHH> capture time, width, height, range mm,
       // has confidence; then depth uint16[w*h] (mm), then confidence uint16[w*h] if it has one.
       let arrivals = [];
       function onFrame(buf) {

@@ -3,7 +3,7 @@ uvicorn==0.52.1
 websockets==17.0.1        # uvicorn's WebSocket support (/lidar/ws, /guidance/ws)
 pydantic==2.13.4
 numpy==2.2.4
-scipy==1.18.0             # utils/ground_hazards: the ToF's obstacles (it was missing here)
+scipy==1.18.0             # app/perception/ground_hazards: the ToF's obstacles (it was missing here)
 opencv-python==5.0.0.93
 pillow==11.1.0
 PyYAML==6.0.2             # model/metadata.yaml

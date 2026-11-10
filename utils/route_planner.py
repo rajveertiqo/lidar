@@ -66,13 +66,6 @@ def _wrap(deg: float) -> float:
     return (deg + 180.0) % 360.0 - 180.0
 
 
-def _in_arc(bearing: float, arc: Tuple[float, float]) -> bool:
-    """Is clockwise bearing `bearing` inside the clockwise arc (start, end)?"""
-    a0, a1 = arc[0] % 360.0, arc[1] % 360.0
-    b = bearing % 360.0
-    return a0 <= b <= a1 if a0 <= a1 else (b >= a0 or b <= a1)
-
-
 def _xy(bearing_deg: float, r: float) -> Tuple[float, float]:
     a = math.radians(bearing_deg)
     return r * math.cos(a), r * math.sin(a)

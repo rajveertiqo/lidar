@@ -11,7 +11,7 @@ stretching one over the other, nor by angle alone (the lenses are a few cm apart
     3. [u', v'] = K_cam * P' / Z'    the camera pixel it lands on
 
 K_tof, K_cam (with each lens's distortion), R and t come from the bench calibration
-(tools/tof_calibrate.py -> TOF_CALIBRATION_FILE), or until then from the design (config
+(tools/device/tof_calibrate.py -> TOF_CALIBRATION_FILE), or until then from the design (config
 TOF_* / FUSION_*). Each detection box then takes the distance of the nearest surface inside
 it (DepthFrame.box_depth): a person's, not the wall's behind them.
 
@@ -215,7 +215,7 @@ def design_calibration(note: str = "") -> Calibration:
 
 
 def load_calibration(path: Optional[str] = None) -> Calibration:
-    """The bench calibration (tools/tof_calibrate.py), or the design if there is none or it is unusable."""
+    """The bench calibration (tools/device/tof_calibrate.py), or the design if there is none or it is unusable."""
     path = path or TOF_CALIBRATION_FILE
     if not os.path.exists(path):
         return design_calibration()
@@ -456,7 +456,7 @@ def get_projector() -> DepthProjector:
 
 
 def reload_calibration() -> Dict[str, Any]:
-    """Re-read TOF_CALIBRATION_FILE (after tools/tof_calibrate.py solve)."""
+    """Re-read TOF_CALIBRATION_FILE (after tools/device/tof_calibrate.py solve)."""
     global _projector
     _projector = DepthProjector()
     return _projector.calib.summary()

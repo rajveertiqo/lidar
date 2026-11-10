@@ -53,7 +53,7 @@ authorize speaking an old instruction. New cue numbers still generate notificati
 | `contract/` | Machine-readable contract: phrase registry, test vectors and JSON Schemas. |
 
 ```bash
-venv/bin/python -m unittest ble_bridge.test_ble_bridge -v     # desk tests
+venv/bin/python -m unittest tests.test_ble_bridge -v     # desk tests
 venv/bin/python -m ble_bridge.make_vocab --check              # registry still matches the device?
 venv/bin/python -m ble_bridge.gatt_server --check             # BlueZ + adapter, read-only
 # --- radio on: supervised only ---

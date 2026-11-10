@@ -2,7 +2,7 @@ __pycache__/
 venv/
 
 
-# Walking-test logs written by tools/walk_logger.py, and the speech logs.
+# Walking-test logs written by tools/field/walk_logger.py, and the speech logs.
 logs/
 
 radar_bearings.json
@@ -13,7 +13,6 @@ hailort.log
 Shappe_Spatial_Experiment_Plan.pdf
 .vscode/
 
-tests/
 
 # The ToF bench calibration: captured pictures, and this unit's result (device-specific, like radar_bearings.json).
 calibration/tof_pairs/

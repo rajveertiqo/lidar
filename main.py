@@ -12,6 +12,7 @@ from starlette.datastructures import Headers
 
 from config import (
     ADMIN_TOKEN,
+    APP_VERSION,
     CORS_ORIGINS,
     SERVER_GRACEFUL_SHUTDOWN_S,
     SERVER_HOST,
@@ -128,7 +129,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Blind Assistance System - LiDAR, Vision & Road Crossing",
     description="Combined camera detection, LiDAR visualization, navigation,  environment detection, and road crossing assistance",
-    version="3.0.0",
+    version=APP_VERSION,
     lifespan=lifespan,
 )
 

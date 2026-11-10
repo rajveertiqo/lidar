@@ -131,7 +131,9 @@ def mark(kind: str, note: str = "") -> None:
     from utils.speech_log import _one_line
 
     kind, note = _one_line(kind), _one_line(note)
-    icon = {"right": "✓", "wrong": "✗", "missed": "⚠", "note": "📝"}.get(kind, "•")
+    icon = {"right": "✓", "wrong": "✗", "missed": "⚠", "note": "📝", "label": "🏷"}.get(
+        kind, "•"
+    )
     _emit(
         f"{_DIM}{_now()}{_RESET}  {_CYN}{_BOLD}{icon} TESTER: {kind.upper()}"
         f"{_RESET}{_CYN}{('  — ' + note) if note else ''}{_RESET}"

@@ -208,16 +208,32 @@ def rgbd(w: int = 0):
 def hazards():
     """The ToF's hazards on the ground ahead (utils/ground_hazards): the ground it fitted,
     each confirmed hazard (kind, distance in feet, the camera's word on it, whether it would
-    be said and why), the one the guidance would say ("top"), and every unconfirmed sighting
-    of the newest frame ("seen")."""
+    be said and why), the one the guidance would say ("top"), every unconfirmed sighting
+    of the newest frame ("seen"), and the wall check ("wall": is the nearest tall thing on
+    the path a wall, and why)."""
     _need_tof()
     from config import TOF_HAZARDS_ENABLED
 
     if not TOF_HAZARDS_ENABLED:
         return {"enabled": False}
-    from utils.ground_hazards import snapshot
+    import time
 
-    return {"enabled": True, **snapshot()}
+    from config import TOF_WALL_MIN_WIDTH_M, TOF_WALL_SPEAK
+    from utils.ground_hazards import confirmed_wall, snapshot
+
+    snap = snapshot()
+    # The wall check (2026-11-10): what the guidance would call the nearest tall thing on the
+    # path, for /tof/live.
+    found, why = confirmed_wall(snap, time.time())
+    surfaces = snap.get("front_surfaces") or []
+    snap["wall"] = {
+        "found": found is not None,
+        "why": why,
+        "surface": surfaces[-1] if surfaces else None,
+        "min_width_m": TOF_WALL_MIN_WIDTH_M,
+        "speak": bool(TOF_WALL_SPEAK),
+    }
+    return {"enabled": True, **snap}
 
 
 @router.get("/aligned.npy")
@@ -257,7 +273,7 @@ async def capture_pair():
     """Save one calibration pair to TOF_CALIBRATION_PAIRS_DIR: the front camera's picture,
     the ToF's brightness picture and its depth, captured within 50 ms of each other. Hold
     the checkerboard still where both see it; take 15-25 at different places and tilts,
-    then run tools/tof_calibrate.py solve."""
+    then run tools/device/tof_calibrate.py solve."""
     _need_tof()
 
     def save():
@@ -318,7 +334,7 @@ async def capture_pair():
 
 @router.post("/calibrate/reload", dependencies=[Depends(require_admin)])
 def reload():
-    """Re-read the calibration file after tools/tof_calibrate.py solve."""
+    """Re-read the calibration file after tools/device/tof_calibrate.py solve."""
     _need_tof()
     from utils.depth_fusion import reload_calibration
 

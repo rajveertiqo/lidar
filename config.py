@@ -5,6 +5,10 @@ import os
 
 _APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# The release, as in CHANGELOG.md. The API reports it (/docs, /openapi.json), pyproject.toml
+# reads it from here: one place to change.
+APP_VERSION = "3.1.0"
+
 HEF_PATH = os.path.join(_APP_DIR, "model", "yolo26m.hef")  # compiled YOLO detector
 
 # ============== CAMERA CONFIGURATION ==============
@@ -785,7 +789,7 @@ ROUTE_LOOKAHEAD_S = 4.0
 ROUTE_STEP_ASIDE_M = 0.6  # room needed to step aside from something coming
 ROUTE_HOLD_S = 3.0  # the way chosen is kept this long while it stays clear
 # Arcs (clockwise degrees) the LiDAR cannot see from where it is worn: no return there
-# is NOT open space. Measured on the rig as the back-left arc (tools/movers_sim.BLIND);
+# is NOT open space. Measured on the rig as the back-left arc (tools/sim/movers_sim.BLIND);
 # re-measure after moving the LiDAR (a head on the shoulder hides ~245-295).
 LIDAR_BLIND_ARCS_DEG = ((170.0, 290.0),)
 
@@ -801,9 +805,9 @@ LIDAR_BLIND_ARCS_DEG = ((170.0, 290.0),)
 # CamArray is on CAM1): /boot/firmware/config.txt needs dtoverlay=arducam-pivariety,cam0
 # there instead of dtoverlay=imx519,cam0, and the SDK: pip install --no-deps
 # ArducamDepthCamera==0.1.24 (its metadata asks for numpy<2; it runs on 2.2.4, 2026-11-03).
-# On since 2026-11-03 (the sensor in CAM0 streams 31 fps: tools/tof_check.py). It runs in
+# On since 2026-11-03 (the sensor in CAM0 streams 31 fps: tools/device/tof_check.py). It runs in
 # its own process; live view at /tof/live. Nothing the user hears changes until
-# TOF_USE_DISTANCE, which waits for the bench calibration (tools/tof_calibrate.py).
+# TOF_USE_DISTANCE, which waits for the bench calibration (tools/device/tof_calibrate.py).
 TOF_ENABLED = True
 TOF_USE_DISTANCE = (
     False  # False: the ToF's distance is only shown beside the box-size one
@@ -822,14 +826,14 @@ TOF_MIN_CONFIDENCE = (
 TOF_MIN_MM = 150.0
 TOF_MAX_MM = 4000.0
 # Is the SDK's distance along each pixel's ray (True) or along the lens axis? Bench check:
-# tools/tof_calibrate.py wall, pointed square-on at a flat wall.
+# tools/device/tof_calibrate.py wall, pointed square-on at a flat wall.
 TOF_DEPTH_IS_RADIAL = True
 TOF_PAIR_MAX_S = (
     0.06  # a camera picture uses the ToF frame captured nearest it, within this
 )
 TOF_BUFFER_FRAMES = 8
 TOF_LIVE_MAX_FPS = 15  # /tof/live: at most this many frames a second (~170 KB each)
-# Until tools/tof_calibrate.py writes TOF_CALIBRATION_FILE (checkerboard on the bench),
+# Until tools/device/tof_calibrate.py writes TOF_CALIBRATION_FILE (checkerboard on the bench),
 # both lenses are taken as ideal and placed as in the 3D design ("aimed apart").
 TOF_CALIBRATION_FILE = os.path.join(_APP_DIR, "calibration", "tof_calibration.json")
 TOF_CALIBRATION_PAIRS_DIR = os.path.join(_APP_DIR, "calibration", "tof_pairs")
@@ -913,6 +917,30 @@ TOF_POLE_MIN_H_M = 0.80  # ...this high or out of the top of the ToF's view
 TOF_HAZARD_WARN_M = 3.5
 TOF_HAZARD_STOP_M = 1.6
 TOF_HAZARD_CONFIRM = (3, 5)  # seen in 3 of the last 5 analyses (~0.3 s)
+# A wall, by the ToF (utils/ground_hazards, 2026-11-10): the tall thing standing on the path
+# is a wall when, seen from above, its surface runs flat across the path. Each frame turns
+# the thing's points into a top-down line, one sample per few ToF columns (the median of
+# every point in them, so the sensor's noise averages out), and grows it left and right from
+# the walking path while each next sample stays within TOF_WALL_FLAT_M of the line so far:
+# a corner of two walls is two such arms. A wall: at least TOF_WALL_MIN_WIDTH_M of it, or
+# the ToF's whole view edge to edge and TOF_WALL_MIN_SPAN_M (close up, the view is ~1.1 m
+# wide at 1 m), and taller than TOF_WALL_MIN_H_M or out of the top of the view. A chair, a
+# bin, a person, a pillar, a box: narrower, or not flat. A wardrobe that wide reads as a
+# wall: the same turn. Seen in TOF_WALL_CONFIRM[0] of the last [1] analyses.
+# The guidance then names an unnamed block "Blocked by wall, turn ..." (and "Wall ahead"),
+# when the ToF's wall is within TOF_WALL_MATCH_FT of the laser's front range and the camera
+# names nothing there: a window blind was "Obstacle in front, turn left" (2026-11-10). Names
+# only: the block, the turn and every distance are the laser's and the walk policy's.
+# TOF_WALL_SPEAK: said (on since 2026-11-10, the tester's call: it renames only). False logs
+# it as "would say" instead (tools/field/walk_replay.py --turn-on tof-wall shows what a walk would
+# have heard); tools/field/label_report.py checks it against the testers' Wall labels.
+TOF_WALL_SPEAK = True
+TOF_WALL_FLAT_M = 0.05
+TOF_WALL_MIN_WIDTH_M = 1.2
+TOF_WALL_MIN_SPAN_M = 0.6
+TOF_WALL_MIN_H_M = 1.2
+TOF_WALL_CONFIRM = (2, 3)
+TOF_WALL_MATCH_FT = 1.5
 # With the camera looking and seeing nothing there, a fall (drop, stairs or step down,
 # hole) at least this deep is still said, on the ToF alone; anything else is not.
 TOF_FALL_ALONE_M = 0.15
@@ -945,7 +973,7 @@ SPEECH_LOG_MAX_BYTES = 2_000_000
 SPEECH_LOG_KEEP_LINES = 400
 
 # Walk recording (utils/walk_recorder.py): every guidance tick's inputs and what was said,
-# for tools/walk_replay.py. Off unless SHAPPE_RECORD_WALK=1 or POST /guidance/record.
+# for tools/field/walk_replay.py. Off unless SHAPPE_RECORD_WALK=1 or POST /guidance/record.
 WALK_RECORD = os.environ.get("SHAPPE_RECORD_WALK", "") == "1"
 WALK_RECORD_DIR = os.path.join(_APP_DIR, "logs", "walks")
 WALK_RECORD_MAX_MB = (
@@ -958,13 +986,22 @@ WALK_RECORD_KEEP_MB = 1000
 # A tester's "Wrong" or "Missed" (/guidance/mark, the dashboard or the phone) saves a clip:
 # the guidance ticks from WALK_CLIP_BEFORE_S before the mark to WALK_CLIP_AFTER_S after,
 # in the recording's format, as logs/walks/clip-*.jsonl.gz — what the sensors saw, for
-# tools/walk_replay.py, recording or not (2026-11-10: the 17:17 false glass could not be
+# tools/field/walk_replay.py, recording or not (2026-11-10: the 17:17 false glass could not be
 # replayed, nothing was recorded). The last ticks are kept in memory for it, ~0.3 ms and
 # ~10 kB each.
 WALK_CLIP_ON_MARK = True
 WALK_CLIP_BEFORE_S = 10.0
 WALK_CLIP_AFTER_S = 2.0
 WALK_CLIP_KEEP_FILES = 50
+# What was really there (2026-11-10, Phase 1 of learning from walks): a tester's label button
+# on the dashboard (/guidance/mark {"kind": "label", "label": ...}) names the thing the device
+# just talked about — or what is ahead, if it named nothing — and saves a clip the same way,
+# named clip-...-<label>.jsonl.gz. tools/field/label_report.py scores the current code against the
+# labels and exports them for training on a laptop (never on the Pi). "nothing": nothing
+# was there (a false alarm). Labelled clips are the training data: kept apart from the
+# Wrong/Missed ones, WALK_LABEL_KEEP_FILES of them (~0.2 MB each).
+MARK_LABELS = ("wall", "glass", "obstacle", "person", "nothing")
+WALK_LABEL_KEEP_FILES = 3000
 
 SPEECH_LOG_KEEP_RUNS = 200
 

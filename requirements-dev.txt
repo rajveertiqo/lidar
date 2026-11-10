@@ -1,0 +1,6 @@
+# For development and CI, on top of what the device runs. Not needed on the Pi to run it.
+#   ./venv/bin/pip install -r requirements-dev.txt
+-r requirements.txt
+ruff==0.8.4               # lint: ruff check .
+mypy==1.15.0              # types: mypy (informational for now: see pyproject.toml)
+jsonschema==4.19.2        # tests/test_ble_bridge.py checks the phone messages against the contract

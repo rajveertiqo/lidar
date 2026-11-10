@@ -93,6 +93,12 @@
       #overlay { width: 100%; display: block; border-radius: 6px; margin-top: 8px; }
       #overlay[hidden] { display: none; }
       #overlay-msg:empty { display: none; }
+      /* The wall check (utils/ground_hazards, 2026-11-10) */
+      #wall-verdict { font-size: 20px; font-weight: 700; margin: 2px 0 4px; }
+      #wall-verdict.yes { color: var(--success); }
+      #wall-verdict.no { color: var(--fg); }
+      #wall-verdict.off { color: var(--muted); }
+      #wall-numbers { font-variant-numeric: tabular-nums; }
     </style>
   </head>
   <body>
@@ -129,6 +135,19 @@
         <code>TOF_MIN_CONFIDENCE</code> (<span id="cfg-thr">–</span>). The page shows at most
         <code>TOF_LIVE_MAX_FPS</code> frames a second.
       </p>
+
+      <section class="card">
+        <h2>Wall check: is the tall thing on the path a wall?</h2>
+        <div id="wall-verdict" class="off">–</div>
+        <div class="note" id="wall-why"></div>
+        <div class="note" id="wall-numbers"></div>
+        <div class="note" id="wall-rest"></div>
+        <p class="note">
+          A wall: flat across the path, at least <span id="wall-min">1.2</span> m wide (or the
+          whole view, close up), taller than the view. It is judged only while the device is
+          worn: it needs to see the floor. <span id="wall-speak"></span>
+        </p>
+      </section>
 
       <section class="card">
         <h2>On the front camera</h2>
@@ -375,8 +394,49 @@
         setTimeout(refreshOverlay, Math.max(0, gap - (performance.now() - started)));
       }
 
+      // The wall check, twice a second: what /tof/hazards says the guidance would call the
+      // nearest tall thing on the path.
+      async function pollWall() {
+        try {
+          const r = await fetch(`/tof/hazards?t=${Date.now()}`, { cache: "no-store" });
+          const d = r.ok ? await r.json() : null;
+          const w = d && d.wall;
+          const el = $("wall-verdict");
+          if (!d || d.enabled === false || !w) {
+            el.textContent = d && d.enabled === false ? "off (TOF_HAZARDS_ENABLED)" : "no answer";
+            el.className = "off";
+            $("wall-why").textContent = "";
+            $("wall-numbers").textContent = "";
+          } else {
+            el.textContent = w.found ? "WALL" : d.ok ? "not a wall" : "no analysis";
+            el.className = w.found ? "yes" : d.ok ? "no" : "off";
+            $("wall-why").textContent = w.why || "";
+            const s = w.surface;
+            $("wall-numbers").textContent = s
+              ? `nearest tall thing ${(s.ahead_m / 0.3048).toFixed(1)} ft ahead · flat ${s.length_m} m across` +
+                (s.flat_m != null ? ` to ${(s.flat_m * 100).toFixed(0)} cm` : "") +
+                (s.corner ? " · a corner" : "") + (s.spans_view ? " · the whole view" : "") +
+                (s.reaches_top || s.above_view ? " · above the view" : ` · ${s.height_m} m tall`)
+              : "";
+            $("wall-min").textContent = w.min_width_m;
+            $("wall-rest").textContent = d.rest
+              ? `Set down on a surface (a desk) reaching ${(d.rest.to_m / 0.3048).toFixed(1)} ft out: ` +
+                "the radar's echo off it is ignored, not taken for something in the way."
+              : "";
+            $("wall-speak").textContent = w.speak
+              ? "The guidance says it (TOF_WALL_SPEAK on)."
+              : "The guidance logs it as \"would say\" only (TOF_WALL_SPEAK off).";
+          }
+        } catch (e) {
+          $("wall-verdict").textContent = "no reply from the Pi";
+          $("wall-verdict").className = "off";
+        }
+        setTimeout(pollWall, document.hidden ? 2000 : 500);
+      }
+
       connect();
       refreshOverlay();
+      pollWall();
     </script>
   </body>
 </html>

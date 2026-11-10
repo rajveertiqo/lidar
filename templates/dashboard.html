@@ -407,6 +407,57 @@
         font-size: 22px;
         line-height: 1;
       }
+      /* What was really there: labels for learning from walks (2026-11-10). */
+      .labels-head {
+        margin-top: 14px;
+        font-weight: 800;
+        font-size: 14px;
+      }
+      .labels-head .muted {
+        display: block;
+        font-weight: 500;
+        font-size: 12px;
+        margin-top: 2px;
+      }
+      .labels {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .labels button {
+        font: inherit;
+        font-weight: 800;
+        font-size: 14px;
+        padding: 12px 2px;
+        border-radius: 12px;
+        cursor: pointer;
+        background: var(--card2);
+        color: var(--fg);
+        border: 2px solid color-mix(in srgb, var(--teal) 55%, var(--line));
+        display: grid;
+        gap: 3px;
+        place-items: center;
+        min-width: 0;
+      }
+      .labels button .k {
+        font-size: 11px;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .labels button:active {
+        transform: scale(0.97);
+      }
+      @media (max-width: 480px) {
+        .labels {
+          grid-template-columns: repeat(3, 1fr); /* "Obstacle" fits a phone */
+        }
+      }
+      #label-counts {
+        margin-top: 6px;
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
       #mark-ack {
         min-height: 1.4em;
         margin-top: 10px;
@@ -754,7 +805,9 @@
         <section class="card span-5">
           <h2>
             Was that right?
-            <span class="right muted" style="font-size: 12px">keys 1 – 4</span>
+            <span class="right muted" style="font-size: 12px"
+              >keys 1 – 4 · W G O P N</span
+            >
           </h2>
           <div class="marks">
             <button data-kind="right">
@@ -770,6 +823,23 @@
               <span class="big">✎</span>Note<span class="k">4</span>
             </button>
           </div>
+          <div class="labels-head">
+            What was really there?
+            <span class="muted"
+              >The thing it just named, or what is ahead if it named nothing.
+              Saves a labelled clip to learn from.</span
+            >
+          </div>
+          <div class="labels">
+            <button data-label="wall">Wall<span class="k">W</span></button>
+            <button data-label="glass">Glass<span class="k">G</span></button>
+            <button data-label="obstacle">
+              Obstacle<span class="k">O</span>
+            </button>
+            <button data-label="person">Person<span class="k">P</span></button>
+            <button data-label="nothing">Nothing<span class="k">N</span></button>
+          </div>
+          <div id="label-counts" class="muted mono"></div>
           <div id="mark-ack" class="muted"></div>
           <div class="stats">
             <div class="stat">
@@ -1410,6 +1480,14 @@
           $("st-min").textContent = d.said_last_minute || 0;
           $("st-total").textContent = d.said_total || 0;
           $("st-marks").textContent = d.marks_total || 0;
+          if (d.labels) {
+            const n = Object.values(d.labels).reduce((a, b) => a + b, 0);
+            $("label-counts").textContent = n
+              ? Object.entries(d.labels)
+                  .map(([k, v]) => `${k} ${v}`)
+                  .join(" · ") + ` — ${n} labelled`
+              : "no labels yet";
+          }
           const ok = (b) =>
             b
               ? '<span class="ok-t">✓ up</span>'
@@ -2021,25 +2099,29 @@
       }
 
       // ------------------------------------------------------------ verdict marks
-      async function mark(kind) {
+      async function mark(kind, label = "") {
         let note = "";
         if (kind === "note") {
           note = prompt("Note for the log:") || "";
           if (!note) return;
         }
         try {
-          const r = await (
-            await fetch("/guidance/mark", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ kind, note }),
-            })
-          ).json();
-          $("mark-ack").textContent =
-            `✔ marked ${kind} — after “${r.last_said}”`;
+          const res = await fetch("/guidance/mark", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(label ? { kind, label } : { kind, note }),
+          });
+          const r = await res.json();
+          if (!res.ok || !r.ok) throw new Error(r.error || res.status);
+          $("mark-ack").textContent = label
+            ? `✔ labelled ${label}${r.clip ? "" : " (no clip: clips are off)"} — it said “${r.last_said}”`
+            : `✔ marked ${kind} — after “${r.last_said}”`;
           if (navigator.vibrate) navigator.vibrate(40);
         } catch (e) {
-          $("mark-ack").textContent = "⚠ mark not saved — no connection";
+          $("mark-ack").textContent =
+            e instanceof TypeError
+              ? "⚠ mark not saved — no connection"
+              : `⚠ mark not saved — ${e.message}`;
         }
         pollTest();
       }
@@ -2048,18 +2130,32 @@
         .forEach((b) =>
           b.addEventListener("click", () => mark(b.dataset.kind)),
         );
+      document
+        .querySelectorAll(".labels button")
+        .forEach((b) =>
+          b.addEventListener("click", () => mark("label", b.dataset.label)),
+        );
+      const LABEL_KEYS = {};
+      document.querySelectorAll(".labels button").forEach((b) => {
+        LABEL_KEYS[b.dataset.label[0]] = b.dataset.label;
+      });
       document.addEventListener("keydown", (e) => {
         if (
-          e.target.matches("input, textarea") ||
+          e.target.matches("input, textarea, select") ||
+          e.repeat ||
           e.metaKey ||
           e.ctrlKey ||
           e.altKey
         )
           return;
         const kind = { 1: "right", 2: "wrong", 3: "missed", 4: "note" }[e.key];
+        const label = LABEL_KEYS[(e.key || "").toLowerCase()];
         if (kind) {
           e.preventDefault();
           mark(kind);
+        } else if (label) {
+          e.preventDefault();
+          mark("label", label);
         }
       });
 

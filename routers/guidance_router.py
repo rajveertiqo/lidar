@@ -15,7 +15,7 @@ from fastapi import (
 )
 from pydantic import BaseModel, StrictBool
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from utils.access import require_admin
@@ -287,36 +287,53 @@ def _one_line_note(raw) -> str:
 
 @router.post("/mark")
 async def tester_mark(payload: dict):
-    """A field tester's verdict, stamped into the speech log."""
+    """A field tester's verdict, stamped into the speech log. {"kind": "label", "label":
+    "wall"} (any of MARK_LABELS) is what was really there — the thing the device just named,
+    or what is ahead if it named nothing — and saves a labelled clip (2026-11-10); a Wrong or
+    Missed may carry a label too. An unknown label is refused, not guessed."""
+    from config import MARK_LABELS
     from utils import speech_log, simple_guidance, test_console
 
-    kind = str((payload or {}).get("kind", "note")).lower()
-    if kind not in ("right", "wrong", "missed", "note"):
+    payload = payload or {}
+    kind = str(payload.get("kind", "note")).lower()
+    if kind not in ("right", "wrong", "missed", "note", "label"):
         kind = "note"
-    note = _one_line_note((payload or {}).get("note", ""))
+    label = str(payload.get("label") or "").strip().lower()
+    if (label and label not in MARK_LABELS) or (kind == "label" and not label):
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": f"label must be one of: {', '.join(MARK_LABELS)}",
+            },
+            status_code=400,
+        )
+    note = _one_line_note(payload.get("note", ""))
     st = simple_guidance.state()
     last = st.get("counted") or st.get("last") or "nothing yet"
+    detail = f"{label + ' | ' if label else ''}{note + ' | ' if note else ''}last said: {last}"
     speech_log.say(
         "tester",
-        f"MARK {kind.upper()}",
+        f"LABEL {label.upper()}" if kind == "label" else f"MARK {kind.upper()}",
         level="mark",
-        detail=f"{note + ' | ' if note else ''}last said: {last}",
+        detail=detail,
     )
-    test_console.mark(kind, f"{note + ' | ' if note else ''}last said: {last}")
+    test_console.mark(kind, detail)
     clip = None
     try:
         from utils.walk_recorder import get_recorder
 
         rec = get_recorder()
-        rec.mark(kind, f"{note + ' | ' if note else ''}last said: {last}")
-        # What the sensors saw around it, for tools/walk_replay.py (2026-11-10).
-        if kind in ("wrong", "missed"):
-            clip = rec.clip(kind, f"{note + ' | ' if note else ''}last said: {last}")
+        rec.mark(kind, detail, label=label, said=last)
+        # What the sensors saw around it, for tools/field/walk_replay.py and, labelled, for
+        # tools/field/label_report.py (2026-11-10).
+        if kind in ("wrong", "missed", "label"):
+            clip = rec.clip(kind, detail, label=label, said=last)
     except Exception:
         pass
     return {
         "ok": True,
         "kind": kind,
+        "label": label or None,
         "last_said": last,
         "clip": os.path.join("logs", "walks", os.path.basename(clip)) if clip else None,
     }
@@ -324,7 +341,7 @@ async def tester_mark(payload: dict):
 
 @router.get("/record")
 def walk_record_status():
-    """Is the walk being recorded for replay (tools/walk_replay.py)?"""
+    """Is the walk being recorded for replay (tools/field/walk_replay.py)?"""
     from utils.walk_recorder import get_recorder
 
     return get_recorder().status()
@@ -352,11 +369,17 @@ def field_test_snapshot(limit: int = 12):
     log = speech_log.recent(limit=400)
     lines = log.get("lines") or []
     now = _time.time()
-    # Tester marks and the LiDAR movers' silent "would say" lines were not said.
-    unsaid = ("tester", "lidar-movers")
+    # Tester marks and the silent "would say" lines (movers, route planner, ToF) were not said.
+    unsaid = ("tester", "lidar-movers", "route-planner", "tof-hazards", "tof-wall")
     spoken = [r for r in lines if r.get("source") not in unsaid]
     totals = log.get("totals") or {}
     marks = int(totals.get("tester", 0))
+    try:
+        from utils.walk_recorder import get_recorder
+
+        labels = get_recorder().label_counts()
+    except Exception:
+        labels = {}
     return {
         "health": get_system_health(),
         "startup": startup_gate.state(),
@@ -364,6 +387,7 @@ def field_test_snapshot(limit: int = 12):
         "said_last_minute": sum(1 for r in spoken if now - r.get("epoch", 0) <= 60),
         "said_total": sum(n for s, n in totals.items() if s not in unsaid),
         "marks_total": marks,
+        "labels": labels,  # labelled clips on the card, by label
         "would_say_total": int(totals.get("lidar-movers", 0)),
         "log_path": log.get("path"),
         "lines": lines[-max(1, min(50, limit)) :],

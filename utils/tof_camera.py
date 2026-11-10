@@ -153,7 +153,7 @@ class _Sdk:
         if _failed(ret):
             raise RuntimeError(
                 f"cannot open the ToF at /dev/video{index} (error {ret}) - "
-                "held by another program (~/tof/tof_live.py, tools/tof_check.py)?"
+                "held by another program (~/tof/tof_live.py, tools/device/tof_check.py)?"
             )
         try:
             ret = self.cam.start(
@@ -257,7 +257,7 @@ def _capture(conn, stop) -> None:
                 if index is None:
                     raise RuntimeError(
                         f"no ToF sensor ({DRIVER}) on any camera port - "
-                        "run tools/tof_check.py"
+                        "run tools/device/tof_check.py"
                     )
                 sdk = _Sdk(index)
                 conn.send(

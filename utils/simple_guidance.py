@@ -128,6 +128,8 @@ from config import (
     TOF_HAZARD_STOP_M,
     TOF_HAZARDS_SPEAK,
     TOF_USE_DISTANCE,
+    TOF_WALL_MATCH_FT,
+    TOF_WALL_SPEAK,
 )
 
 MM_PER_FT = 304.8
@@ -1890,6 +1892,27 @@ def _steer_allowed(
     return True
 
 
+def tof_wall(
+    ground: Optional[Dict[str, Any]], now: float, front_ft: Optional[float]
+) -> Tuple[Optional[Dict[str, Any]], str]:
+    """(the ToF's confirmed wall, why) when it stands within TOF_WALL_MATCH_FT of the laser's
+    front range, else (None, why not): utils/ground_hazards.confirmed_wall (2026-11-10)."""
+    if front_ft is None:
+        return None, "nothing measured ahead"
+    try:
+        from utils.ground_hazards import confirmed_wall
+
+        found, why = confirmed_wall(ground, now)
+    except Exception as e:  # no wall named beats a crashed voice
+        return None, f"the ToF wall check failed: {type(e).__name__}"
+    if found is None:
+        return None, why
+    ft = float(found.get("ahead_m") or 0.0) / 0.3048
+    if abs(ft - front_ft) > TOF_WALL_MATCH_FT:
+        return None, f"the ToF's wall is {ft:.1f} ft ahead, the laser's front {front_ft:.1f} ft: not the same thing"
+    return found, why
+
+
 def ground_sentence(
     ground: Optional[Dict[str, Any]], now: float
 ) -> Tuple[Optional[str], str, Optional[Dict[str, Any]]]:
@@ -2294,6 +2317,20 @@ def decide(
             name = (pole.get("camera") or {}).get("name")
             obj = name if name in OBJECT_IN_FRONT else "Pole" if "Pole" in OBJECT_IN_FRONT else None
 
+    # The ToF's wall (2026-11-10): a flat, wide, upright surface across the path at the
+    # laser's front range is a wall, where the laser's own wall test did not name it — a
+    # window blind was "Obstacle in front, turn left", its wall test kept off by a radar echo
+    # off the desk below. It names only: the block, the way out and every distance stay
+    # the laser's and the walk policy's. TOF_WALL_SPEAK False: "would say" only.
+    wall_tof, wall_tof_why, wall_would = None, "", False
+    if (blocked or near) and not (glass or wall or alongside or brushed or obj):
+        wall_tof, wall_tof_why = tof_wall(ground, now, front_ft)
+        if wall_tof is not None:
+            if TOF_WALL_SPEAK:
+                wall = True
+            else:
+                wall_would = True
+
     # Something the laser measures on the walking line, short of a block, that is not a
     # wall, glass or named: until 2026-10-21 that was "Walk straight" right up to 4 ft.
     laser_ft = front.get("lidar_ft") if front.get("lidar_measured") else None
@@ -2550,6 +2587,29 @@ def decide(
         ground=ground_text,
         in_front=in_front,
     )
+    # What it would say with the ToF's wall named (TOF_WALL_SPEAK False): logged, not said.
+    wall_would_say = None
+    if wall_would:
+        named_wall = _sentence(
+            blocked,
+            near,
+            glass,
+            True,
+            side,
+            drift,
+            obj,
+            close,
+            vehicle,
+            vehicle_ahead,
+            steer,
+            vehicle_no_room,
+            glass_side,
+            mover,
+            False,
+            ground=ground_text,
+            in_front=False,
+        )
+        wall_would_say = named_wall if named_wall != text else None
     if ground_text and text == ground_text:
         rule, why = "ground_hazard", ground_why
     elif text in _MOVER_SENTENCES:
@@ -2615,9 +2675,13 @@ def decide(
     elif blocked:
         rule = "blocked"
         why = f"front blocked by {'glass' if glass else 'wall' if wall else (obj or 'an obstacle').lower()}"
+        if wall and wall_tof is not None:
+            why += f" — the ToF: {wall_tof_why}"
     elif near and (glass or wall or obj):
         rule = "approaching"
         why = f"{'glass' if glass else 'wall' if wall else obj.lower()} {front_ft or 0:.1f} ft ahead"
+        if wall and wall_tof is not None:
+            why += f" — the ToF: {wall_tof_why}"
     elif text == OBSTACLE_AHEAD:
         rule = "approaching"
         why = f"something unnamed on your path {laser_ft:.1f} ft ahead"
@@ -2701,6 +2765,15 @@ def decide(
         "ground_text": ground_text,
         "ground_would_say": ground_would,
         "ground_reason": ground_why,
+        # The ToF's wall (tof_wall): named by it (TOF_WALL_SPEAK), or what it would say.
+        "tof_wall": (
+            {k: wall_tof.get(k) for k in ("ahead_m", "length_m", "flat_m", "corner", "spans_view")}
+            if wall_tof is not None
+            else None
+        ),
+        "tof_wall_named": bool(wall_tof is not None and TOF_WALL_SPEAK and wall),
+        "wall_would_say": wall_would_say,
+        "wall_reason": f"wall — the ToF: {wall_tof_why}" if wall_tof is not None else "",
         # For the dashboard, in FEET like every figure a person reads there.
         "movers": [
             {
@@ -3735,6 +3808,7 @@ _route_shadow = (
     _MoverShadow()
 )  # the route planner's would-say (ROUTE_PLANNER_SPEAK False)
 _ground_shadow = _MoverShadow()  # the ToF's hazards' would-say (TOF_HAZARDS_SPEAK False)
+_wall_shadow = _MoverShadow()  # the ToF's wall named, would-say (TOF_WALL_SPEAK False)
 # The start-up hold as the wearer hears it: "Starting, please wait" when it begins, "Ready"
 # when guidance does (2026-10-21; until then the hold was silent, like a dead device).
 _startup = {"held": False, "starting_said": False, "ready_said": False}
@@ -3819,6 +3893,30 @@ def _reason(text: str, raw: Dict[str, Any]) -> str:
         if _LEVEL.get(text) == _BLOCKED
         else f"{thing} ahead"
     )
+
+
+def obstacle_of(text: Optional[str]) -> Optional[str]:
+    """What a sentence is about, as guidance()'s "obstacle" and the phone's registry have it:
+    "glass", "wall", "vehicle", "person", "stairs", a word the camera names ("chair"), ...,
+    or None (an unnamed "Obstacle ..." included). From the text alone, so the label tools
+    (tools/field/label_report.py) can ask it of a recorded sentence too."""
+    if not text:
+        return None
+    if text in _VEHICLE_APPROACH + (VEHICLE_AHEAD,):
+        return "vehicle"
+    if text in _MOVER_INFO:
+        return _MOVER_INFO[text]["word"].lower()
+    if text in _STEER_INFO:
+        return (_STEER_INFO[text]["word"] or "").lower() or None
+    if text in BLOCKED_GLASS_ANY + (GLASS_AHEAD,) + _GLASS_BESIDE:
+        return "glass"
+    if text in BLOCKED_WALL_ANY + (WALL_AHEAD,) + _SIDE_WALL:
+        return "wall"
+    if text in _GROUND_OBSTACLE:
+        return _GROUND_OBSTACLE[text]
+    if text in _OBJECT_OF:
+        return _OBJECT_OF[text].lower()
+    return None
 
 
 def guidance(
@@ -4070,6 +4168,11 @@ def guidance(
             if not TOF_HAZARDS_SPEAK and not hold
             else None
         )
+        wall_shadow = (
+            _wall_shadow.update(raw.get("wall_would_say"), now)
+            if not TOF_WALL_SPEAK and not hold
+            else None
+        )
         # A whole tick after "Guidance stopped" (fault_notice): guidance is back, so what
         # stands now is said again rather than taken as already said, and the next fault
         # is told at once. Here, not at the top: a tick that raises must not get this far.
@@ -4127,23 +4230,7 @@ def guidance(
             if text in (DRIFT_RIGHT, NEAR_RIGHT, VEHICLE_FROM_RIGHT, GLASS_RIGHT)
             else None
         ),
-        "obstacle": (
-            "vehicle"
-            if text in _VEHICLE_APPROACH + (VEHICLE_AHEAD,)
-            else _MOVER_INFO[text]["word"].lower()
-            if text in _MOVER_INFO
-            else (_STEER_INFO[text]["word"] or "").lower() or None
-            if text in _STEER_INFO
-            else "glass"
-            if text in BLOCKED_GLASS_ANY + (GLASS_AHEAD,) + _GLASS_BESIDE
-            else "wall"
-            if text in BLOCKED_WALL_ANY + (WALL_AHEAD,) + _SIDE_WALL
-            else _GROUND_OBSTACLE[text]
-            if text in _GROUND_OBSTACLE
-            else _OBJECT_OF[text].lower()
-            if text in _OBJECT_OF
-            else None
-        ),
+        "obstacle": obstacle_of(text),
         "reason": _reason(text, raw),
         "raw": {
             k: raw.get(k)
@@ -4175,6 +4262,9 @@ def guidance(
                 "tracks",
                 "ground",
                 "ground_would_say",
+                "tof_wall",
+                "tof_wall_named",
+                "wall_would_say",
             )
         },
         "speak": speak,
@@ -4190,6 +4280,9 @@ def guidance(
         # The ToF's hazard on the ground, held and new on this poll, not spoken (TOF_HAZARDS_SPEAK).
         "ground_shadow": ground_shadow,
         "ground_shadow_reason": raw.get("ground_reason", "") if ground_shadow else "",
+        # The ToF's wall, named on this poll, not spoken (TOF_WALL_SPEAK).
+        "wall_shadow": wall_shadow,
+        "wall_shadow_reason": raw.get("wall_reason", "") if wall_shadow else "",
     }
 
 
@@ -4277,6 +4370,7 @@ def reset() -> None:
         _shadow.reset()
         _route_shadow.reset()
         _ground_shadow.reset()
+        _wall_shadow.reset()
         _startup.update(held=False, starting_said=False, ready_said=False)
         _fault["said_at"] = None
     try:

@@ -2,7 +2,7 @@
 
 PROTOTYPE. No Bluetooth and no network here: the GATT server feeds this class
 what the navigation service reported and sends what it returns, so the whole
-behaviour is testable on a desk (test_ble_bridge.py).
+behaviour is testable on a desk (tests/test_ble_bridge.py).
 
 What it relies on in the navigation service (all CONFIRMED in the code):
   GET /guidance/walk   -> utils.unified_guidance.latest_guidance(): notify.cue_seq,

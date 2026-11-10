@@ -665,7 +665,7 @@ def _door_in_wall_ft(
             continue
         # Facing on both sides: the wall the pane is set in is ONE surface at the pane's
         # depth. Two posts either side at other depths are not (the scene hunt's false
-        # glass went 13 -> 31 in 1500 scenes without this; README: known limits).
+        # glass went 13 -> 31 in 1500 scenes without this; docs/known-limits.md).
         in_wall = False
         if len(depth) == 2:
             zl, zr = (sorted(depth[s])[len(depth[s]) // 2] for s in (False, True))
@@ -694,13 +694,34 @@ def read_direction(
     tof_front: Optional[Tuple[float, Dict[str, Any]]] = None,
     tof_solids: Optional[List[Tuple[float, str]]] = None,
     tof_near: Optional[List[int]] = None,
+    tof_rest: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Both sensors' view of one direction, fused into a single figure in feet. `tof_near`:
+    """Both sensors' view of one direction, fused into a single figure in feet. `tof_rest`:
+    the surface the rig is set down on, by the ToF (_tof_rest). `tof_near`:
     the ToF's points on the walking path per TOF_NEAR_BIN_M of distance (_tof_near). `tof_front`:
     (feet, hazard) of the ToF's nearest confirmed solid thing on the path (_tof_front).
     `tof_solids`: (feet, kind) of every solid thing it has confirmed there (_tof_solids)."""
     lidar_ft, lidar_measured = _lidar_reading(lidar_state, direction)
     radar_ft, radar_measured = _radar_reading(radar_state, direction)
+    # Set down on a desk (ground_hazards.rest_surface, 2026-11-10): the front boards hear the
+    # desk top ~0.3 m ahead, and with the ToF seeing it solid there the echo was "Obstacle in
+    # front, turn left" — front 0.9 ft, the laser seeing the window blind at 4 ft. An echo no
+    # further than the surface the ToF rests on reaches (REST_ECHO_TOL_M), which the laser sees
+    # past, is that surface: dropped, as an off-axis echo is. Worn, there is no such surface.
+    rest_echo = bool(
+        direction == "front"
+        and tof_rest
+        and radar_measured
+        and isinstance(radar_ft, (int, float))
+        and radar_ft * MM_PER_FT / 1000.0
+        <= float(tof_rest.get("to_m") or 0.0) + REST_ECHO_TOL_M
+        and (
+            not lidar_measured
+            or (lidar_ft is not None and lidar_ft - radar_ft >= WALK_GLASS_GAP_FT)
+        )
+    )
+    if rest_echo:
+        radar_measured = False
     lidar_arc_ft = _lidar_arc_ft(lidar_state, direction)
     arc_corroborates = _arc_corroborates(lidar_state, direction, radar_ft)
     # Glass door in a wall (decided 2026-09-29): both boards agree and the laser ahead sees past it, so the arc's returns are the wall beside the pane.
@@ -792,10 +813,15 @@ def read_direction(
 
     distance_ft, how = fuse(
         lidar_ft,
-        RADAR_NO_RETURN_FT if radar_off_axis else radar_ft,
+        RADAR_NO_RETURN_FT if (radar_off_axis or rest_echo) else radar_ft,
         lidar_measured,
         radar_measured,
     )
+    if rest_echo:
+        how += (
+            f" (the radar's echo {radar_ft:.1f} ft ahead is the surface the device is set down"
+            " on, by the ToF: not something in the way)"
+        )
     if radar_off_axis:
         how += " (radar echo off-axis — the laser sees that object to one side)"
     if board_glass:
@@ -923,6 +949,7 @@ def read_direction(
         # The echo still counts as an obstacle at its distance.
         "glass": glass,
         "laser_hidden": laser_hidden,
+        "rest_echo": rest_echo,
         "tof_ft": None if tof_ft is None else round(tof_ft, 2),
         "lidar_arc_ft": lidar_arc_ft,
         "arc_corroborates": arc_corroborates,
@@ -940,6 +967,7 @@ def read_all(
     tof_front: Optional[Tuple[float, Dict[str, Any]]] = None,
     tof_solids: Optional[List[Tuple[float, str]]] = None,
     tof_near: Optional[List[int]] = None,
+    tof_rest: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Dict[str, Any]]:
     return {
         d: read_direction(
@@ -949,6 +977,7 @@ def read_all(
             tof_front if d == "front" else None,
             tof_solids if d == "front" else None,
             tof_near if d == "front" else None,
+            tof_rest if d == "front" else None,
         )
         for d in GUIDANCE_SECTORS
     }
@@ -963,6 +992,32 @@ _TOF_OFF_PLANE = ("low_obstacle", "overhang")
 # This many of the ToF's points at an echo's distance on the walking path are a solid thing
 # there (a patch ~3 x 3 deg at 1 m; flying pixels and noise come nowhere near).
 _TOF_NEAR_MIN_POINTS = 200
+
+
+# A front echo no further than this past where the desk the rig rests on ends, by the ToF, is
+# the desk (read_direction): the boards sit beside the ToF, a few cm off.
+REST_ECHO_TOL_M = 0.15
+
+
+def _tof_rest() -> Optional[Dict[str, Any]]:
+    """The surface the rig is set down on, by the ToF (ground_hazards.rest_surface), from a
+    fresh frame while its worker runs; else None."""
+    try:
+        from config import TOF_ENABLED, TOF_HAZARDS_ENABLED, TOF_HAZARD_FRESH_S
+        from utils import ground_hazards as gh
+
+        if not (TOF_ENABLED and TOF_HAZARDS_ENABLED):
+            return None
+        if gh._thread is None or not gh._thread.is_alive():
+            return None
+        snap = gh.snapshot()
+    except Exception:
+        return None
+    age = snap.get("age_s")
+    if not isinstance(age, (int, float)) or not -1.0 <= age <= TOF_HAZARD_FRESH_S:
+        return None
+    rest = snap.get("rest")
+    return dict(rest) if isinstance(rest, dict) else None
 
 
 def _tof_near() -> Optional[List[int]]:
@@ -1253,6 +1308,7 @@ def decide(
         _tof_front() if lidar_state else None,
         _tof_solids() if lidar_state else None,
         _tof_near() if lidar_state else None,
+        _tof_rest() if lidar_state else None,
     )
     _carry_measured(views, time.time())
     front = views["front"]

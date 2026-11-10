@@ -204,6 +204,7 @@ def _record(
                         "reason",
                         "mover_shadow",
                         "route_shadow",
+                        "wall_shadow",
                     )
                 },
             )
@@ -510,6 +511,27 @@ def get_unified_guidance() -> Dict[str, Any]:
                 simple["ground_shadow"],
                 simple.get("ground_shadow_reason", ""),
                 source="ToF hazards",
+            )
+        except Exception:
+            pass
+
+    if simple.get("wall_shadow"):
+        # Not spoken (TOF_WALL_SPEAK False): the ToF's wall named, logged so a test walk can
+        # judge it (2026-11-10).
+        try:
+            from utils import speech_log, test_console
+
+            speech_log.say(
+                source="tof-wall",
+                text=f"would say: {simple['wall_shadow']}",
+                level="silent",
+                detail=simple.get("wall_shadow_reason", ""),
+                via="none",
+            )
+            test_console.would_say(
+                simple["wall_shadow"],
+                simple.get("wall_shadow_reason", ""),
+                source="ToF wall",
             )
         except Exception:
             pass

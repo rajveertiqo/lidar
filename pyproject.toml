@@ -1,0 +1,48 @@
+# Shappe Guide: project metadata and the tools' settings. The device runs from the checkout
+# (./start_lidar.sh); requirements.txt is the pinned set it runs on.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shappe-guide"
+description = "A wearable navigation aid for blind pedestrians, on a Raspberry Pi 5"
+readme = "README.md"
+requires-python = ">=3.11"
+dynamic = ["version", "dependencies"]
+
+[tool.setuptools.dynamic]
+version = { attr = "config.APP_VERSION" }
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools]
+py-modules = ["main", "config"]
+packages = ["utils", "routers", "ble_bridge", "tools", "tools.sim", "tools.field", "tools.device"]
+
+# ---------------------------------------------------------------- lint: ruff check .
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["venv", "logs", "model"]
+
+[tool.ruff.lint]
+# Errors that are bugs, or hide them: syntax errors and every pyflakes check (undefined
+# names, unused imports and variables, redefinitions, f-strings without placeholders).
+# More rules (style, bugbear) come once the code is formatted.
+select = ["E9", "F"]
+
+# ---------------------------------------------------------------- types: mypy
+[tool.mypy]
+python_version = "3.11"
+files = ["main.py", "config.py", "utils", "routers"]
+ignore_missing_imports = true   # picamera2, hailo_platform, rplidar, acconeer: no stubs
+follow_imports = "silent"
+# Informational for now: ~270 findings on 2026-11-10, most of them imprecise hints rather
+# than bugs. CI runs it without failing the build until they are worked down.
+warn_unused_configs = true
+
+# ---------------------------------------------------------------- tests
+# ./run_tests.sh runs them (unittest); these let pytest find them too.
+[tool.pytest.ini_options]
+testpaths = ["tests"]

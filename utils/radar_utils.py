@@ -841,8 +841,8 @@ def _log_inventory(found: List[Dict[str, Any]]) -> List[Dict[str, str]]:
             f"and will not be used: {', '.join(e['serial'] for e in unmeasured)}"
         )
         print(
-            f"[RADAR]   fix: open /radar/test and use the CALIBRATE panel — put a "
-            f"hand in front of one board at a time and set its bearing"
+            "[RADAR]   fix: open /radar/test and use the CALIBRATE panel — put a "
+            "hand in front of one board at a time and set its bearing"
         )
 
     starved = [c for c, srcs in cardinal_sources().items() if not srcs]
@@ -1028,8 +1028,8 @@ def _startup(allow_provisional: bool = False) -> Dict[str, Any]:
                 f"bearing feed no direction."
             )
             print(
-                f"[RADAR]     fix: open /radar/test and set each board's bearing "
-                f"(hold a hand in front of one board at a time)"
+                "[RADAR]     fix: open /radar/test and set each board's bearing "
+                "(hold a hand in front of one board at a time)"
             )
     elif dead_cards:
         print(
@@ -1567,7 +1567,7 @@ if __name__ == "__main__":
             sys.exit(1)
 
         order = sorted(boards, key=lambda b: b["hub_port"])
-        print(f"\nPut your hand ~1.5 ft in front of ONE sensor at a time.")
+        print("\nPut your hand ~1.5 ft in front of ONE sensor at a time.")
         print("The column whose distance drops is that sensor.")
         print(
             f"Closer than {RADAR_START_MM / 304.8:.1f} ft the board is blind, "

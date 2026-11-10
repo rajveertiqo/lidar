@@ -3,6 +3,7 @@ uvicorn==0.52.1
 websockets==17.0.1        # uvicorn's WebSocket support (/lidar/ws, /guidance/ws)
 pydantic==2.13.4
 numpy==2.2.4
+scipy==1.18.0             # utils/ground_hazards: the ToF's obstacles (it was missing here)
 opencv-python==5.0.0.93
 pillow==11.1.0
 PyYAML==6.0.2             # model/metadata.yaml
@@ -12,6 +13,6 @@ pyserial==3.5
 acconeer-exptool==7.18.2  # radar
 spidev==3.6               # gyro (SPI)
 smbus2==0.4.3             # gyro (I2C fallback)
-requests==2.32.3          # tools/walk_logger.py
+requests==2.32.3          # tools/field/walk_logger.py
 # ToF depth camera: NOT listed, its metadata pins numpy<2 against numpy==2.2.4 above. It
 # runs on 2.2.4; install it on its own: pip install --no-deps ArducamDepthCamera==0.1.24

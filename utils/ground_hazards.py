@@ -3,7 +3,7 @@
 overhanging ones a cane passes under, and anything else in the way below the LiDAR.
 
 The LiDAR is worn on the shoulder and measures one plane there, so it misses all of these
-but the pole (README, Known limits). The ToF looks down at the ground ~1-4 m ahead (its
+but the pole (docs/known-limits.md). The ToF looks down at the ground ~1-4 m ahead (its
 view runs 7-53 deg below level), so each frame:
 
   1. Its points go into the level frame by the mount's design (FUSION_*), and the ground is
@@ -25,6 +25,11 @@ view runs 7-53 deg below level), so each frame:
      a detection box over it confirms and names it; else the picture's own edges do — two or
      more level edges for stairs, one for a step, drop or hole, an upright edge for a pole,
      an outline for anything else. A dark, blurred or missing picture is "unseen".
+  6. The nearest tall thing on the path, seen from above: does its surface run flat across
+     the path (a wall, a window blind, a corner of two walls), or not (a chair, a person)?
+     front_surface, kept for the last TOF_WALL_CONFIRM[1] frames; wall_verdict and
+     confirmed_wall judge it (config TOF_WALL_*, 2026-11-10), at guidance time, so a
+     recorded walk replays with new thresholds.
   5. Seen in TOF_HAZARD_CONFIRM[0] of the last TOF_HAZARD_CONFIRM[1] analyses, then
      speak_rule: confirmed or unseen by the camera, it is said; with the camera looking and
      seeing nothing there, only a measured fall of at least TOF_FALL_ALONE_M — a ToF
@@ -81,6 +86,11 @@ from config import (
     TOF_STAIR_RUN_M,
     TOF_STEP_MAX_M,
     TOF_STEP_MIN_M,
+    TOF_WALL_CONFIRM,
+    TOF_WALL_FLAT_M,
+    TOF_WALL_MIN_H_M,
+    TOF_WALL_MIN_SPAN_M,
+    TOF_WALL_MIN_WIDTH_M,
 )
 from utils import depth_fusion as df
 
@@ -114,6 +124,17 @@ _MISSING_MAX_Z = 2.6  # ...where the floor should still be well seen: a drop pas
 _TOP_ROWS = 3  # points in the ToF picture's top rows: the thing goes on above its view
 _FRONT_M = 0.15  # an obstacle's front: its points this near its nearest
 _CAMERA_PTS = 400  # at most this many of a hazard's points are placed on the picture
+# A tall thing's surface from above (_surface): one sample per this many ToF columns, the
+# median of the thing's points in them (at least _WALL_SAMPLE_MIN); the next sample along is
+# the same surface when no further than _WALL_JUMP_M from the last, with at most
+# _WALL_GAP_GROUPS empty column groups between; the view's edge is within _WALL_EDGE_GROUPS.
+_WALL_COL_GROUP = 4
+_WALL_SAMPLE_MIN = 8
+_WALL_JUMP_M = 0.25
+_WALL_GAP_GROUPS = 2
+_WALL_EDGE_GROUPS = 1
+_WALL_LINE_MIN_M = 0.30  # an arm is held to its line once it reaches this far (folds average out)
+_WALL_MAX_POINTS = 6000  # a bigger thing is thinned to this many points for it
 
 
 # ---------------------------------------------------------------- one frame: the geometry
@@ -130,6 +151,52 @@ TOF_NEAR_MAX_M = 1.3
 TOF_NEAR_BIN_M = 0.05
 TOF_NEAR_HALF_M = 0.30  # the walking corridor's half width (GUIDANCE_CORRIDOR_HALF_WIDTH_MM)
 TOF_NEAR_BELOW_M = 1.0  # a table top is ~0.5-0.7 m below a worn ToF; the floor 1.2 m or more
+
+
+# Resting on a surface (2026-11-10): the rig set down on a desk sees the desk top right under
+# it, a flat layer facing up, and its radar hears it ~0.3 m ahead — the guidance blocked on it
+# ("Obstacle in front, turn left", front 0.9 ft, the laser seeing the blind at 4 ft). A plane
+# of at least TOF_REST_MIN_POINTS within TOF_REST_REACH_M of the ToF, TOF_REST_BELOW_M below
+# it, facing up in the ToF's own frame (not the worn mount's level frame: set down, the rig is
+# not tilted as it is worn), with its points within TOF_REST_FLAT_M of it. Worn, nothing level
+# is ever that near under the ToF. Its points are left out of near_counts, and walk_policy
+# takes a front echo there that the laser sees past for the surface, not a thing in the way.
+TOF_REST_REACH_M = 0.45
+TOF_REST_BELOW_M = (0.0, 0.40)  # on the rig the lens sits ~2 cm above the desk it is set on
+TOF_REST_MIN_POINTS = 300
+TOF_REST_FLAT_M = 0.02
+TOF_REST_UP = 0.5  # |the plane's normal . the picture's up| at least this: facing up, not ahead
+
+
+def rest_surface(P: np.ndarray) -> Tuple[Optional[Dict[str, Any]], np.ndarray]:
+    """(the surface the ToF rests on, or None; which of P's points lie on it). P: the ToF's
+    own frame (x right, y down, z ahead), metres."""
+    on = np.zeros(len(P), dtype=bool)
+    rng = np.sqrt(np.sum(P * P, axis=1))
+    cand = np.flatnonzero((rng <= TOF_REST_REACH_M) & (P[:, 1] > 0.0))  # near, below the centre
+    if cand.size < TOF_REST_MIN_POINTS:
+        return None, on
+    Q = P[cand]
+    c = Q.mean(axis=0)
+    _w, v = np.linalg.eigh((Q - c).T @ (Q - c))
+    n = v[:, 0]  # the plane's normal: the direction it varies least
+    if n[1] > 0:
+        n = -n  # pointing up the picture, toward the ToF's side
+    dist = float(-(c @ n))  # how far the plane is from the ToF
+    res = np.abs((Q - c) @ n)
+    inl = res <= TOF_REST_FLAT_M
+    if (
+        int(inl.sum()) < TOF_REST_MIN_POINTS
+        or abs(n[1]) < TOF_REST_UP
+        or not TOF_REST_BELOW_M[0] <= dist <= TOF_REST_BELOW_M[1]
+    ):
+        return None, on
+    on[cand[inl]] = True
+    return {
+        "below_m": round(dist, 3),
+        "to_m": round(float(np.percentile(rng[cand[inl]], 95)), 3),
+        "points": int(inl.sum()),
+    }, on
 
 
 def near_counts(P: np.ndarray, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> List[int]:
@@ -545,9 +612,90 @@ class GroundAnalyser:
                 if int(inside.sum()) >= TOF_OBSTACLE_MIN_POINTS
                 else None
             )
+            if kind == "obstacle":
+                # Is it a wall? Filled in by analyse() for the nearest one on the path only
+                # (_surface), judged by wall_verdict at guidance time (2026-11-10).
+                f["surface"] = {
+                    "ahead_m": f["path_m"],
+                    "length_m": 0.0,
+                    "flat_m": None,
+                    "facing_deg": None,
+                    "spans_view": False,
+                    "corner": False,
+                    "reaches_top": False,
+                    "height_m": round(h_hi, 2),
+                    "above_view": top_cut,
+                }
             f["_sel"] = sel
             out.append(f)
         return out
+
+    def _surface(self, xs, zs, cs, rs) -> Optional[Dict[str, Any]]:
+        """Seen from above, how far a thing's surface runs flat across the walking path:
+        {"ahead_m" (where it crosses the path), "length_m", "flat_m", "facing_deg" (90:
+        square on), "spans_view" (the ToF's view edge to edge), "corner" (two flat arms at an
+        angle), "reaches_top" (it goes on above the ToF's view along most of that)}, or None
+        when too little of it is on the path. Its points become a top-down line, one sample
+        per _WALL_COL_GROUP columns, grown left and right from the sample nearest straight
+        ahead while each next one stays within TOF_WALL_FLAT_M of the arm's line so far."""
+        if xs.size > _WALL_MAX_POINTS:  # every k-th point: the same picture, evenly thinned
+            k = -(-xs.size // _WALL_MAX_POINTS)
+            xs, zs, cs, rs = xs[::k], zs[::k], cs[::k], rs[::k]
+        ng = -(-self.width // _WALL_COL_GROUP)
+        g = np.minimum(np.asarray(cs) // _WALL_COL_GROUP, ng - 1).astype(np.int64)
+        order = np.lexsort((zs, g))  # by column group, nearest first within each
+        gs, xo, zo = g[order], xs[order], zs[order]
+        counts = np.bincount(gs, minlength=ng)
+        ends = np.cumsum(counts)
+        starts = ends - counts
+        groups = np.flatnonzero(counts >= _WALL_SAMPLE_MIN)
+        if groups.size < 3:
+            return None
+        # Each sample: the nearest surface in those columns (the points within 5 cm of their
+        # lower quartile of distance), not all of them: a blind set back behind the wall
+        # below its sill is one surface with it, the wall's, whichever shows more. Sorted
+        # nearest first, those points start each group: their median is the middle one.
+        quartile = np.full(ng, -np.inf)
+        quartile[groups] = zo[starts[groups] + counts[groups] // 4] + 0.05
+        front = zo <= quartile[gs]
+        nf = np.bincount(gs[front], minlength=ng)
+        sz = zo[starts[groups] + nf[groups] // 2]
+        sx = np.bincount(gs[front], weights=xo[front], minlength=ng)[groups] / nf[groups]
+        # The top rows, per sample: the existing above_view (3% of a thing's points in them)
+        # never held for a wall filling the picture, ~1.7% of its rows (2026-11-10).
+        top = np.bincount(g, weights=(np.asarray(rs) < _TOP_ROWS), minlength=ng)[groups] >= 2
+        inside = np.flatnonzero(np.abs(sx) <= TOF_CORRIDOR_HALF_M)
+        if inside.size == 0:
+            return None
+        seed = int(inside[np.argmin(np.abs(sx[inside]))])
+        left, right = (_grow(sx, sz, groups, seed, step) for step in (-1, 1))
+        both = sorted(set(left) | set(right))
+        if len(both) < 3:
+            return None
+        _c, u, rms = _line(sx[both], sz[both])
+        corner = rms > TOF_WALL_FLAT_M
+        if corner:  # two arms at an angle: each its own line, the longer one's direction
+            longer = max((left, right), key=lambda a: _span(sx, sz, a))
+            if len(longer) >= 2:
+                u = _line(sx[longer], sz[longer])[1]
+            arms = [a for a in (left, right) if len(a) >= 3]
+            if arms:
+                rms = max(_line(sx[a], sz[a])[2] for a in arms)
+        on_path = [i for i in both if abs(sx[i]) <= TOF_CORRIDOR_HALF_M]
+        return {
+            # Where the surface crosses the path, from its samples: the cluster's nearest 3%
+            # of points jumped 2.5 -> 1.2 m between frames with floor noise in it.
+            "ahead_m": round(float(min(sz[i] for i in on_path)), 3),
+            "length_m": round(_span(sx, sz, left) + _span(sx, sz, right), 2),
+            "flat_m": round(float(rms), 3),
+            "facing_deg": round(math.degrees(math.atan2(abs(u[0]), abs(u[1])))),
+            "spans_view": bool(
+                groups[both[0]] <= _WALL_EDGE_GROUPS
+                and groups[both[-1]] >= ng - 1 - _WALL_EDGE_GROUPS
+            ),
+            "corner": bool(corner),
+            "reaches_top": bool(np.mean(top[both]) >= 0.5),
+        }
 
     # -- all of it
 
@@ -577,7 +725,11 @@ class GroundAnalyser:
         P = rays[idx] * (d[idx, None] / 1000.0)  # the ToF's frame
         L = P @ self.to_level.T + self.t_level
         x, y, z = L[:, 0], L[:, 1], L[:, 2]
-        out["near"] = near_counts(P, x, y, z)
+        # Set down on a desk: the desk top under the ToF is not something on the path.
+        rest, on_rest = rest_surface(P)
+        out["rest"] = rest
+        off = ~on_rest
+        out["near"] = near_counts(P[off], x[off], y[off], z[off])
         fit = self._fit_ground(x, y, z, float(t))
         if fit is None:
             out["why"] = "no ground seen (nothing level near the mount's height)"
@@ -595,6 +747,17 @@ class GroundAnalyser:
                 (np.abs(x) <= TOF_CORRIDOR_HALF_M) & (z >= lo_z) & (z <= hi_z)
             )
         hazards = features + self._obstacles(x, z, h, rows, features)
+        # The nearest tall thing on the walking path, as a surface: a wall or not
+        # (wall_verdict). None: nothing tall stands on the path.
+        standing = [
+            f for f in hazards if f.get("surface") and f.get("in_path") and f.get("path_m") is not None
+        ]
+        out["front_surface"] = None
+        if standing:
+            f = min(standing, key=lambda f: f["path_m"])
+            sel = f["_sel"]
+            f["surface"].update(self._surface(x[sel], z[sel], idx[sel] % self.width, rows[sel]) or {})
+            out["front_surface"] = {"t": float(t), **f["surface"]}
         for f in hazards:
             sel = f.pop("_sel")
             if sel.size > _CAMERA_PTS:
@@ -616,6 +779,106 @@ class GroundAnalyser:
             ms=round((time.perf_counter() - started) * 1000.0, 1),
         )
         return out
+
+
+def _line(px: np.ndarray, pz: np.ndarray) -> Tuple[np.ndarray, np.ndarray, float]:
+    """(centre, unit direction, RMS of the perpendicular residuals) of top-down points."""
+    c = np.array([float(np.mean(px)), float(np.mean(pz))])
+    d = np.stack([px - c[0], pz - c[1]], axis=1)
+    _w, v = np.linalg.eigh(d.T @ d)
+    return c, v[:, 1], float(np.sqrt(np.mean((d @ v[:, 0]) ** 2)))
+
+
+def _span(sx: np.ndarray, sz: np.ndarray, arm: List[int]) -> float:
+    """How far an arm of samples reaches, end to end."""
+    return float(math.hypot(sx[arm[-1]] - sx[arm[0]], sz[arm[-1]] - sz[arm[0]])) if len(arm) > 1 else 0.0
+
+
+def _grow(sx: np.ndarray, sz: np.ndarray, groups: np.ndarray, seed: int, step: int) -> List[int]:
+    """The samples from `seed` outward (step -1: left, +1: right) that stay on one flat
+    surface: each next one near the last (_WALL_JUMP_M, no more than _WALL_GAP_GROUPS empty
+    column groups between) and, from the third on, within TOF_WALL_FLAT_M of the line
+    through the arm so far, once that reaches _WALL_LINE_MIN_M (a curtain's folds: three
+    samples on one fold's slope made a line that the next fold left). One stray sample may
+    be passed over."""
+    arm, last, k, passed = [seed], seed, seed + step, False
+    # The arm's line from running sums (n, x, z, xx, zz, xz): no refit per sample.
+    sums = [1.0, sx[seed], sz[seed], sx[seed] ** 2, sz[seed] ** 2, sx[seed] * sz[seed]]
+    while 0 <= k < len(sx):
+        if abs(int(groups[k]) - int(groups[last])) > _WALL_GAP_GROUPS + 1:
+            break
+        ok = math.hypot(sx[k] - sx[last], sz[k] - sz[last]) <= _WALL_JUMP_M
+        if ok and len(arm) >= 3 and _span(sx, sz, arm) >= _WALL_LINE_MIN_M:
+            n, mx, mz = sums[0], sums[1] / sums[0], sums[2] / sums[0]
+            cxx, czz = sums[3] / n - mx * mx, sums[4] / n - mz * mz
+            cxz = sums[5] / n - mx * mz
+            a = 0.5 * math.atan2(2.0 * cxz, cxx - czz)  # the principal direction
+            ok = abs((sx[k] - mx) * math.sin(a) - (sz[k] - mz) * math.cos(a)) <= TOF_WALL_FLAT_M
+        if ok:
+            arm.append(k)
+            for i, v in enumerate((1.0, sx[k], sz[k], sx[k] ** 2, sz[k] ** 2, sx[k] * sz[k])):
+                sums[i] += v
+            last, passed = k, False
+        elif not passed:
+            passed = True
+        else:
+            break
+        k += step
+    return arm
+
+
+def wall_verdict(s: Optional[Dict[str, Any]]) -> Tuple[bool, str]:
+    """(is it a wall, why) for one frame's front_surface (config TOF_WALL_*): tall, flat, and
+    TOF_WALL_MIN_WIDTH_M across, or the ToF's whole view and TOF_WALL_MIN_SPAN_M."""
+    if not s:
+        return False, "nothing tall standing on the path"
+    height = float(s.get("height_m") or 0.0)
+    if not (s.get("reaches_top") or s.get("above_view") or height >= TOF_WALL_MIN_H_M):
+        return False, f"{height:.1f} m tall, its top in view: not a wall"
+    flat = s.get("flat_m")
+    length = float(s.get("length_m") or 0.0)
+    if flat is None or float(flat) > TOF_WALL_FLAT_M:
+        return False, "no flat surface across the path"
+    if not (
+        length >= TOF_WALL_MIN_WIDTH_M
+        or (s.get("spans_view") and length >= TOF_WALL_MIN_SPAN_M)
+    ):
+        return False, f"flat for only {length:.2f} m across: narrower than a wall"
+    what = "a corner of two walls" if s.get("corner") else "a flat surface"
+    return True, (
+        f"{what} {length:.1f} m across{' (the whole view)' if s.get('spans_view') else ''}, "
+        f"{float(s.get('ahead_m') or 0.0) / 0.3048:.1f} ft ahead, flat to {float(flat) * 100:.0f} cm"
+    )
+
+
+def confirmed_wall(
+    ground: Optional[Dict[str, Any]], now: float
+) -> Tuple[Optional[Dict[str, Any]], str]:
+    """(the newest front_surface, why) when it is a wall and was one in TOF_WALL_CONFIRM[0]
+    of the last TOF_WALL_CONFIRM[1] ToF frames at about the same distance; (None, why not)
+    otherwise, or when the analysis is older than TOF_HAZARD_FRESH_S."""
+    from config import TOF_HAZARD_FRESH_S
+
+    if not ground or not ground.get("ok"):
+        return None, (ground or {}).get("why") or "no ToF analysis"
+    t = ground.get("t")
+    if not isinstance(t, (int, float)) or not -1.0 <= now - t <= TOF_HAZARD_FRESH_S:
+        return None, "the ToF analysis is stale"
+    recent = list(ground.get("front_surfaces") or [])[-int(TOF_WALL_CONFIRM[1]) :]
+    latest = recent[-1] if recent else None
+    ok, why = wall_verdict(latest)
+    if not ok:
+        return None, why
+    agree = sum(
+        1
+        for s in recent
+        if s
+        and wall_verdict(s)[0]
+        and abs(float(s.get("ahead_m") or 0.0) - float(latest.get("ahead_m") or 0.0)) <= 0.4
+    )
+    if agree < int(TOF_WALL_CONFIRM[0]):
+        return None, f"a wall in {agree} of the last {len(recent)} ToF frames: not yet confirmed"
+    return latest, why
 
 
 def _feature(kind: str, ahead: float, **kw) -> Dict[str, Any]:
@@ -919,6 +1182,8 @@ class GroundHazards:
         self._follow = projector is None  # the app's calibration, reloaded with it
         self.analyser = GroundAnalyser(projector)
         self.tracker = _Tracker()
+        # The nearest tall thing on the path, as a surface, for the last few frames.
+        self._surfaces: collections.deque = collections.deque(maxlen=int(TOF_WALL_CONFIRM[1]))
         self._lock = threading.Lock()
         self._snap: Dict[str, Any] = {
             "ok": False,
@@ -956,6 +1221,7 @@ class GroundHazards:
                 hz["camera"] = camera_check(hz, calib, cam, t)
             else:
                 hz["camera"] = {"status": "skipped", "how": "beside the path or far off", "name": None, "box": None}
+        self._surfaces.append(res.get("front_surface") if res["ok"] else None)
         seen = [_public(h) for h in res["hazards"]]
         confirmed = [_public(h) for h in self.tracker.update(res["hazards"] if res["ok"] else [], t)]
         for h in confirmed:
@@ -973,6 +1239,8 @@ class GroundHazards:
             "calibration": calib.source,
             "speak_enabled": _speak_enabled(),
             "near": res.get("near"),
+            "rest": res.get("rest"),
+            "front_surfaces": list(self._surfaces),
         }
         if res.get("camera_error"):
             snap["camera_error"] = res["camera_error"]
@@ -988,6 +1256,7 @@ class GroundHazards:
 
     def reset(self) -> None:
         self.tracker.reset()
+        self._surfaces.clear()
 
 
 def _speak_enabled() -> bool:

@@ -4,7 +4,7 @@ A recording is gzipped JSON lines in WALK_RECORD_DIR, one line per guidance tick
     {"t": wall clock, "mono": monotonic clock, "in": {walk_decision, lidar, radar, camera,
      motion, movers, ground, hold, hold_lidar_absent, at_crossing}, "out": {instruction,
      speak, ...}}   (ground: the ToF's hazards on the ground, since 2026-11-06)
-plus {"mark": ...} lines from a tester (/guidance/mark). tools/walk_replay.py feeds the
+plus {"mark": ...} lines from a tester (/guidance/mark). tools/field/walk_replay.py feeds the
 inputs back through the CURRENT simple_guidance (and, by default, walk_policy) and lists
 every sentence that would now be said differently — so a change is tried on real walks
 before a blind user hears it.
@@ -17,6 +17,11 @@ Recording or not, the last few seconds of ticks are kept in memory (WALK_CLIP_ON
 tester's "Wrong" or "Missed" saves them as a clip (clip-*.jsonl.gz, the same format), from
 WALK_CLIP_BEFORE_S before the mark to WALK_CLIP_AFTER_S after (2026-11-10). A clip starts
 mid-walk, so its first seconds replay without the device's held state.
+
+A label button ("what was really there": MARK_LABELS) saves a clip too, its mark line
+carrying {"label": "wall", "said": "..."} and its name ending in -wall.jsonl.gz: the data
+tools/field/label_report.py scores the code against and exports for training on a laptop.
+Labelled clips are kept apart (WALK_LABEL_KEEP_FILES), so Wrong presses never prune them.
 """
 
 import gzip
@@ -29,10 +34,12 @@ from collections import deque
 from typing import Any, Deque, Dict, Optional, Tuple
 
 from config import (
+    MARK_LABELS,
     WALK_CLIP_AFTER_S,
     WALK_CLIP_BEFORE_S,
     WALK_CLIP_KEEP_FILES,
     WALK_CLIP_ON_MARK,
+    WALK_LABEL_KEEP_FILES,
     WALK_RECORD,
     WALK_RECORD_DIR,
     WALK_RECORD_KEEP_FILES,
@@ -41,6 +48,7 @@ from config import (
 )
 
 _FLUSH_S = 2.0
+_LABEL_COUNT_S = 5.0  # label_counts() reads the folder at most this often
 
 
 def _plain(obj: Any) -> Any:
@@ -69,6 +77,7 @@ class WalkRecorder:
         self._recent: Deque[Tuple[float, str]] = deque(maxlen=2000)
         self._recent_lock = threading.Lock()
         self._clips = 0
+        self._label_counts: Optional[Tuple[float, Dict[str, int]]] = None
 
     # ---- control ---------------------------------------------------------
 
@@ -141,6 +150,22 @@ class WalkRecorder:
             "clips_saved": self._clips,
         }
 
+    def label_counts(self) -> Dict[str, int]:
+        """How many labelled clips there are of each MARK_LABELS label, from the folder."""
+        cached = self._label_counts
+        if cached is not None and time.monotonic() - cached[0] < _LABEL_COUNT_S:
+            return dict(cached[1])
+        counts = {k: 0 for k in MARK_LABELS}
+        try:
+            for n in os.listdir(WALK_RECORD_DIR):
+                label = clip_label(n)
+                if label:
+                    counts[label] += 1
+        except OSError:
+            pass
+        self._label_counts = (time.monotonic(), counts)
+        return dict(counts)
+
     # ---- feed (guidance thread) -----------------------------------------
 
     def tick(
@@ -169,23 +194,32 @@ class WalkRecorder:
         if self._path is not None:
             self._put(line, counts=True)
 
-    def clip(self, kind: str, text: str = "") -> Optional[str]:
+    def clip(
+        self, kind: str, text: str = "", label: str = "", said: str = ""
+    ) -> Optional[str]:
         """Save the ticks around a tester's mark as WALK_RECORD_DIR/clip-*.jsonl.gz, written
-        WALK_CLIP_AFTER_S from now on its own thread; returns that path, or None when off."""
+        WALK_CLIP_AFTER_S from now on its own thread; returns that path, or None when off.
+        `label`: one of MARK_LABELS, what was really there; `said`: what the device had just
+        said."""
         if not WALK_CLIP_ON_MARK:
             return None
         t, mono = time.time(), time.monotonic()
+        label = label if label in MARK_LABELS else ""
         safe = "".join(c if c.isalnum() else "-" for c in str(kind))[:12] or "mark"
+        if label:  # the label last: clip_label() reads it from the name
+            safe = label if safe == "label" else f"{safe}-{label}"
         try:
             os.makedirs(WALK_RECORD_DIR, exist_ok=True)
         except OSError as e:
             self._error = f"clip: {e}"
             return None
+        # Milliseconds too: two labels pressed within a second were one file.
         path = os.path.join(
             WALK_RECORD_DIR,
-            time.strftime("clip-%Y%m%d-%H%M%S", time.localtime(t)) + f"-{safe}.jsonl.gz",
+            time.strftime("clip-%Y%m%d-%H%M%S", time.localtime(t))
+            + f"-{int(t * 1000) % 1000:03d}-{safe}.jsonl.gz",
         )
-        mark = json.dumps({"t": t, "mono": mono, "mark": kind, "text": text})
+        mark = json.dumps(_mark_line(t, mono, kind, text, label, said))
 
         def write() -> None:
             time.sleep(WALK_CLIP_AFTER_S)  # what happened just after the mark too
@@ -208,6 +242,7 @@ class WalkRecorder:
                         fh.write(mark + "\n")
                 os.replace(part, path)
                 self._clips += 1
+                self._label_counts = None  # counted again on the next look
                 _prune_clips()
                 print(f"[REC] {kind} mark: {len(ticks)} ticks saved to {path}")
             except Exception as e:
@@ -221,12 +256,12 @@ class WalkRecorder:
         threading.Thread(target=write, name="walk-clip", daemon=True).start()
         return path
 
-    def mark(self, kind: str, text: str = "") -> None:
+    def mark(self, kind: str, text: str = "", label: str = "", said: str = "") -> None:
         if self._path is None:
             return
         self._put(
             json.dumps(
-                {"t": time.time(), "mono": time.monotonic(), "mark": kind, "text": text}
+                _mark_line(time.time(), time.monotonic(), kind, text, label, said)
             ),
             counts=False,
         )
@@ -305,8 +340,27 @@ def _prune() -> None:
         print(f"[REC] could not tidy {WALK_RECORD_DIR}: {e}")
 
 
+def _mark_line(
+    t: float, mono: float, kind: str, text: str, label: str, said: str
+) -> Dict[str, Any]:
+    line: Dict[str, Any] = {"t": t, "mono": mono, "mark": kind, "text": text}
+    if label in MARK_LABELS:
+        line["label"] = label
+        line["said"] = said
+    return line
+
+
+def clip_label(name: str) -> str:
+    """The MARK_LABELS label a clip's file name ends in ("clip-...-glass.jsonl.gz"), or ""."""
+    if not (name.startswith("clip-") and name.endswith(".jsonl.gz")):
+        return ""
+    last = name[: -len(".jsonl.gz")].rsplit("-", 1)[-1]
+    return last if last in MARK_LABELS else ""
+
+
 def _prune_clips() -> None:
-    """Keep the newest WALK_CLIP_KEEP_FILES clips."""
+    """Keep the newest WALK_CLIP_KEEP_FILES Wrong/Missed clips and, apart, the newest
+    WALK_LABEL_KEEP_FILES labelled ones: the training data is not pruned by Wrong presses."""
     try:
         clips = sorted(
             (
@@ -317,7 +371,9 @@ def _prune_clips() -> None:
             key=os.path.getmtime,
             reverse=True,
         )
-        for f in clips[WALK_CLIP_KEEP_FILES:]:
+        labelled = [f for f in clips if clip_label(os.path.basename(f))]
+        plain = [f for f in clips if not clip_label(os.path.basename(f))]
+        for f in plain[WALK_CLIP_KEEP_FILES:] + labelled[WALK_LABEL_KEEP_FILES:]:
             os.remove(f)
     except OSError as e:
         print(f"[REC] could not tidy the clips in {WALK_RECORD_DIR}: {e}")

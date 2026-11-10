@@ -1064,7 +1064,7 @@ def get_system_health() -> Dict[str, Any]:
             elif (tof.get("calibration") or {}).get("source") != "bench":
                 warnings.append(
                     "Depth camera not calibrated — its dots are placed by the "
-                    "design, not measured (tools/tof_calibrate.py)"
+                    "design, not measured (tools/device/tof_calibrate.py)"
                 )
     except Exception:
         pass

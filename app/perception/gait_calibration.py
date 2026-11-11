@@ -1,5 +1,6 @@
 """Runtime home for the walking stride."""
 
+import logging
 import json
 import os
 import tempfile
@@ -13,6 +14,8 @@ from app.config import (
     GYRO_STRIDE_MAX_M,
     GYRO_STRIDE_MIN_M,
 )
+
+_log = logging.getLogger(__name__)
 
 STRIDE_FILE = Path(__file__).resolve().parents[2] / "stride.json"
 
@@ -54,7 +57,7 @@ def _load() -> Dict[str, Any]:
                 data["distance_m"] = raw.get("distance_m")
                 data["steps"] = raw.get("steps")
             else:
-                print(
+                _log.info(
                     f"[GAIT] stride.json holds {stride} m, outside the "
                     f"{GYRO_STRIDE_MIN_M}-{GYRO_STRIDE_MAX_M} m clamp — "
                     f"ignoring it and using the config seed"
@@ -62,7 +65,7 @@ def _load() -> Dict[str, Any]:
     except FileNotFoundError:
         data = {}  # nothing on disk: nobody to protect
     except Exception as exc:  # corrupt file must not brick boot
-        print(
+        _log.warning(
             f"[GAIT] stride file unreadable ({type(exc).__name__}: {exc}) — "
             f"using the config seed"
         )
@@ -172,7 +175,7 @@ def _save_learned(seq: int, stride: float) -> None:
                 STRIDE_FILE, json.dumps(data, indent=2, sort_keys=True) + "\n"
             )
         except Exception as exc:
-            print(
+            _log.warning(
                 f"[GAIT] could not persist learned stride ({type(exc).__name__}: {exc})"
             )
             return

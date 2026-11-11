@@ -1,5 +1,6 @@
 """LiDAR API routes"""
 
+import logging
 import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -14,6 +15,8 @@ from app.config import (
 )
 from app.sensors.lidar_utils import add_client, reader_health, remove_client
 from app.core.shared_state import get_lidar_state
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/lidar", tags=["LiDAR"])
 
@@ -31,7 +34,7 @@ async def lidar_websocket(websocket: WebSocket):
         pass
     except Exception as e:
         if websocket.application_state != WebSocketState.DISCONNECTED:
-            print(f"[WARN] LiDAR WebSocket error: {e}")
+            _log.warning(f"LiDAR WebSocket error: {e}")
     finally:
         remove_client(websocket)
 

@@ -1,5 +1,6 @@
 """Live map API — the /map test page: LiDAR, radar and cameras placed around the user, turned by the LiDAR or (once commissioned, or chosen on the page) the gyro."""
 
+import logging
 import asyncio
 from pathlib import Path
 
@@ -8,6 +9,8 @@ from fastapi.responses import HTMLResponse
 from starlette.concurrency import run_in_threadpool
 
 from app.core.live_map import get_map
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/map", tags=["Map"])
 
@@ -72,6 +75,6 @@ async def map_websocket(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        print(f"[WARN] Map WebSocket error: {e}")
+        _log.warning(f"Map WebSocket error: {e}")
     finally:
         live_map.release()

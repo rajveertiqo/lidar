@@ -1,3 +1,4 @@
+import logging
 import math
 import os
 import threading
@@ -11,6 +12,8 @@ from app.sensors import hailo_device  # noqa: F401  (disables the hailort.log fi
 from app.sensors import hailo_stats
 from app.perception.walkable_guidance import WALKABLE_NAMES
 from app.sensors.yoloseg_decode import cls_is_probability
+
+_log = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 IMG_SIZE = 640
@@ -360,7 +363,7 @@ class HailoInferenceEngine:
         """The body of __init__: everything that can fail once resources exist."""
         from hailo_platform import FormatType
 
-        print(f"[Hailo] Loading HEF: {hef_path}")
+        _log.info(f"[Hailo] Loading HEF: {hef_path}")
 
         if vdevice is None:
             from app.sensors.hailo_device import get_shared_vdevice
@@ -451,12 +454,12 @@ class HailoInferenceEngine:
 
         self._model = self._stack.enter_context(infer_model.configure())
         self._stat_name = os.path.basename(hef_path)
-        print(
+        _log.info(
             f"[Hailo] Engine ready: {len(self._levels)} scales, "
             f"{self._num_classes} classes, input '{self._input_name}'."
         )
         if self._scratch:
-            print(
+            _log.info(
                 f"[Hailo] Segmentation hef: {len(self._scratch)} mask/prototype "
                 f"output(s) bound but unused ({', '.join(sorted(self._scratch))})"
             )
@@ -464,12 +467,12 @@ class HailoInferenceEngine:
             n for n in self._names if str(n).strip().lower() in _SURFACE_NAMES
         )
         if surfaces:
-            print(
+            _log.info(
                 "[Hailo] Not reported as objects (ground surfaces): "
                 + ", ".join(surfaces)
             )
         reported = [n for i, n in enumerate(self._names) if self._reported[i]]
-        print(
+        _log.info(
             f"[Hailo] Reporting {len(reported)} of {self._num_classes} classes "
             f"(config.DETECTION_CLASSES): {', '.join(reported) or 'NONE'}"
         )
@@ -515,7 +518,7 @@ class HailoInferenceEngine:
                 bindings.output(name).set_buffer(buf)
 
             if hailo_stats.DEBUG:
-                print(f"[Hailo/{self._stat_name}] run() start", flush=True)
+                _log.info(f"[Hailo/{self._stat_name}] run() start")
             t0 = time.perf_counter()
             self._model.run([bindings], timeout=HAILO_DETECT_RUN_TIMEOUT_MS)
             inference_ms = (time.perf_counter() - t0) * 1000
@@ -536,7 +539,7 @@ class HailoInferenceEngine:
 
             if self._cls_is_prob is None:
                 self._cls_is_prob = cls_is_probability(cls)
-                print(
+                _log.info(
                     f"[Hailo] Class head reads as "
                     f"{'probabilities (sigmoid baked on-chip)' if self._cls_is_prob else 'logits'}"
                     f"; scoring accordingly."

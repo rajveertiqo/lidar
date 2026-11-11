@@ -1,5 +1,6 @@
 """Runtime home for the radar bearing table."""
 
+import logging
 import json
 import math
 import numbers
@@ -21,6 +22,8 @@ from app.config import (
     _radar_ang_diff,
     radar_board_key,
 )
+
+_log = logging.getLogger(__name__)
 
 
 
@@ -78,7 +81,7 @@ def _load() -> Dict[str, float]:
                 continue
             value = _finite_number(bearing)
             if value is None:
-                print(
+                _log.info(
                     f"[RADAR] calibration file: bearing {bearing!r} for {serial} "
                     f"is not a finite number — treating that board as unmeasured"
                 )
@@ -89,7 +92,7 @@ def _load() -> Dict[str, float]:
         pass
     except Exception as exc:  # corrupt file must not brick boot
         data = {}
-        print(
+        _log.warning(
             f"[RADAR] calibration file unreadable ({type(exc).__name__}: {exc}) "
             f"— treating every board as unmeasured"
         )
@@ -130,7 +133,7 @@ def _write_atomic(path: Path, text: str) -> None:
         finally:
             os.close(dfd)
     except OSError as exc:
-        print(
+        _log.warning(
             f"[RADAR] calibration saved, but the directory fsync failed "
             f"({type(exc).__name__}: {exc}) — a power cut in the next few "
             f"seconds could lose it"

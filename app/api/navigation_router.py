@@ -1,5 +1,6 @@
 """Navigation API routes"""
 
+import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
@@ -23,6 +24,8 @@ from app.config import (
     WALL_WARNING_DISTANCE,
     CRITICAL_OBJECTS,
 )
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/navigation", tags=["Navigation"])
 
@@ -255,4 +258,4 @@ async def navigation_websocket(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        print(f"[ERROR] Navigation WebSocket error: {e}")
+        _log.error(f"Navigation WebSocket error: {e}")

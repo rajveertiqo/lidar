@@ -1,5 +1,6 @@
 """Pi Camera utility functions and state management."""
 
+import logging
 import atexit
 import contextlib
 import fcntl
@@ -17,6 +18,8 @@ from collections import deque
 
 import numpy as np
 from PIL import Image
+
+_log = logging.getLogger(__name__)
 
 try:
     import cv2 as _cv2
@@ -237,16 +240,16 @@ def start_camera():
     except ImportError as e:
         if not CAMERA_SIMULATION_ALLOWED:
             _camera_source = f"unavailable: picamera2 not importable ({e})"
-            print(
-                f"[ERROR] picamera2 is not importable ({e}) — NO CAMERA. Publishing "
+            _log.error(
+                f"picamera2 is not importable ({e}) — NO CAMERA. Publishing "
                 f"nothing; health reports the camera lost and object "
                 f"identification is off. (Development simulation needs "
                 f"SHAPPE_SIMULATE_CAMERA=1.)"
             )
         else:
             _camera_source = "simulated"
-            print(
-                f"[WARN] picamera2 not installed ({e}) and SHAPPE_SIMULATE_CAMERA=1: "
+            _log.warning(
+                f"picamera2 not installed ({e}) and SHAPPE_SIMULATE_CAMERA=1: "
                 f"SIMULATED camera frames — flagged `simulated`, never evidence "
                 f"of anything"
             )
@@ -258,8 +261,8 @@ def start_camera():
     _start_thread(_inference_thread)
 
     _start_thread(_seg_thread)
-    print(f"🧠 Hailo local inference: {HEF_PATH}")
-    print(f"🎯 Target: {TARGET_FPS} FPS")
+    _log.info(f"🧠 Hailo local inference: {HEF_PATH}")
+    _log.info(f"🎯 Target: {TARGET_FPS} FPS")
 
 
 def stop_camera():
@@ -295,15 +298,15 @@ def _bounded(fn, timeout_s: float, what: str) -> bool:
         try:
             fn()
         except Exception as exc:
-            print(f"[WARN] {what} failed: {type(exc).__name__}: {exc}")
+            _log.warning(f"{what} failed: {type(exc).__name__}: {exc}")
         finally:
             done.set()
 
     threading.Thread(target=run, name=what.replace(" ", "-"), daemon=True).start()
     if done.wait(timeout_s):
         return True
-    print(
-        f"[WARN] {what} still blocked after {timeout_s:g}s — abandoning it "
+    _log.warning(
+        f"{what} still blocked after {timeout_s:g}s — abandoning it "
         f"so shutdown can finish"
     )
     return False
@@ -324,10 +327,10 @@ def _set_board_mode() -> bool:
         with SMBus(CAMERA_HAT_I2C_BUS) as bus:
             bus.write_byte_data(CAMERA_HAT_ADDRESS, 0x24, 0x00)
         time.sleep(0.3)  # let it switch before streaming
-        print("[CAMERA] board set to all four cameras (2x2, 0x00)")
+        _log.info("[CAMERA] board set to all four cameras (2x2, 0x00)")
         return True
     except Exception as e:
-        print(f"[WARN] Camera board mode not set ({type(e).__name__}: {e})")
+        _log.warning(f"Camera board mode not set ({type(e).__name__}: {e})")
         return False
 
 
@@ -469,7 +472,7 @@ def _set_focus() -> bool:
         return False
     dev = _lens_device()
     if dev is None:
-        print(f"[WARN] Lens driver {CAMERA_LENS_DRIVER!r} not found — focus not set, pictures may blur")
+        _log.warning(f"Lens driver {CAMERA_LENS_DRIVER!r} not found — focus not set, pictures may blur")
         return False
     code = int(max(0, min(4095, CAMERA_FOCUS_CODE)))
     try:
@@ -479,10 +482,10 @@ def _set_focus() -> bool:
         finally:
             os.close(fd)
     except OSError as e:
-        print(f"[WARN] Lens focus not set ({dev}: {e}) — pictures may blur")
+        _log.warning(f"Lens focus not set ({dev}: {e}) — pictures may blur")
         return False
     _focus_code = code
-    print(f"[CAMERA] lens focus set to {code} ({dev})")
+    _log.info(f"[CAMERA] lens focus set to {code} ({dev})")
     return True
 
 
@@ -525,7 +528,7 @@ def _quiet_tof_port():
                 and not (tof and any(s in line for s in _TOF_PORT_FOLLOW_ON))
             )
             if tof:
-                print("[CAMERA] libcamera passed over the ToF's port (arducam-pivariety), "
+                _log.info("[CAMERA] libcamera passed over the ToF's port (arducam-pivariety), "
                       "as expected: the ToF's own SDK reads it")
             while kept:
                 kept = kept[os.write(2, kept):]
@@ -543,8 +546,8 @@ def _open_camera():
     while not _set_board_mode():
         delay = CAMERA_RETRY_BACKOFF_S[min(tries, len(CAMERA_RETRY_BACKOFF_S) - 1)]
         tries += 1
-        print(
-            f"[WARN] No camera pictures until the board mode is set; retrying in {delay:g}s"
+        _log.warning(
+            f"No camera pictures until the board mode is set; retrying in {delay:g}s"
         )
         deadline = time.monotonic() + delay
         while running and time.monotonic() < deadline:
@@ -576,8 +579,8 @@ def _open_camera():
                 min(failures, len(CAMERA_RETRY_BACKOFF_S) - 1)
             ]
             failures += 1
-            print(
-                f"[WARN] Camera would not open ({type(e).__name__}: {e}) — no frames "
+            _log.warning(
+                f"Camera would not open ({type(e).__name__}: {e}) — no frames "
                 f"(health reports the camera lost); retrying in {delay:g}s"
             )
             deadline = time.monotonic() + delay
@@ -587,7 +590,7 @@ def _open_camera():
         with _camera_lock:
             if running:
                 picam2 = cam
-                print(
+                _log.info(
                     f"✅ Camera (Picamera2): {CAMERA_WIDTH}x{CAMERA_HEIGHT}, all four "
                     f"cameras at {CAMERA_WIDTH // FRAME_GRID_COLS}x"
                     f"{CAMERA_HEIGHT // FRAME_GRID_ROWS}, raw numpy capture"
@@ -617,8 +620,8 @@ def _capture_supervised():
                 min(failures, len(CAMERA_RETRY_BACKOFF_S) - 1)
             ]
             failures += 1
-            print(
-                f"[WARN] Camera capture thread failed ({type(e).__name__}: {e}) — "
+            _log.warning(
+                f"Camera capture thread failed ({type(e).__name__}: {e}) — "
                 f"restarting it in {delay:g}s (restart {failures})"
             )
             # Opened afresh, as at start: the board and the cycle start on the same camera,
@@ -663,14 +666,14 @@ def _capture_thread():
             waited = time.monotonic() - asked_at
             if not capture_stalled and waited > CAMERA_FRAME_TIMEOUT_S:
                 capture_stalled = True
-                print(
-                    f"[WARN] Camera: no frame for {waited:.0f}s — the camera is not "
+                _log.warning(
+                    f"Camera: no frame for {waited:.0f}s — the camera is not "
                     f"delivering (still waiting on it; health reports it lost)"
                 )
             if waited > stall_wait:
                 # A stuck stream does not come back by itself (2026-10-09): start it again.
                 _stall_reopens += 1
-                print(
+                _log.warning(
                     f"[CAMERA] no frame for {waited:.0f}s — closing and reopening the "
                     f"camera (reopen {_stall_reopens}; next after "
                     f"{min(stall_wait * 2.0, CAMERA_STALL_REOPEN_MAX_S):.0f}s)"
@@ -685,7 +688,7 @@ def _capture_thread():
                 or time.monotonic() - last_error_at > CAMERA_FRAME_TIMEOUT_S
             ):
                 last_error_at = time.monotonic()
-                print(f"[WARN] Capture error: {e}")
+                _log.warning(f"Capture error: {e}")
             time.sleep(0.05)
             continue
 
@@ -693,7 +696,7 @@ def _capture_thread():
         stall_wait = CAMERA_STALL_REOPEN_S
         if capture_stalled:
             capture_stalled = False
-            print(
+            _log.info(
                 f"[OK] Camera delivering again after {time.monotonic() - asked_at:.1f}s"
             )
 
@@ -848,12 +851,12 @@ def _wait_npu_answers(gen, what: str) -> bool:
     while _live(gen):
         if _npu_answers():
             if tries:
-                print(f"[{what}] the NPU answers again — rebuilding the engine")
+                _log.info(f"[{what}] the NPU answers again — rebuilding the engine")
             return True
         delay = _backoff(tries)
         tries += 1
-        print(
-            f"[ERROR] {what}: the NPU does not answer (hailortcli fw-control identify, "
+        _log.error(
+            f"{what}: the NPU does not answer (hailortcli fw-control identify, "
             f"try {tries}) — not rebuilding the engine on it, which can freeze the whole "
             f"app; detection off, guidance goes on; asking again in {delay:g}s"
         )
@@ -871,7 +874,7 @@ def _close_engine(engine, what: str):
         else:
             engine.__exit__(None, None, None)
     except Exception as e:
-        print(f"[WARN] {what} close failed: {type(e).__name__}: {e}")
+        _log.warning(f"{what} close failed: {type(e).__name__}: {e}")
 
 
 def _attempt_init(gen, what, make, on_up, on_fail):
@@ -890,7 +893,7 @@ def _attempt_init(gen, what, make, on_up, on_fail):
         if live:
             on_up(engine)
     if not live:
-        print(
+        _log.info(
             f"[{what}] came up after its worker was stopped or replaced — "
             f"closing it unused"
         )
@@ -922,7 +925,7 @@ class _WarnThrottle:
             if seen is not None and seen[1]
             else ""
         )
-        print(msg + extra)
+        _log.info(msg + extra)
         self._seen[msg] = [now, 0]
         return True
 
@@ -1030,8 +1033,8 @@ def _inference_thread():
                     and rebuild_fails >= HAILO_VDEVICE_RESET_AFTER
                 ):
                     # It worked, broke, and cannot be rebuilt: the device under it is gone.
-                    print(
-                        f"[ERROR] Hailo detector would not come back ({rebuild_fails} tries: "
+                    _log.error(
+                        f"Hailo detector would not come back ({rebuild_fails} tries: "
                         f"{error}) — restarting the NPU on a fresh device"
                     )
                     threading.Thread(
@@ -1043,8 +1046,8 @@ def _inference_thread():
                     return
                 delay = _backoff(failures)
                 failures += 1
-                print(
-                    f"[ERROR] Hailo engine init failed (attempt {hailo_init_attempts}): {error} "
+                _log.error(
+                    f"Hailo engine init failed (attempt {hailo_init_attempts}): {error} "
                     f"— detection off, hailo_ready False; retrying in {delay:g}s"
                 )
                 if not _retry_wait(gen, delay):
@@ -1060,8 +1063,8 @@ def _inference_thread():
             broke = True
             delay = _backoff(failures)
             failures += 1
-            print(
-                f"[ERROR] Hailo detector reset — {reason}; detection off, "
+            _log.error(
+                f"Hailo detector reset — {reason}; detection off, "
                 f"re-initialising in {delay:g}s"
             )
             if not _retry_wait(gen, delay):
@@ -1099,8 +1102,8 @@ def _restart_npu(gen, why):
             t.join(timeout=max(0.0, deadline - time.monotonic()))
         stuck = [t.name for t in old if t.is_alive()]
         if stuck:
-            print(
-                f"[ERROR] NPU restart: {', '.join(stuck)} still inside a call after "
+            _log.error(
+                f"NPU restart: {', '.join(stuck)} still inside a call after "
                 f"{HAILO_VDEVICE_RESET_WAIT_S:g}s — NOT releasing the device (that could "
                 f"crash the app); starting the workers on it again"
             )
@@ -1108,7 +1111,7 @@ def _restart_npu(gen, why):
             # A segmentation run that outlived close() releases its model when it returns.
             time.sleep(HAILO_SEG_RUN_TIMEOUT_MS / 1000.0)
             ok = release_shared_vdevice()
-            print(
+            _log.info(
                 f"[Hailo] NPU restart ({why}): device "
                 f"{'released' if ok else 'release FAILED'} — opening a new one"
             )
@@ -1320,8 +1323,8 @@ def _wait_seg_released(gen, eng) -> bool:
                 "waiting for the previous segmenter to be released (a debug "
                 "view's inference is still running on it)"
             )
-    print(
-        "[WARN] Seg engine: the old engine is still inside an inference — "
+    _log.warning(
+        "Seg engine: the old engine is still inside an inference — "
         "not re-initialising until it is released"
     )
     while _live(gen):
@@ -1350,15 +1353,15 @@ def _seg_thread():
         if eng is None:
             delay = _backoff(failures)
             failures += 1
-            print(
-                f"[WARN] Seg engine init failed (attempt {seg_init_attempts}; walking "
+            _log.warning(
+                f"Seg engine init failed (attempt {seg_init_attempts}; walking "
                 f"guide off): {error} — retrying in {delay:g}s"
             )
             if not _retry_wait(gen, delay):
                 return
             continue
 
-        print(f"[Seg] Walkable-surface guide ready: {SEG_HEF_PATH}")
+        _log.info(f"[Seg] Walkable-surface guide ready: {SEG_HEF_PATH}")
         failures, broke = 0, False
         try:
             reason = _segment(eng, gen)
@@ -1373,8 +1376,8 @@ def _seg_thread():
         eng = None  # closed and released: not kept through the backoff
         delay = _backoff(failures)
         failures += 1
-        print(
-            f"[WARN] Seg engine reset — {reason}; walking guide off, "
+        _log.warning(
+            f"Seg engine reset — {reason}; walking guide off, "
             f"re-initialising in {delay:g}s"
         )
         if not _retry_wait(gen, delay):
@@ -1611,7 +1614,7 @@ def gen_seg_frames(sector: str = "front"):
                         last_id = map_id
                 except Exception as e:
                     last_id = fid  # not retried until a new frame
-                    print(f"[WARN] Seg-view error ({sector}): {e}")
+                    _log.warning(f"Seg-view error ({sector}): {e}")
 
         if class_map is not None and eng is not None:
             try:
@@ -1621,11 +1624,11 @@ def gen_seg_frames(sector: str = "front"):
                 yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n")
                 last_yield_at = time.monotonic()
             except Exception as e:
-                print(f"[WARN] Seg-view encode error ({sector}): {e}")
+                _log.warning(f"Seg-view encode error ({sector}): {e}")
 
         if time.monotonic() - last_yield_at > STREAM_STALL_TIMEOUT_S:
-            print(
-                f"[WARN] Seg stream ({sector}) produced nothing for "
+            _log.warning(
+                f"Seg stream ({sector}) produced nothing for "
                 f"{STREAM_STALL_TIMEOUT_S:g}s — ending the stream"
             )
             return
@@ -1695,5 +1698,5 @@ def get_frame_payload(sector: str) -> dict:
         jpeg = _encode_jpeg(_to_seg_input(quad))
         return {"frame": base64.b64encode(jpeg).decode("utf-8"), "simulated": simulated}
     except Exception as e:
-        print(f"[WARN] Frame encode error: {e}")
+        _log.warning(f"Frame encode error: {e}")
         return {"frame": None, "simulated": simulated}

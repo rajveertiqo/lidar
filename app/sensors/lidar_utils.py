@@ -1,5 +1,6 @@
 """LiDAR utility functions and state management"""
 
+import logging
 import asyncio
 import json
 import math
@@ -57,6 +58,8 @@ from app.core.shared_state import (
 )
 from app.perception.heading_tracker import get_tracker
 from app.perception import drift_guidance
+
+_log = logging.getLogger(__name__)
 
 
 def lidar_port() -> str:
@@ -151,7 +154,7 @@ def set_motor_speed(lidar, rpm: float = LIDAR_RPM) -> int:
         try:
             lidar.set_pwm(max(0, min(MAX_MOTOR_PWM, pwm)))
         except Exception as e:
-            print(f"[WARN] set_pwm failed during ramp: {e}")
+            _log.warning(f"set_pwm failed during ramp: {e}")
             break
         time.sleep(0.1)
 
@@ -159,7 +162,7 @@ def set_motor_speed(lidar, rpm: float = LIDAR_RPM) -> int:
         lidar.set_pwm(target_pwm)
     except Exception:
         pass
-    print(f"[OK] LiDAR motor at {rpm:.0f} RPM (PWM {target_pwm}/{MAX_MOTOR_PWM})")
+    _log.info(f"[OK] LiDAR motor at {rpm:.0f} RPM (PWM {target_pwm}/{MAX_MOTOR_PWM})")
     return target_pwm
 
 
@@ -178,7 +181,7 @@ def cleanup_lidar():
             errors.append(f"[WARN] Error during LiDAR cleanup ({step.__name__}): {e}")
     for line in errors + ["[OK] LiDAR motor stopped and disconnected"]:
         try:
-            print(line)
+            _log.info(line)
         except Exception:
             pass
 
@@ -191,7 +194,7 @@ def setup_signal_handlers():
 
     def say(line):
         try:
-            print(line)
+            _log.info(line)
         except Exception:
             pass
 
@@ -353,13 +356,13 @@ async def _close_quietly(ws):
 def add_client(websocket):
     """Add a WebSocket client"""
     clients.add(websocket)
-    print(f"[INFO] Client connected. Total: {len(clients)}")
+    _log.info(f"Client connected. Total: {len(clients)}")
 
 
 def remove_client(websocket):
     """Remove a WebSocket client"""
     clients.discard(websocket)
-    print(f"[INFO] Client disconnected. Total: {len(clients)}")
+    _log.info(f"Client disconnected. Total: {len(clients)}")
 
 
 _MEAS_LEN = 5  # bytes per measurement in the standard scan response
@@ -432,7 +435,7 @@ class _ScanStream:
                 f"RPLidar hardware failure. Error code: {error_code}"
             )
         if status == "Warning":
-            print(f"[WARN] LiDAR health warning, error code {error_code}")
+            _log.warning(f"LiDAR health warning, error code {error_code}")
 
         self._lidar._send_cmd(SCAN_BYTE)
         dsize, is_single, dtype = self._lidar._read_descriptor()
@@ -735,7 +738,7 @@ def _step_heading(points, captured_at, trusted=True):
     try:
         return get_tracker().update(points, captured_at, trusted=trusted)
     except Exception as e:
-        print(f"[WARN] heading tracker failed: {e}")
+        _log.warning(f"heading tracker failed: {e}")
         return None
 
 
@@ -750,7 +753,7 @@ def _update_movers(points, heading, captured_at):
             movers.update(points, captured_at, heading)
             ego = movers.snapshot().get("ego")
         except Exception as e:
-            print(f"[WARN] LiDAR movers failed: {e}")
+            _log.warning(f"LiDAR movers failed: {e}")
     if MOTION_TRACKER_ENABLED:
         try:
             from app.perception.motion_tracker import get_motion_tracker
@@ -759,7 +762,7 @@ def _update_movers(points, heading, captured_at):
                 points, captured_at, heading, camera_state=get_camera_state(), ego=ego
             )
         except Exception as e:
-            print(f"[WARN] motion tracker failed: {e}")
+            _log.warning(f"motion tracker failed: {e}")
 
 
 def _update_drift(heading):
@@ -775,7 +778,7 @@ def _update_drift(heading):
         now = time.time()
         update_drift_state(drift_guidance.analyze(heading=heading, now=now))
     except Exception as e:
-        print(f"[WARN] drift guidance failed: {e}")
+        _log.warning(f"drift guidance failed: {e}")
 
 
 def _update_bev(points, heading, captured_at=None):
@@ -790,7 +793,7 @@ def _update_bev(points, heading, captured_at=None):
         grid.update(points, heading=heading, radar=get_radar_state(), now=captured_at)
         grid.maybe_extract(camera=get_camera_state())
     except Exception as e:
-        print(f"[WARN] BEV grid failed: {e}")
+        _log.warning(f"BEV grid failed: {e}")
 
 
 def _analysis_worker(loop):
@@ -811,7 +814,7 @@ def _analysis_worker(loop):
         try:
             _publish_scan(loop, *job)
         except Exception as e:
-            print(f"[WARN] LiDAR analysis error: {e}")
+            _log.warning(f"LiDAR analysis error: {e}")
 
 
 def _submit_scan(scan, scan_index, hz, health, captured_at, swept=None):
@@ -829,14 +832,14 @@ def scanner_thread(loop):
     except ImportError as exc:
         if not LIDAR_SIMULATION_ALLOWED:
             _reader_health["source"] = f"unavailable: rplidar not importable ({exc})"
-            print(
-                f"[ERROR] rplidar is not importable ({exc}) — NO LiDAR. Publishing "
+            _log.error(
+                f"rplidar is not importable ({exc}) — NO LiDAR. Publishing "
                 f"nothing; health reports it down. (Development simulation "
                 f"needs SHAPPE_SIMULATE_LIDAR=1.)"
             )
             return
-        print(
-            "[WARN] rplidar not installed and SHAPPE_SIMULATE_LIDAR=1: SIMULATED "
+        _log.warning(
+            "rplidar not installed and SHAPPE_SIMULATE_LIDAR=1: SIMULATED "
             "LiDAR — fabricated scans, flagged, never evidence of a clear path"
         )
         _reader_health["source"] = "simulated"
@@ -856,7 +859,7 @@ def scanner_thread(loop):
         try:
             _scan_session(RPLidar, progress)
         except Exception as e:
-            print(f"[ERROR] LiDAR error: {e}")
+            _log.error(f"LiDAR error: {e}")
         finally:
             cleanup_lidar()
             _reader_health["pwm_command"] = None
@@ -867,8 +870,8 @@ def scanner_thread(loop):
             failures = 0
         delay = LIDAR_RETRY_BACKOFF_S[min(failures, len(LIDAR_RETRY_BACKOFF_S) - 1)]
         failures += 1
-        print(
-            f"[WARN] LiDAR offline — publishing NO scans (state goes stale, "
+        _log.warning(
+            f"LiDAR offline — publishing NO scans (state goes stale, "
             f"health reports it down); reconnecting in {delay:g}s"
         )
         stop_scanner.wait(delay)
@@ -885,17 +888,17 @@ def _clear_protection_stop(lidar) -> None:
         status, code = lidar.get_health()
         if status != "Error":
             return
-        print(f"[WARN] LiDAR in protection stop (error code {code}) — resetting it")
+        _log.warning(f"LiDAR in protection stop (error code {code}) — resetting it")
         lidar.reset()
         time.sleep(1.5)
         lidar.clear_input()
         status, code = lidar.get_health()
-        print(
+        _log.info(
             f"[{'WARN' if status == 'Error' else 'OK'}] LiDAR health after reset: "
             f"{status} (error code {code})"
         )
     except Exception as e:
-        print(f"[WARN] LiDAR protection-stop check failed: {e}")
+        _log.warning(f"LiDAR protection-stop check failed: {e}")
 
 
 def _scan_session(RPLidar, progress):
@@ -905,7 +908,7 @@ def _scan_session(RPLidar, progress):
     scan_times = deque(maxlen=30)
 
     port = lidar_port()
-    print(f"[INFO] Connecting to LiDAR on {port}...")
+    _log.info(f"Connecting to LiDAR on {port}...")
 
     with lidar_lock:
         lidar_instance = _open_without_motor(RPLidar, port)
@@ -922,10 +925,10 @@ def _scan_session(RPLidar, progress):
             lidar.clear_input()
             time.sleep(0.1)
             info = lidar.get_info()
-            print(f"[OK] LiDAR Info: {info}")
+            _log.info(f"[OK] LiDAR Info: {info}")
             break
         except Exception as e:
-            print(f"[WARN] LiDAR info attempt {attempt + 1}/3: {e}; resetting…")
+            _log.warning(f"LiDAR info attempt {attempt + 1}/3: {e}; resetting…")
             try:
                 lidar.reset()  # full device reset -> back to idle
                 time.sleep(1.5)
@@ -933,8 +936,8 @@ def _scan_session(RPLidar, progress):
             except Exception:
                 pass
     if info is None:
-        print(
-            "[WARN] No LiDAR info after 3 tries — continuing; "
+        _log.warning(
+            "No LiDAR info after 3 tries — continuing; "
             "scanning may still work once the buffer settles."
         )
     _clear_protection_stop(lidar)
@@ -947,7 +950,7 @@ def _scan_session(RPLidar, progress):
         ramp_ok = True
         time.sleep(2)
     except Exception as e:
-        print(f"[WARN] Could not start motor: {e}")
+        _log.warning(f"Could not start motor: {e}")
     last_reassert = 0
     _reader_health["pwm_command"] = target_pwm if ramp_ok else None
     _reader_health["connected"] = True
@@ -958,12 +961,12 @@ def _scan_session(RPLidar, progress):
         except:
             pass
         time.sleep(0.1)
-    print("[OK] Initial buffer cleared")
+    _log.info("[OK] Initial buffer cleared")
 
     stream = _ScanStream(lidar)
     stream.start()
-    print(
-        "[INFO] Starting LiDAR scanning (bulk serial reads, "
+    _log.info(
+        "Starting LiDAR scanning (bulk serial reads, "
         f"{LIDAR_MAX_BACKLOG_S * 1000:.0f} ms latency budget)..."
     )
 
@@ -1011,8 +1014,8 @@ def _scan_session(RPLidar, progress):
         )
 
         if stream.dropped_meas > reported_drops and mono - last_health_log >= 1.0:
-            print(
-                f"[WARN] LiDAR reader behind: dropped "
+            _log.warning(
+                f"LiDAR reader behind: dropped "
                 f"{stream.dropped_meas - reported_drops} stale measurements "
                 f"(backlog {stream.backlog_meas}, {hz:.1f} Hz)"
             )
@@ -1025,9 +1028,9 @@ def run_simulation(loop):
     t0 = time.time()
     scan_index = 0
 
-    print("[INFO] Running in simulation mode")
-    print(
-        "[INFO] Sectors: 8 x 45 deg, each centred on its direction (front = 337.5-22.5)"
+    _log.info("Running in simulation mode")
+    _log.info(
+        "Sectors: 8 x 45 deg, each centred on its direction (front = 337.5-22.5)"
     )
 
     while not stop_scanner.is_set():
@@ -1108,10 +1111,10 @@ def start_scanner(loop):
 
             reset_grid()
         except Exception as e:
-            print(f"[WARN] BEV grid reset failed: {e}")
+            _log.warning(f"BEV grid reset failed: {e}")
     thread = threading.Thread(target=scanner_thread, args=(loop,), daemon=True)
     thread.start()
-    print("[INFO] Scanner thread started")
+    _log.info("Scanner thread started")
 
 
 def stop_scanner_thread():

@@ -1,9 +1,12 @@
 """In-process replacement for `hailortcli monitor`."""
 
+import logging
 import os
 import threading
 import time
 from collections import deque
+
+_log = logging.getLogger(__name__)
 
 DEBUG = os.environ.get("HAILO_DEBUG") == "1"
 
@@ -36,7 +39,7 @@ def record(model: str, infer_ms: float, n_results: int = 0):
     if DEBUG:
         fps = (n - 1) / span if span > 0 else 0.0
         util = (busy_ms / (span * 1000.0) * 100.0) if span > 0 else 0.0
-        print(
+        _log.info(
             f"[Hailo/{model}] infer done {infer_ms:6.1f} ms | "
             f"{fps:5.1f} FPS | util {util:5.1f}% | results {n_results}",
             flush=True,

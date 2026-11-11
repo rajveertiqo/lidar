@@ -1,5 +1,6 @@
 """Gyro reader — the body's own rotation, sampled fast and kept honest by the LiDAR."""
 
+import logging
 from collections import deque
 from typing import Any, Deque, Dict, NamedTuple, Optional, Tuple
 
@@ -49,6 +50,8 @@ from app.config import (
     GYRO_YAW_AXIS,
     GYRO_YAW_SIGN,
 )
+
+_log = logging.getLogger(__name__)
 
 _AXIS_KEYS = {"x": ("gx", "ax"), "y": ("gy", "ay"), "z": ("gz", "az")}
 _SETTINGS_CHECK_S = 1.0  # how often the chip is asked whether it reset itself
@@ -118,7 +121,7 @@ class GyroReader:
 
     def start(self) -> None:
         if not GYRO_ENABLED:
-            print("[GYRO] disabled in config — heading stays LiDAR-only")
+            _log.info("[GYRO] disabled in config — heading stays LiDAR-only")
             return
         if self._thread and self._thread.is_alive():
             return
@@ -202,7 +205,7 @@ class GyroReader:
                 if not self._bias_trusted and self._agreements >= GYRO_TRUST_SAMPLES:
                     self._bias_trusted = True
                     self._trust_reason = "agreed with scan matching"
-                    print(
+                    _log.info(
                         "[GYRO] bias confirmed against the LiDAR — "
                         "gyro is now the yaw source"
                     )
@@ -242,7 +245,7 @@ class GyroReader:
             if not self._bias_trusted:
                 self._bias_trusted = True
                 self._trust_reason = "re-zeroed while confirmed still"
-                print(
+                _log.info(
                     "[GYRO] re-zeroed against a confirmed standstill — "
                     "gyro is now the yaw source"
                 )
@@ -441,19 +444,19 @@ class GyroReader:
                 if self._bias_trusted
                 else f"moving during calibration (spread {std:.2f} dps)"
             )
-        print(
+        _log.info(
             f"[GYRO] {self._chip} on {sensor.describe()} — "
             f"yaw axis {GYRO_YAW_AXIS}, sign {GYRO_YAW_SIGN:+.0f}"
         )
         if not GYRO_MOUNTING_CONFIRMED:
-            print(
+            _log.info(
                 "[GYRO] mounting NOT confirmed — reporting only, not steering. "
                 "Heading stays on the LiDAR (see GYRO_MOUNTING_CONFIRMED)."
             )
         if self._bias_trusted:
-            print(f"[GYRO] calibrated at rest (spread {std:.2f} dps)")
+            _log.info(f"[GYRO] calibrated at rest (spread {std:.2f} dps)")
         else:
-            print(
+            _log.info(
                 f"[GYRO] MOVING during calibration (spread {std:.2f} dps) — "
                 f"yaw stays on the LiDAR until the offset is established"
             )
@@ -492,7 +495,7 @@ class GyroReader:
             except Exception:
                 pass
         if was:
-            print("[GYRO] link down — heading falls back to LiDAR scan matching")
+            _log.info("[GYRO] link down — heading falls back to LiDAR scan matching")
 
     # ---- worker ----------------------------------------------------------
 
@@ -701,6 +704,9 @@ def print_tuning(tuning: Dict[str, Any]) -> None:
 
 
 if __name__ == "__main__":
+    from app.core import logs
+
+    logs.setup()  # this check's own lines are print(); what it runs logs
     import argparse
 
     ap = argparse.ArgumentParser(

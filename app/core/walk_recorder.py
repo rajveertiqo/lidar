@@ -24,6 +24,7 @@ tools/field/label_report.py scores the code against and exports for training on 
 Labelled clips are kept apart (WALK_LABEL_KEEP_FILES), so Wrong presses never prune them.
 """
 
+import logging
 import gzip
 import json
 import os
@@ -46,6 +47,8 @@ from app.config import (
     WALK_RECORD_KEEP_MB,
     WALK_RECORD_MAX_MB,
 )
+
+_log = logging.getLogger(__name__)
 
 _FLUSH_S = 2.0
 _LABEL_COUNT_S = 5.0  # label_counts() reads the folder at most this often
@@ -104,7 +107,7 @@ class WalkRecorder:
                 daemon=True,
             )
             self._thread.start()
-            print(f"[REC] recording the walk to {self._path}")
+            _log.info(f"[REC] recording the walk to {self._path}")
             return self._status()
 
     def stop(self) -> Dict[str, Any]:
@@ -118,7 +121,7 @@ class WalkRecorder:
             self._stop.set()
         if thread is not None:
             thread.join(timeout=5.0)
-        print(f"[REC] stopped: {path} ({self._ticks} ticks, {self._dropped} dropped)")
+        _log.info(f"[REC] stopped: {path} ({self._ticks} ticks, {self._dropped} dropped)")
         with self._lock:
             st = self._status()
             st["last_file"] = path
@@ -244,10 +247,10 @@ class WalkRecorder:
                 self._clips += 1
                 self._label_counts = None  # counted again on the next look
                 _prune_clips()
-                print(f"[REC] {kind} mark: {len(ticks)} ticks saved to {path}")
+                _log.info(f"[REC] {kind} mark: {len(ticks)} ticks saved to {path}")
             except Exception as e:
                 self._error = f"clip: {type(e).__name__}: {e}"
-                print(f"[REC] could not save the {kind} clip — {self._error}")
+                _log.warning(f"[REC] could not save the {kind} clip — {self._error}")
                 try:
                     os.remove(part)
                 except OSError:
@@ -304,14 +307,14 @@ class WalkRecorder:
                         self._error = (
                             f"stopped at WALK_RECORD_MAX_MB ({WALK_RECORD_MAX_MB} MB)"
                         )
-                        print(f"[REC] {self._error}")
+                        _log.warning(f"[REC] {self._error}")
                         with self._lock:
                             if self._path == path:
                                 self._path = None
                         break
         except Exception as e:
             self._error = f"write: {type(e).__name__}: {e}"
-            print(f"[REC] recording failed — {self._error}")
+            _log.warning(f"[REC] recording failed — {self._error}")
             with self._lock:
                 if self._path == path:
                     self._path = None
@@ -335,9 +338,9 @@ def _prune() -> None:
             total += os.path.getsize(f) / 1e6
             if i >= WALK_RECORD_KEEP_FILES or total > WALK_RECORD_KEEP_MB:
                 os.remove(f)
-                print(f"[REC] removed an old recording: {os.path.basename(f)}")
+                _log.info(f"[REC] removed an old recording: {os.path.basename(f)}")
     except OSError as e:
-        print(f"[REC] could not tidy {WALK_RECORD_DIR}: {e}")
+        _log.warning(f"[REC] could not tidy {WALK_RECORD_DIR}: {e}")
 
 
 def _mark_line(
@@ -376,7 +379,7 @@ def _prune_clips() -> None:
         for f in plain[WALK_CLIP_KEEP_FILES:] + labelled[WALK_LABEL_KEEP_FILES:]:
             os.remove(f)
     except OSError as e:
-        print(f"[REC] could not tidy the clips in {WALK_RECORD_DIR}: {e}")
+        _log.warning(f"[REC] could not tidy the clips in {WALK_RECORD_DIR}: {e}")
 
 
 _recorder = WalkRecorder()

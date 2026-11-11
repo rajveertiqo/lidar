@@ -1,5 +1,6 @@
 """Running as a service — systemd notify, heartbeats, and a shutdown backstop."""
 
+import logging
 import os
 import socket
 import sys
@@ -8,6 +9,8 @@ import time
 from typing import Dict, Iterable, Optional
 
 from app.config import SERVICE_HEARTBEAT_MAX_AGE_S, SHUTDOWN_TIMEOUT_S
+
+_log = logging.getLogger(__name__)
 
 _started = time.monotonic()
 _lock = threading.RLock()
@@ -93,13 +96,13 @@ def start_watchdog(required: Iterable[str]) -> None:
             if why is None:
                 notify("WATCHDOG=1")
                 if _withheld:
-                    print(
+                    _log.info(
                         f"[SERVICE] watchdog pings resumed ({_withheld} has recovered)"
                     )
                 _withheld = None
             elif why != _withheld:
                 # Said once per cause, not once per interval.
-                print(
+                _log.info(
                     f"[SERVICE] withholding the watchdog ping — {why}; systemd "
                     f"restarts the app if this lasts"
                 )

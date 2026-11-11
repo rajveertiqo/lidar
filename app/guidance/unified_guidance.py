@@ -1,10 +1,13 @@
 """Unified walking guidance — ONE voice for the user, and a closed vocabulary."""
 
+import logging
 import threading
 import time
 from typing import Dict, Any, Optional, Tuple
 
 from app.config import LIDAR_SECTOR_ORDER
+
+_log = logging.getLogger(__name__)
 
 _warn_lock = threading.Lock()
 _warned: Dict[str, Tuple[str, float]] = {}
@@ -19,7 +22,7 @@ def _warn(layer: str, exc: Exception) -> None:
         if last and last[0] == msg and now - last[1] < _WARN_REPEAT_S:
             return
         _warned[layer] = (msg, now)
-    print(f"[WARN] unified guidance: {layer} failed: {msg}")
+    _log.warning(f"unified guidance: {layer} failed: {msg}")
 
 
 _turn_lock = threading.Lock()

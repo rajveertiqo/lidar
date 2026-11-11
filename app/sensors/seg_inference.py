@@ -1,5 +1,6 @@
 """Walkable-surface segmentation engine for the Hailo-10H."""
 
+import logging
 import os
 import threading
 import time
@@ -20,6 +21,8 @@ from app.sensors.yoloseg_decode import (
     _PROTO_SIZE,
 )
 
+_log = logging.getLogger(__name__)
+
 _METADATA_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "model", "metadata.yaml")
 
 
@@ -31,13 +34,13 @@ def load_metadata(path: str = _METADATA_PATH) -> dict:
         names = {int(k): str(v) for k, v in (meta.get("names") or {}).items()}
         imgsz = meta.get("imgsz") or [640, 640]
         if not names:
-            print(
+            _log.info(
                 f"[Seg] WARNING: {path} lists no class names; "
                 "surface steering disabled (LiDAR steering unaffected)"
             )
         return {"names": names, "imgsz": int(imgsz[0])}
     except Exception as e:
-        print(
+        _log.warning(
             f"[Seg] WARNING: metadata.yaml unreadable ({e}); "
             "surface steering disabled (LiDAR steering unaffected)"
         )
@@ -137,7 +140,7 @@ class SegmentationEngine:
             if walkable_ids is not None
             else resolve_walkable_ids(self.class_names)
         )
-        print(
+        _log.info(
             f"[Seg] {len(self.class_names)} classes; walkable = "
             + ", ".join(
                 f"{i}:{self.class_names.get(i, '?')}" for i in self._walkable_ids
@@ -230,7 +233,7 @@ class SegmentationEngine:
                 if not self._lock.acquire(blocking=False):
                     self._closed = True
                     self._close_pending = True
-                    print(
+                    _log.info(
                         f"[Seg] close: an inference is still running on "
                         f"{self._hef_path} after {self._CLOSE_WAIT_S:g}s — it "
                         f"releases the model when it returns"
@@ -245,7 +248,7 @@ class SegmentationEngine:
     def infer_class_map(self, img: Image.Image):
         """Run segmentation on a PIL image."""
         if hailo_stats.DEBUG:
-            print(
+            _log.info(
                 f"[Hailo/{self._stat_name}] preprocess in  {img.size[0]}x{img.size[1]}",
                 flush=True,
             )
@@ -266,7 +269,7 @@ class SegmentationEngine:
                 bindings.output(name).set_buffer(buf)
 
             if hailo_stats.DEBUG:
-                print(f"[Hailo/{self._stat_name}] run() start", flush=True)
+                _log.info(f"[Hailo/{self._stat_name}] run() start")
             t0 = time.perf_counter()
             self._model.run([bindings], timeout=HAILO_SEG_RUN_TIMEOUT_MS)
             infer_ms = (time.perf_counter() - t0) * 1000

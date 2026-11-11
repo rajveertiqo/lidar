@@ -22,7 +22,14 @@ written, the app still starts, with a warning. `logs/` is not committed.
 ```bash
 less -R logs/latest.log       # the last run
 tail -f logs/latest.log       # follow the one running now
+grep WARNING logs/latest.log  # only what went wrong (and ERROR)
 ```
+
+Each line the app logs has its time, its level from WARNING up, and the module it came
+from (`09:50:32.109 WARNING pi_camera_utils: Camera: no frame for 3s …`), so a field log
+lines up with a walk clip by time. `SHAPPE_LOG_LEVEL=DEBUG ./start_lidar.sh` writes more,
+`WARNING` only the problems (default `INFO`; `app/core/logs.py`). The live guidance lines
+(`🔊`, `👁`, `🏷`) and the start-up banner are printed as they always were.
 
 The tests include the web pages (`tests/test_templates.py`): every inline script must parse
 (`node --check`, when node is installed) and no stray character may sit in a page's code —

@@ -1,5 +1,6 @@
 """The Pi's own voice — guidance that does not depend on a browser tab."""
 
+import logging
 import functools
 import io
 import math
@@ -27,6 +28,8 @@ from app.config import (
     PI_VOICE_URGENT_TONE,
     SIMPLE_OFFLINE_REPEAT_S,
 )
+
+_log = logging.getLogger(__name__)
 
 
 # 1 s (was 5, 2026-10-30): an earpiece dropping out left the voice on a sink nobody hears
@@ -481,7 +484,7 @@ def _loop() -> None:
             service.beat("guidance")
         except Exception as exc:
             if str(exc) != _tick_error:
-                print(f"[WARN] pi_voice: guidance tick failed: {exc}")
+                _log.warning(f"pi_voice: guidance tick failed: {exc}")
             _tick_error = str(exc)
         _tick_done_at = time.monotonic()
         # The next tick as the next LiDAR scan lands (2026-10-30): on a 10 Hz timer a new scan
@@ -519,8 +522,8 @@ def _watch_stall() -> None:
         except Exception:
             pass
         how = speak(SENSORS_OFFLINE, urgent=True, seq=seq)
-        print(
-            f"[WARN] pi_voice: the guidance loop has finished no tick for {stalled:.1f}s "
+        _log.warning(
+            f"pi_voice: the guidance loop has finished no tick for {stalled:.1f}s "
             f'— "{SENSORS_OFFLINE}" ({how})'
         )
         try:
@@ -560,9 +563,9 @@ def _start_airtime_timing() -> None:
             from app.guidance import simple_guidance
 
             n = simple_guidance.measure_airtimes(PI_VOICE_CMD)
-            print(f"[INFO] pi_voice: timed {n} sentences for the speech gate")
+            _log.info(f"pi_voice: timed {n} sentences for the speech gate")
         except Exception as exc:
-            print(f"[WARN] pi_voice: sentence timing failed: {exc}")
+            _log.warning(f"pi_voice: sentence timing failed: {exc}")
 
     threading.Thread(target=run, name="pi-voice-airtime", daemon=True).start()
 

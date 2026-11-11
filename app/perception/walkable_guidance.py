@@ -1,5 +1,8 @@
 """Which segmentation classes are walkable ground — the segmentation view draws them bright."""
 
+import logging
+
+_log = logging.getLogger(__name__)
 WALKABLE_IDS: tuple = ()
 
 WALKABLE_NAMES = frozenset(
@@ -68,7 +71,7 @@ def resolve_walkable_ids(class_names, default=WALKABLE_IDS):
     if ids:
         return tuple(ids)
     if class_names:
-        print(
+        _log.info(
             "[Seg] WARNING: no class in this model matches a known walkable "
             f"surface {sorted(WALKABLE_NAMES)[:6]}...; got "
             f"{sorted(str(n) for n in class_names.values())[:12]}. "

@@ -1,7 +1,10 @@
 """Shared Hailo VDevice."""
 
+import logging
 import os
 import threading
+
+_log = logging.getLogger(__name__)
 
 os.environ.setdefault("HAILORT_LOGGER_PATH", "NONE")
 
@@ -32,5 +35,5 @@ def release_shared_vdevice() -> bool:
         vdevice.release()
         return True
     except Exception as e:
-        print(f"[WARN] Hailo VDevice release failed: {type(e).__name__}: {e}")
+        _log.warning(f"Hailo VDevice release failed: {type(e).__name__}: {e}")
         return False

@@ -1,5 +1,6 @@
 """Live map for the /map test page: what the LiDAR, radar and cameras see, placed around the user."""
 
+import logging
 import base64
 import math
 import threading
@@ -8,6 +9,8 @@ from collections import deque
 from typing import Any, Deque, Dict, List, Optional, Tuple
 
 import numpy as np
+
+_log = logging.getLogger(__name__)
 
 try:
     import cv2
@@ -712,7 +715,7 @@ class LiveMap:
                         self._error_count in (1, 10, 100)
                         or self._error_count % 1000 == 0
                     ):
-                        print(f"[WARN] live map: {self._error} (x{self._error_count})")
+                        _log.warning(f"live map: {self._error} (x{self._error_count})")
             with self._lock:
                 if self._clients <= 0 and time.monotonic() > self._stop_after:
                     self._thread = None

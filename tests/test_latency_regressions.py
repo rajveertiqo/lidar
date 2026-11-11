@@ -612,21 +612,33 @@ class TofPortLinesTests(unittest.TestCase):
     REAL = b"[0:05:07.000] [4769] ERROR RPI pipeline_base.cpp:999 Camera frontend has timed out!\n"
 
     def console(self, written):
-        import contextlib, io, os, sys, tempfile
+        """(what reached stderr, what the module logged): it logs (app/core/logs), not prints."""
+        import logging, os, sys, tempfile
 
+        said = []
+
+        class Keep(logging.Handler):
+            def emit(self, record):
+                said.append(record.getMessage())
+
+        log, keep = logging.getLogger(pc.__name__), Keep()
+        level = log.level
+        log.addHandler(keep)
+        log.setLevel(logging.INFO)
         with tempfile.TemporaryFile() as console:
             sys.stderr.flush()
             saved = os.dup(2)
             os.dup2(console.fileno(), 2)
-            out = io.StringIO()
             try:
-                with contextlib.redirect_stdout(out), pc._quiet_tof_port():
+                with pc._quiet_tof_port():
                     os.write(2, written)
             finally:
                 os.dup2(saved, 2)
                 os.close(saved)
+                log.removeHandler(keep)
+                log.setLevel(level)
             console.seek(0)
-            return console.read(), out.getvalue()
+            return console.read(), "\n".join(said)
 
     def test_tof_lines_held_back_real_errors_through(self):
         err, out = self.console(self.TOF_LINES + self.REAL)

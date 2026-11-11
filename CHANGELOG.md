@@ -34,6 +34,10 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   (the LiDAR's blind side) is unchanged.
 
 ### Changed
+- **The app logs through `logging`** (`app/core/logs.py`), not `print()`: every line has its
+  time, its level from WARNING up, and its module, and `SHAPPE_LOG_LEVEL` sets how much is
+  written. Same place as before (the terminal and `logs/run_*.log`). The live guidance console,
+  the start-up banner and the hand-run hardware checks still print.
 - **The app is one package, `app/`**, split by job: `app/sensors/` (hardware), `app/perception/`
   (what is around, the walk decision), `app/guidance/` (what is said), `app/core/` (shared
   state, freshness, recording), `app/api/` (was `routers/`). `main.py` and `config.py` moved

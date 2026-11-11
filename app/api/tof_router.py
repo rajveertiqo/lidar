@@ -3,6 +3,7 @@ the front camera's picture (the calibration check), and the bench calibration's 
 Since 2026-11-03 also the live view, /tof/live (from ~/tof/tof_live.py), fed by /tof/ws.
 Since 2026-11-06 the front camera as a depth camera: /tof/rgbd.jpg and /tof/aligned.npy."""
 
+import logging
 import asyncio
 import json
 import os
@@ -16,6 +17,8 @@ from fastapi.responses import HTMLResponse, Response
 
 from app.config import TOF_CALIBRATION_PAIRS_DIR, TOF_ENABLED, TOF_LIVE_MAX_FPS, TOF_MAX_MM
 from app.core.access import require_admin
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tof", tags=["ToF depth"])
 
@@ -128,7 +131,7 @@ async def live_websocket(websocket: WebSocket):
     except (WebSocketDisconnect, asyncio.TimeoutError):
         pass
     except Exception as e:
-        print(f"[WARN] ToF WebSocket error: {e}")
+        _log.warning(f"ToF WebSocket error: {e}")
     finally:
         if reader is not None:
             reader.cancel()

@@ -1,5 +1,6 @@
 """Fused guidance API routes."""
 
+import logging
 import os
 import asyncio
 import time
@@ -21,6 +22,8 @@ from starlette.concurrency import run_in_threadpool
 from app.core.access import require_admin
 from app.perception.sensor_fusion import fuse_guidance, describe_scene, get_system_health
 from app.guidance.unified_guidance import latest_guidance
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/guidance", tags=["Guidance"])
 
@@ -79,7 +82,7 @@ async def walk_websocket(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        print(f"[WARN] Walk WebSocket error: {e}")
+        _log.warning(f"Walk WebSocket error: {e}")
 
 
 @router.get("/policy")
@@ -197,8 +200,7 @@ async def set_gait_stride(payload: dict):
         else:
             return {
                 "ok": False,
-                "error": "expected {'distance_m', 'steps'}, "
-                "{'stride_m'} or {'clear': true}",
+                "error": "expected {'distance_m', 'steps'}, {'stride_m'} or {'clear': true}",
             }
     except (TypeError, ValueError, OverflowError) as exc:  # {"steps": Infinity}: a 500
         return {"ok": False, "error": str(exc)}
@@ -238,8 +240,6 @@ def get_spatial():
 async def get_status():
     """Sensor health so the user can be told audibly if the device is degraded."""
     return get_system_health()
-
-
 
 
 @router.get("/latency")

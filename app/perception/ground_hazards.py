@@ -42,6 +42,7 @@ FUSION_CAMERA_DOWN_DEG. Heights are above the fitted ground, distances along it,
 (the guidance says them in feet).
 """
 
+import logging
 import collections
 import math
 import threading
@@ -93,6 +94,8 @@ from app.config import (
     TOF_WALL_MIN_WIDTH_M,
 )
 from app.perception import depth_fusion as df
+
+_log = logging.getLogger(__name__)
 
 # Worst first: the order a tie is broken in, and the dashboard's.
 KINDS = (
@@ -1336,7 +1339,7 @@ def _run() -> None:
             now = time.time()
             if now - _errors["logged_at"] > 30.0:
                 _errors["logged_at"] = now
-                print(f"[WARN] ToF hazards: {_errors['last']}")
+                _log.warning(f"ToF hazards: {_errors['last']}")
 
 
 def start_ground_hazards() -> bool:

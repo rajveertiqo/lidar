@@ -1,5 +1,7 @@
-"""Main FastAPI Application Combines Pi Camera, LiDAR, Navigation, Environment Detection, and Road Crossing systems"""
+"""The Shappe Guide app: starts the sensors (LiDAR, radar, cameras, ToF, IMU), the guidance
+loop and the voice, and serves the dashboard and the API (app/api/)."""
 
+import logging
 import asyncio
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -9,6 +11,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.datastructures import Headers
+
+from app.core import logs
+
+logs.setup()  # before the rest of the app is imported: some of it logs as it loads
 
 from app.config import (
     ADMIN_TOKEN,
@@ -30,6 +36,8 @@ from app.api import guidance_router
 from app.api import tof_router
 from app.api import map_router
 
+_log = logging.getLogger(__name__)
+
 BASE_DIR = Path(__file__).resolve().parents[1]  # the project root
 TEMPLATES_DIR = BASE_DIR / "templates"
 
@@ -41,7 +49,7 @@ def _step(what: str, fn, *args) -> None:
     try:
         fn(*args)
     except Exception as e:
-        print(f"[ERROR] {what} failed: {type(e).__name__}: {e}")
+        _log.error(f"{what} failed: {type(e).__name__}: {e}")
 
 
 @asynccontextmanager
@@ -86,9 +94,7 @@ async def lifespan(app: FastAPI):
     print(
         f"📝 Speech log: http://{lan_ip}:{SERVER_PORT}/guidance/log/text   (and logs/speech_*.log)"
     )
-    print(
-        f"🗺  Live map:   http://{lan_ip}:{SERVER_PORT}/map   (3D test page, display only)"
-    )
+    print(f"🗺  Live map:   http://{lan_ip}:{SERVER_PORT}/map   (3D test page, display only)")
     print("⏹  Ctrl+C to stop")
     if not ADMIN_TOKEN:
         print(
@@ -183,9 +189,7 @@ class _RefuseCrossSiteWebSockets:
             from app.core.access import websocket_refusal
 
             headers = Headers(scope=scope)  # read as the HTTP rule reads them
-            if websocket_refusal(
-                headers.get("origin", ""), headers.get("host", ""), CORS_ORIGINS
-            ):
+            if websocket_refusal(headers.get("origin", ""), headers.get("host", ""), CORS_ORIGINS):
                 await send({"type": "websocket.close", "code": 1008})
                 return
         await self.app(scope, receive, send)
@@ -308,8 +312,7 @@ def health_check():
     system = pi_health.read()
     if system.get("power_low"):
         warnings.append(
-            "Under-voltage: the battery or power supply is failing — the device "
-            "may switch off"
+            "Under-voltage: the battery or power supply is failing — the device may switch off"
         )
     if system.get("hot"):
         soc = system.get("soc_c")
@@ -341,9 +344,7 @@ def health_check():
     else:
         status = (
             "ok"
-            if sensors.get("all_ok")
-            and not system.get("power_low")
-            and not system.get("hot")
+            if sensors.get("all_ok") and not system.get("power_low") and not system.get("hot")
             else "degraded"
         )
     body = {
@@ -351,8 +352,7 @@ def health_check():
         "guiding": guiding,
         "ready": ready,
         "sensors": {
-            k: bool(sensors.get(k))
-            for k in ("lidar_ok", "radar_ok", "camera_ok", "hailo_ok")
+            k: bool(sensors.get(k)) for k in ("lidar_ok", "radar_ok", "camera_ok", "hailo_ok")
         },
         "radar_down": sensors.get("radar_down", []),
         "warnings": warnings,
@@ -370,8 +370,7 @@ def health_check():
             )
         },
         "system": {
-            k: system.get(k)
-            for k in ("soc_c", "throttled", "power_low", "hot", "readable")
+            k: system.get(k) for k in ("soc_c", "throttled", "power_low", "hot", "readable")
         },
         "guidance_loop": loop,
         "service": service.status(),

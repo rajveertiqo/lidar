@@ -11,8 +11,7 @@ simplejpeg==1.8.1         # JPEG encoding for the camera streams
 rplidar==0.9.2            # LiDAR
 pyserial==3.5
 acconeer-exptool==7.18.2  # radar
-spidev==3.6               # gyro (SPI)
-smbus2==0.4.3             # gyro (I2C fallback)
+smbus2==0.4.3             # the camera board's mode (I2C)
 requests==2.32.3          # tools/field/walk_logger.py
 # ToF depth camera: NOT listed, its metadata pins numpy<2 against numpy==2.2.4 above. It
 # runs on 2.2.4; install it on its own: pip install --no-deps ArducamDepthCamera==0.1.24

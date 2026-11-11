@@ -1,7 +1,7 @@
 # Architecture
 
 ```
-app/main.py                 FastAPI app + lifespan (starts camera, LiDAR, radar, gyro, voice)
+app/main.py                 FastAPI app + lifespan (starts camera, LiDAR, radar, voice)
 app/config.py               Every threshold, in one place — the single source of truth
 
 app/guidance/             What is said, and when
@@ -28,8 +28,8 @@ app/perception/           What is around the user, and the walk decision
                             segmentation view draws them bright)
   walk_policy.py            THE decision, in FEET: walk straight unless blocked;
                             the nearer of LiDAR and radar wins; a gap names glass
-  heading_tracker.py        Yaw, walking speed and sideways slip. Speed from
-                            scan matching; yaw fused with the gyro below
+  heading_tracker.py        Yaw, walking speed and sideways slip, from the LiDAR's
+                            scan matching
   drift_guidance.py         Predictive: projects the user's ACTUAL motion forward
                             and warns 3-6 s before they veer into something
   sensor_fusion.py          LiDAR + camera -> one ranked hazard list (clock positions)
@@ -47,9 +47,8 @@ app/perception/           What is around the user, and the walk decision
   depth_fusion.py           Camera + ToF: each depth pixel placed on the front camera's picture
   ground_hazards.py         The ToF's view of the path: stairs, steps, drops, poles, walls, and
                             the surface the rig rests on when set down
-  gait_calibration.py       Where the measured walking stride is kept
 
-app/sensors/              The hardware: LiDAR, radar, cameras, ToF, NPU, IMU
+app/sensors/              The hardware: LiDAR, radar, cameras, ToF, NPU
   lidar_utils.py            Scanning, motor PWM soft-start, sector/cone bucketing,
                             cluster filtering (a lone reflection cannot fire a STOP)
   radar_utils.py            A121 array acquisition, 6 boards -> 4 directions
@@ -61,12 +60,8 @@ app/sensors/              The hardware: LiDAR, radar, cameras, ToF, NPU, IMU
   seg_inference.py          Walkable-surface segmentation engine
   yoloseg_decode.py         Pure-NumPy YOLO11-seg decoder (the HEF is exported
                             `nms:false`, so all post-processing is ours)
-  gyro_reader.py            MPU-6500 on SPI — yaw rate at 100 Hz, gait from the
-                            accelerometer, and gravity-referenced tilt. Its bias
-                            is corrected against the scan matcher
   tof_camera.py             The ToF depth camera, captured in a child process
   hailo_stats.py            NPU utilisation and FPS, in-process (hailortcli monitor's job)
-  mpu6500.py                MPU-6500 register driver (gyro_reader runs it)
   radar_calibration.py      Where the radar bearing table is kept
 
 app/core/                 Shared by all: state, freshness, health, recording
@@ -79,10 +74,9 @@ app/core/                 Shared by all: state, freshness, health, recording
   freshness.py              Is this reading current? (monotonic receive time: a clock jump
                             is not a dead sensor)
   pi_health.py              SoC temperature and the under-voltage / throttle flags
-  live_map.py               What every sensor sees, placed around the user, for /map
 app/api/                  The HTTP API (see api.md)
 templates/              The web pages: dashboard.html (/), tof_live.html (/tof/live),
-                        radar_test.html, radar_map.html, map_test.html, gait_test.html
+                        radar_test.html, radar_map.html
 model/                  yolo26m.hef (detection), best.hef (segmentation), metadata.yaml
 ble_bridge/             The phone link: a separate service (shappe-ble.service) speaking
                         the closed vocabulary to the phone over Bluetooth LE

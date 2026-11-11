@@ -4,7 +4,7 @@ venv/bin/python -m unittest tests.test_component_sync.
 1. One post at a known bearing: the LiDAR sectors, the radar, the hazard list (clock), the
    BEV grid and the camera bearing must all put it in the same place.
 2. A turn, a walk forward and a step sideways: the heading tracker's signs must follow the
-   gyro's convention (a right turn is positive yaw).
+   app's convention (a right turn is positive yaw).
 3. Settings that only work together: distance bands in order, every freshness window longer
    than its sensor's period, the fast confirms faster than the slow, the phone's limits the
    server's, the hang notice inside the heartbeat inside the watchdog."""
@@ -106,7 +106,7 @@ class DirectionAgreementTests(unittest.TestCase):
 
 
 class MotionSignTests(unittest.TestCase):
-    """The scan matcher's signs are the gyro's: right turn +yaw, forward +speed, right +."""
+    """The scan matcher's signs are the app's: right turn +yaw, forward +speed, right +."""
 
     WALLS = [((-2000, -1200), (4000, -1200)), ((4000, -1200), (4000, 1800)),
              ((4000, 1800), (-2000, 1800)), ((-2000, 1800), (-2000, -1200))]

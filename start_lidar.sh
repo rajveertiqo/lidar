@@ -177,7 +177,7 @@ if [ -z "$PRESET_TOKEN" ] && ! { [ -f "$ENV_FILE" ] && grep -Eq "$TOKEN_LINE_RE"
         echo -e "${BLUE}  stored in $ENV_FILE — the test pages ask for it once per browser${NC}"
     else
         echo -e "${YELLOW}Warning: could not write an admin token to $ENV_FILE —${NC}"
-        echo -e "${YELLOW}  radar calibration, radar restart and the stride will be refused${NC}"
+        echo -e "${YELLOW}  radar calibration and radar restart will be refused${NC}"
     fi
     unset TOKEN SEP
     echo ""

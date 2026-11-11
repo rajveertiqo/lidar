@@ -14,7 +14,7 @@ from app.perception import heading_tracker
 
 
 class HeadingMotionTests(unittest.TestCase):
-    def test_only_stationary_scans_confirm_stillness_without_gyro(self):
+    def test_only_stationary_scans_confirm_stillness(self):
         rng_state = np.random.get_state()
         self.addCleanup(np.random.set_state, rng_state)
         for name, dx, dy in (
@@ -23,10 +23,7 @@ class HeadingMotionTests(unittest.TestCase):
             ("backward", -70, 0),
             ("sideways", 0, 40),
         ):
-            with (
-                self.subTest(motion=name),
-                patch.object(heading_tracker, "GYRO_ENABLED", False),
-            ):
+            with self.subTest(motion=name):
                 np.random.seed(42)
                 tracker = heading_tracker.HeadingTracker()
                 now = time.time()

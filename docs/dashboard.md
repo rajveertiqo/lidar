@@ -24,8 +24,6 @@ device just named: see [Field testing](field-testing.md#labelling-what-was-reall
 | `/tof/live` | The ToF depth camera live: tap to read a distance; the wall check and whether the rig is set down on a surface |
 | `/radar/test` | The radar boards one by one, and the CALIBRATE panel: hold a hand in front of each board to set its bearing |
 | `/radar/view` | The radar scope: each board's wedge and echoes, as the array physically is |
-| `/map` | A 3D view of what every sensor sees around the user (display only) |
-| `/guidance/gait/test` | Measures the walking stride (heading and drift use it) |
 | `/guidance/log/text` | Everything said this run, as plain text |
 | `/docs` | The API, every endpoint and its schema |
 

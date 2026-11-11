@@ -4,7 +4,6 @@ import logging
 import os
 import asyncio
 import time
-from pathlib import Path
 
 from fastapi import (
     APIRouter,
@@ -16,7 +15,7 @@ from fastapi import (
 )
 from pydantic import BaseModel, StrictBool
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from app.core.access import require_admin
@@ -27,7 +26,6 @@ _log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/guidance", tags=["Guidance"])
 
-_TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
 
 
 class MobileDeliveryReport(BaseModel):
@@ -117,104 +115,6 @@ def get_heading():
     from app.perception.heading_tracker import get_tracker
 
     return get_tracker().state()
-
-
-@router.get("/gyro")
-async def get_gyro_state():
-    """IMU health, yaw bias, tilt and gait — the fusion's other half."""
-    from app.sensors.gyro_reader import get_gyro
-
-    return get_gyro().state()
-
-
-@router.get("/gait")
-def get_gait():
-    """Walking speed, cadence and the stride behind them — one readout."""
-    from app import config
-    from app.perception.gait_calibration import status as stride_status
-    from app.sensors.gyro_reader import get_gyro
-    from app.perception.heading_tracker import get_tracker
-
-    gyro = get_gyro()
-    gs = gyro.state()
-    hs = get_tracker().state()
-
-    return {
-        "walking": gs.get("walking"),
-        "cadence_spm": gs.get("cadence_spm"),
-        "steps": gs.get("steps"),
-        "speed_mps": hs.get("speed_mps"),
-        "speed_source": hs.get("speed_source"),
-        "speed_cadence_mps": hs.get("speed_cadence_mps"),
-        "stride": stride_status(),
-        "gyro": {
-            "healthy": gs.get("healthy"),
-            "chip": gs.get("chip"),
-            "transport": gs.get("transport"),
-            "sample_rate_hz": gs.get("sample_rate_hz"),
-            "accel_std_g": gs.get("accel_std_g"),
-            "tilt_deg": gs.get("tilt_deg"),
-            "tilt_warn": gs.get("tilt_warn"),
-            "last_error": gs.get("last_error"),
-        },
-        "tuning": gyro.gait_tuning(),
-        "thresholds": {
-            "peak_g": config.GYRO_STEP_PEAK_G,
-            "std_g": config.GYRO_STEP_STD_G,
-            "refractory_s": config.GYRO_STEP_REFRACTORY_S,
-            "cadence_window_s": config.GYRO_CADENCE_WINDOW_S,
-            "upward_only": config.GYRO_STEP_UPWARD_ONLY,
-        },
-    }
-
-
-@router.post("/gait/stride", dependencies=[Depends(require_admin)])
-async def set_gait_stride(payload: dict):
-    """Record a measured stride, and persist it across restarts."""
-    from app.perception.gait_calibration import (
-        clear_stride,
-        set_stride,
-        status,
-        stride_from_walk,
-    )
-
-    if payload.get("clear"):
-        clear_stride()
-        return {"ok": True, "stride": status(), "restart_required": True}
-
-    distance = payload.get("distance_m")
-    steps = payload.get("steps")
-    stride = payload.get("stride_m")
-
-    try:
-        if distance is not None and steps is not None:
-            implied = stride_from_walk(float(distance), int(steps))
-            saved = set_stride(
-                implied,
-                source="measured walk",
-                distance_m=float(distance),
-                steps=int(steps),
-            )
-        elif stride is not None:
-            saved = set_stride(float(stride), source="set directly")
-        else:
-            return {
-                "ok": False,
-                "error": "expected {'distance_m', 'steps'}, {'stride_m'} or {'clear': true}",
-            }
-    except (TypeError, ValueError, OverflowError) as exc:  # {"steps": Infinity}: a 500
-        return {"ok": False, "error": str(exc)}
-
-    return {"ok": True, "saved": saved, "stride": status(), "restart_required": True}
-
-
-@router.get("/gait/test", response_class=HTMLResponse)
-async def gait_test():
-    """The walking-speed test page — the old walking_speed.py, in a browser."""
-    f = _TEMPLATES_DIR / "gait_test.html"
-    if not f.exists():
-        return HTMLResponse("<h1>gait_test.html missing</h1>", status_code=404)
-    return HTMLResponse(f.read_text(encoding="utf-8"))
 
 
 @router.get("/scene")

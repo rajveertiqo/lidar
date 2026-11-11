@@ -1,8 +1,8 @@
 """The web pages' scripts and styles are intact. Run with
 venv/bin/python -m unittest tests.test_templates.
 
-An editor once dropped a "🔊" into the /map page's code (`new THREE.Mesh(🔊`, 2026-10-30): the
-whole 3D script failed to load and nothing said so. Two checks: every inline script parses
+An editor once dropped a "🔊" into a page's code (`new THREE.Mesh(🔊`, in the 3D map page since
+removed, 2026-10-30): the whole script failed to load and nothing said so. Two checks: every inline script parses
 (`node --check`, when node is installed), and — without node — no character outside ASCII
 stands in actual code, outside strings, comments and regular expressions."""
 

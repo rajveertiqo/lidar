@@ -33,7 +33,6 @@ Every sentence, and when it is said: [What the user hears](docs/what-the-user-he
 | RPLIDAR A2M12             | 360° distances, ~23 scans/s                                          |
 | UC-512 kit (4× IMX519)    | Four cameras in one 2×2 picture, 66° each, ~16 pictures/s            |
 | 6× Acconeer A121 (60 GHz) | Radar every 60°, on a USB hub: hears glass                           |
-| MPU-6500 IMU (SPI0)       | Yaw rate, gait and tilt: heading, not position                      |
 | Arducam ToF (CAM/DISP 0)  | 240×180 distances to 4 m, ~30 frames/s: the ground ahead and walls   |
 
 ## Quick start
@@ -63,7 +62,7 @@ sensors, the cameras and the label buttons ([docs/dashboard.md](docs/dashboard.m
 app/                    The guidance service (docs/architecture.md lists every module)
   main.py                 The FastAPI app: starts the sensors, the voice and the API
   config.py               Every threshold, in one place
-  sensors/                LiDAR, radar, cameras, ToF, NPU and IMU drivers
+  sensors/                LiDAR, radar, cameras, ToF and NPU drivers
   perception/             What is around: the walk decision, sensor fusion, the ToF's
                           hazards and walls, drift, movers, the route planner
   guidance/               What is said: the sentence (simple_guidance), the vocabulary,

@@ -850,12 +850,11 @@ def current_motion(motion: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]
 
 
 def user_motion(motion: Optional[Dict[str, Any]]) -> Tuple[Optional[bool], float]:
-    """(standing still?, walking pace m/s) from heading_tracker's state. Still is True only when MEASURED still; when nothing can tell (open space, no gait reading) it is None with SIMPLE_VEHICLE_PACE_UNKNOWN_MPS — until 2026-10-21 that was "still, pace 0", and a parked car walked toward read as one approaching."""
+    """(standing still?, walking pace m/s) from heading_tracker's state. Still is True only when MEASURED still; when nothing can tell (open space, a bare corridor) it is None with SIMPLE_VEHICLE_PACE_UNKNOWN_MPS — until 2026-10-21 that was "still, pace 0", and a parked car walked toward read as one approaching."""
     motion = current_motion(motion)  # a stale state is none (NEW-026)
     if not motion:
         return None, SIMPLE_VEHICLE_PACE_UNKNOWN_MPS
-    walking = bool(motion.get("moving_confirmed") or motion.get("walking_confirmed"))
-    if walking:
+    if motion.get("moving_confirmed"):
         return False, float(motion.get("speed_mps") or 0.0)
     if motion.get("confidently_still"):
         return True, 0.0

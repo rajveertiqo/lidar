@@ -1,4 +1,4 @@
-"""Heading tracker — "am I still walking straight?", from the LiDAR and the gyro."""
+"""Heading tracker — "am I still walking straight?", from the LiDAR's scan matching."""
 
 from collections import deque
 from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
@@ -9,20 +9,8 @@ import time
 
 import numpy as np
 
-from app.perception.gait_calibration import get_stride, is_measured, note_learned
-from app.sensors.gyro_reader import get_gyro
-
 from app.config import (
     CLOCK_FUTURE_TOLERANCE_S,
-    GYRO_ENABLED,
-    GYRO_GAIT_CONFIRMED,
-    GYRO_MOUNTING_CONFIRMED,
-    GYRO_RECAL_MAX_YAW_DPS,
-    GYRO_SEED_MOTION_FIT,
-    GYRO_STRIDE_DEFAULT_M,
-    GYRO_STRIDE_LEARN_TAU_S,
-    GYRO_STRIDE_MAX_M,
-    GYRO_STRIDE_MIN_M,
     HEADING_BIN_DEG,
     HEADING_FIT_MAX_RESEEDS,
     HEADING_INTERP_MAX_GAP_DEG,
@@ -372,8 +360,8 @@ class _Sample(NamedTuple):
     vx_se: float  # standard error on vx, m/s (inf = unobservable)
     vy_se: float
     fwd_sens: float  # geometric observability of vx (0 = motion would not show)
-    yaw_src: str  # "gyro", "odometry" or "none" — which sensor gave the yaw
-    lidar_yaw: float  # the scan match's OWN yaw (NaN if untrusted) — never the gyro's
+    yaw_src: str  # "odometry" or "none": whether the scan match gave the yaw
+    lidar_yaw: float  # the scan match's yaw (NaN if untrusted)
 
 
 class HeadingTracker:
@@ -389,10 +377,6 @@ class HeadingTracker:
         self._heading_deg = 0.0  # cumulative since the last reference reset
         self._reference_time: Optional[float] = None
         self._last: Dict[str, Any] = _idle_state()
-        self._stride_m = float(get_stride())
-        self._stride_learned = bool(is_measured())
-        self._stride_samples = 0
-        self._stride_learn_t: Optional[float] = None  # last accepted sample
         # Whether the latest scan fed in was a measurement (see update()).
         self._input_trusted = True
         self._updated_at: Optional[float] = None
@@ -407,17 +391,11 @@ class HeadingTracker:
         trusted: bool = True,
     ) -> Dict[str, Any]:
         """Feed one scan. Returns the current heading state."""
-        profile = build_profile(points)
-        state, bias_feedback, learned = self._ingest(profile, timestamp, trusted)
-        if trusted:
-            self._settle_gyro(state, bias_feedback, timestamp)
-        if learned is not None:
-            note_learned(learned)
-        return state
+        return self._ingest(build_profile(points), timestamp, trusted)
 
     def _ingest(
         self, profile: np.ndarray, timestamp: float, trusted: bool = True
-    ) -> Tuple[Dict[str, Any], Optional[Tuple[float, float]], Optional[float]]:
+    ) -> Dict[str, Any]:
         """Fold one scan into the history."""
         with self._lock:
             self._updated_at, self._updated_mono = float(timestamp), time.monotonic()
@@ -435,45 +413,23 @@ class HeadingTracker:
                 self._history.clear()
                 self._reference_time = timestamp
             if prev_profile is None or dt is None or not (0.005 < dt < 1.0):
-                self._last, learned = self._summarise(timestamp, learn=trusted)
+                self._last = self._summarise(timestamp)
                 self._last.update(
                     scan_yaw_deg=None, scan_fwd_mm=None, scan_right_mm=None
                 )
-                return dict(self._last), None, learned
+                return dict(self._last)
 
             coarse = estimate_yaw(prev_profile, profile)
             trusted_yaw = coarse["quality"] >= HEADING_MIN_MATCH_QUALITY
 
-            gyro_yaw, gyro_trusted = self._gyro_yaw(prev_time, timestamp)
-            use_gyro = gyro_yaw is not None and gyro_trusted
-
-            gyro_seeded = use_gyro and GYRO_SEED_MOTION_FIT
-            if gyro_seeded:
-                motion = estimate_motion(prev_profile, profile, gyro_yaw)
-            else:
-                motion = fit_motion(
-                    prev_profile, profile, coarse["yaw_deg"] if trusted_yaw else 0.0
-                )
-
-            lidar_yaw = None
+            motion = fit_motion(
+                prev_profile, profile, coarse["yaw_deg"] if trusted_yaw else 0.0
+            )
+            lidar_yaw = motion["yaw_deg"] if trusted_yaw else None
             if trusted_yaw:
-                if gyro_seeded:
-                    lidar_yaw = fit_motion(prev_profile, profile, coarse["yaw_deg"])[
-                        "yaw_deg"
-                    ]
-                else:
-                    lidar_yaw = motion["yaw_deg"]
-
-            if use_gyro:
-                yaw_deg, yaw_src = gyro_yaw, "gyro"
-            elif trusted_yaw:
                 yaw_deg, yaw_src = motion["yaw_deg"], "odometry"
             else:
                 yaw_deg, yaw_src = 0.0, "none"
-
-            bias_feedback = None
-            if gyro_yaw is not None and lidar_yaw is not None:
-                bias_feedback = ((lidar_yaw - gyro_yaw) / dt, dt)
 
             vx = (motion["dx_mm"] / 1000.0) / dt
             vy = (motion["dy_mm"] / 1000.0) / dt
@@ -509,7 +465,7 @@ class HeadingTracker:
                 )
             )
             self._trim(timestamp)
-            self._last, learned = self._summarise(timestamp, learn=trusted)
+            self._last = self._summarise(timestamp)
             self._last["scan_yaw_deg"] = (
                 round(yaw_deg, 3) if yaw_src != "none" else None
             )
@@ -525,44 +481,7 @@ class HeadingTracker:
                 if fit_ok and vy_se <= HEADING_SPEED_SE_LIMIT_MPS
                 else None
             )
-            return dict(self._last), bias_feedback, learned
-
-    # ---- gyro plumbing ---------------------------------------------------
-
-    def _gyro_yaw(self, t0: Optional[float], t1: float) -> Tuple[Optional[float], bool]:
-        """(rotation the gyro saw between two scan times, is its bias trusted?)."""
-        if not GYRO_ENABLED or not GYRO_MOUNTING_CONFIRMED or t0 is None:
-            return None, False
-        try:
-            gyro = get_gyro()
-            if not gyro.healthy(t1):
-                return None, False
-            return gyro.yaw_between(t0, t1), bool(gyro.bias_trusted())
-        except Exception:
-            return None, False
-
-    def _settle_gyro(
-        self,
-        state: Dict[str, Any],
-        bias_feedback: Optional[Tuple[float, float]],
-        now: float,
-    ) -> None:
-        """Pay the gyro back: correct its bias, and tell it when we see stillness."""
-        if not GYRO_ENABLED:
-            return
-        lidar_rate = state.get("lidar_yaw_rate_dps")
-        still = (
-            bool(state.get("confidently_still"))
-            and lidar_rate is not None
-            and abs(lidar_rate) <= GYRO_RECAL_MAX_YAW_DPS
-        )
-        try:
-            gyro = get_gyro()
-            if bias_feedback is not None:
-                gyro.correct_bias(bias_feedback[0], bias_feedback[1])
-            gyro.note_still(still, now)
-        except Exception:
-            pass
+            return dict(self._last)
 
     def reset_reference(self, when: Optional[float] = None) -> None:
         """Zero the accumulated heading — call on a DELIBERATE turn."""
@@ -598,19 +517,15 @@ class HeadingTracker:
         state["updated_mono"] = self._updated_mono
         return state
 
-    def _summarise(
-        self, now: float, learn: bool = True
-    ) -> Tuple[Dict[str, Any], Optional[float]]:
-        """(state, stride to persist or None)."""
+    def _summarise(self, now: float) -> Dict[str, Any]:
+        """The heading state from the history's last window."""
         input_trusted = bool(self._input_trusted)
-        gait_trusted = bool(GYRO_GAIT_CONFIRMED) and input_trusted
         recent = self._window(now, self._window_s)
         if not recent:
             state = _idle_state()
             state["heading_deg"] = round(self._heading_deg, 2)
             state["input_trusted"] = input_trusted
-            state["gait_trusted"] = gait_trusted
-            return self._stamped(state), None
+            return self._stamped(state)
 
         span = sum(h.dt for h in recent)
         yaw_sum = sum(h.yaw for h in recent)
@@ -649,44 +564,12 @@ class HeadingTracker:
             or (lateral_observable and abs(vy) >= HEADING_MIN_MOVING_MPS)
         )
 
-        gyro = self._gyro_brief()
-        gyro_walking = bool(gyro and gyro.get("walking"))
-
-        cadence = float((gyro or {}).get("cadence_spm") or 0.0)
-        stepping = bool(gyro_walking and cadence > 0.0)
-
-        learned = None
-        if (
-            measured and speed >= HEADING_MIN_MOVING_MPS
-            and stepping and learn and gait_trusted
-        ):
-            implied = speed / (cadence / 60.0)
-            if GYRO_STRIDE_MIN_M <= implied <= GYRO_STRIDE_MAX_M:
-                last, self._stride_learn_t = self._stride_learn_t, now
-                dt = (
-                    self._window_s
-                    if last is None
-                    else min(max(now - last, 0.0), self._window_s)
-                )
-                alpha = min(1.0, dt / GYRO_STRIDE_LEARN_TAU_S)
-                self._stride_m += alpha * (implied - self._stride_m)
-                self._stride_samples += 1
-                self._stride_learned = True
-                learned = self._stride_m
-
-        cadence_speed = (
-            min((cadence / 60.0) * self._stride_m, HEADING_MAX_SPEED_MPS)
-            if stepping
-            else None
-        )
-
         # Forward pace is clamped above, but stillness must account for signed
         # forward motion and sideways motion, with both axes constrained.
         confidently_still = (
             observable
             and vy_se <= HEADING_SPEED_SE_LIMIT_MPS
             and math.hypot(vx, vy) < HEADING_MIN_MOVING_MPS
-            and not gyro_walking
         )
         direction = "unknown"
         if confidently_still:
@@ -706,35 +589,11 @@ class HeadingTracker:
                 "velocity_trusted": bool(input_trusted and observable and lateral_observable),
                 "motion_direction": direction,
                 "confidently_still": bool(confidently_still),
-                # Stepping, per the accelerometer. NOT a pace — see gyro_reader.
-                "walking_confirmed": gyro_walking,
-                "speed_mps": (
-                    round(speed, 3)
-                    if measured
-                    else round(cadence_speed, 3)
-                    if cadence_speed is not None
-                    else HEADING_NOMINAL_SPEED_MPS
-                ),
-                "speed_source": (
-                    "odometry"
-                    if measured
-                    else "cadence"
-                    if cadence_speed is not None
-                    else "nominal"
-                ),
-                "speed_trusted": bool(
-                    input_trusted
-                    and (measured or (cadence_speed is not None and gait_trusted))
-                ),
-                "gait_trusted": gait_trusted,
+                "speed_mps": round(speed, 3) if measured else HEADING_NOMINAL_SPEED_MPS,
+                "speed_source": "odometry" if measured else "nominal",
+                "speed_trusted": bool(input_trusted and measured),
                 # False for the development simulator's scans (see update()).
                 "input_trusted": input_trusted,
-                "speed_cadence_mps": (
-                    round(cadence_speed, 3) if cadence_speed is not None else None
-                ),
-                "stride_m": round(self._stride_m, 3),
-                "stride_learned": bool(self._stride_learned),
-                "stride_samples": int(self._stride_samples),
                 "speed_measured_mps": round(speed, 3),
                 "speed_error_mps": round(vx_se, 3) if math.isfinite(vx_se) else None,
                 "forward_sensitivity": round(fwd_sens, 3),
@@ -751,35 +610,10 @@ class HeadingTracker:
                 "yaw_quality": round(yaw_q, 3),
                 "translation_quality": round(trans_q, 3),
                 "yaw_source": recent[-1].yaw_src,
-                "yaw_gyro_fraction": round(
-                    sum(1 for h in recent if h.yaw_src == "gyro") / len(recent), 2
-                ),
-                "gyro": gyro,
                 "samples": len(recent),
                 "window_s": round(span, 2),
             }
-        ), learned
-
-    def _gyro_brief(self) -> Optional[Dict[str, Any]]:
-        """Compact reader status for the state dict, or None if there is no gyro."""
-        if not GYRO_ENABLED:
-            return None
-        try:
-            st = get_gyro().state()
-        except Exception:
-            return None
-        return {
-            "healthy": st.get("healthy"),
-            "mounting_confirmed": bool(GYRO_MOUNTING_CONFIRMED),
-            "walking": st.get("walking"),
-            "cadence_spm": st.get("cadence_spm"),
-            "bias_dps": st.get("bias_dps"),
-            "bias_trusted": st.get("bias_trusted"),
-            "bias_trust_reason": st.get("bias_trust_reason"),
-            "tilt_deg": st.get("tilt_deg"),
-            "tilt_warn": st.get("tilt_warn"),
-            "dropouts": st.get("dropouts"),
-        }
+        )
 
     def veer_over(self, seconds: float, now: float) -> Optional[float]:
         """Heading change accumulated over the last `seconds`, or None if the window is not yet full enough to say."""
@@ -802,16 +636,10 @@ def _idle_state() -> Dict[str, Any]:
         "velocity_trusted": False,
         "motion_direction": "unknown",
         "confidently_still": False,
-        "walking_confirmed": False,
         "speed_mps": HEADING_NOMINAL_SPEED_MPS,
         "speed_source": "nominal",
         "speed_trusted": False,
-        "gait_trusted": bool(GYRO_GAIT_CONFIRMED),
         "input_trusted": True,
-        "speed_cadence_mps": None,
-        "stride_m": round(float(GYRO_STRIDE_DEFAULT_M), 3),
-        "stride_learned": False,
-        "stride_samples": 0,
         "speed_measured_mps": 0.0,
         "speed_error_mps": None,
         "forward_sensitivity": 0.0,
@@ -827,8 +655,6 @@ def _idle_state() -> Dict[str, Any]:
         "yaw_quality": 0.0,
         "translation_quality": 0.0,
         "yaw_source": "none",
-        "yaw_gyro_fraction": 0.0,
-        "gyro": None,
         "samples": 0,
         "window_s": 0.0,
         "updated_at": None,

@@ -8,30 +8,9 @@ from starlette.requests import Request
 
 from app.perception import drift_guidance as drift
 
-from app.sensors import gyro_reader
-
 from app.guidance import mobile_delivery, pi_voice
 from app.perception.motion_tracker import MotionTracker
 from app.api.guidance_router import MobileDeliveryReport, mobile_delivery_report
-
-
-class GyroFreshnessTests(unittest.TestCase):
-    def setUp(self):
-        self.gyro = gyro_reader.GyroReader()
-        self.gyro._connected = True
-        self.gyro._buf.append(gyro_reader._Sample(1000, 0, 0, 1, 1, 50))
-
-    def test_recent_sample_is_healthy(self):
-        with patch.object(gyro_reader.time, "monotonic", return_value=50.01):
-            self.assertTrue(self.gyro.healthy(1000.01))
-
-    def test_wall_clock_catching_up_does_not_refresh_stalled_sensor(self):
-        with patch.object(gyro_reader.time, "monotonic", return_value=65):
-            self.assertFalse(self.gyro.healthy(1000.01))
-
-    def test_future_sample_after_clock_step_is_unhealthy(self):
-        with patch.object(gyro_reader.time, "monotonic", return_value=50.01):
-            self.assertFalse(self.gyro.healthy(400))
 
 
 class MotionPredictionTests(unittest.TestCase):

@@ -76,6 +76,14 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   you start it or in the service). The radar check is `python -m app.sensors.radar_utils`.
 
 ### Removed
+- **The live map** (`/map`, the 3D test page): its page, engine and routes, and the dashboard's
+  link to it. Display only; nothing the device says used it. The radar scope (`/radar/view`)
+  stays.
+- **The gyro (MPU-6500) and all its code**: unplugged since 2026-10-23. Its reader and
+  driver, the stride learned from footfalls (`/guidance/gyro`, `/guidance/gait/*`, the gait
+  test page), the gyro half of the heading tracker, the live map's gyro/LiDAR choice
+  (`/map/settings`), `drift_sim --gyro`, `spidev` and the `GYRO_*` settings. Heading comes
+  from the LiDAR alone, as it already did; nothing the device says changed.
 - `shappe_guide.egg-info/`, build metadata committed by mistake (now ignored).
 - The previous dashboard, `/classic` (`templates/index.html`), and its `/test` alias: the
   dashboard at `/` has everything used in testing.

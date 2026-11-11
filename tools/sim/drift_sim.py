@@ -49,77 +49,6 @@ def ray_cast(
     return points
 
 
-class SimGyro:
-    """A gyro that sees the simulated truth, plus a zero-rate offset."""
-
-    def __init__(self, bias_dps, trusted_from_start=True):
-        self.bias_dps = float(bias_dps)
-        self.truth = [(1000.0, 0.0)]  # (t, true cumulative heading)
-        self._trusted = trusted_from_start
-        self._correction = 0.0
-        self.corrections = 0
-
-    def observe(self, clock, true_heading_deg):
-        """Ground truth from the simulator, before any sensor sees it."""
-        self.truth.append((clock, true_heading_deg))
-        if len(self.truth) > 4000:
-            del self.truth[:1000]
-
-    def _at(self, t):
-        prev = self.truth[0]
-        for entry in self.truth:
-            if entry[0] >= t:
-                if entry[0] == prev[0]:
-                    return entry[1]
-                f = (t - prev[0]) / (entry[0] - prev[0])
-                return prev[1] + (entry[1] - prev[1]) * f
-            prev = entry
-        return prev[1]
-
-    def healthy(self, now=None):
-        return True
-
-    def bias_trusted(self):
-        return self._trusted
-
-    def yaw_between(self, t0, t1):
-        if t1 <= t0:
-            return None
-        turned = self._at(t1) - self._at(t0)
-        offset = (self.bias_dps - self._correction) * (t1 - t0)
-        return turned + offset
-
-    def correct_bias(self, error_dps, dt):
-        self.corrections += 1
-        if abs(error_dps) > 6.0:
-            return
-        self._correction -= 0.02 * error_dps * dt
-
-    def note_still(self, still, now):
-        pass
-
-    def state(self):
-        return {
-            "healthy": True,
-            "walking": None,
-            "cadence_spm": None,
-            "bias_dps": round(self._correction, 3),
-            "tilt_deg": 0.0,
-            "tilt_warn": False,
-            "dropouts": 0,
-            "bias_trusted": self._trusted,
-            "bias_trust_reason": "simulated",
-        }
-
-
-def install_gyro(bias_dps):
-    """Fit a SimGyro to the heading tracker, and let it steer."""
-    gyro = SimGyro(bias_dps)
-    ht.get_gyro = lambda: gyro
-    ht.GYRO_MOUNTING_CONFIRMED = True
-    return gyro
-
-
 def run(args):
     np.random.seed(args.seed)
     half = args.width * 304.8 / 2.0
@@ -130,8 +59,6 @@ def run(args):
     dg.reset_state()
 
     ht.get_tracker = lambda: tracker
-
-    gyro = install_gyro(args.gyro) if args.gyro is not None else None
 
     x = y = 0.0
     heading = 0.0
@@ -144,10 +71,7 @@ def run(args):
         f"{where} {args.width:.1f} ft wide, user at {args.speed:.2f} m/s, "
         f"LiDAR {args.rate:.0f} Hz."
     )
-    if gyro is not None:
-        print(f"Gyro fitted, zero-rate offset {args.gyro:+.2f} deg/s.")
-    else:
-        print("No gyro — heading from scan matching alone.")
+    print("Heading from LiDAR scan matching.")
     if args.veer:
         side = "LEFT" if args.veer > 0 else "RIGHT"
         print(
@@ -165,8 +89,6 @@ def run(args):
 
     steps = int(args.duration * args.rate)
     for step in range(steps):
-        if gyro is not None:
-            gyro.observe(clock, heading)
         scan = ray_cast(x, y, heading, half, back_mm=back)
         state = tracker.update(scan, clock)
         lidar_state = {
@@ -321,19 +243,10 @@ def main():
         help="wall behind the user, metres (default -3)",
     )
     p.add_argument(
-        "--gyro",
-        type=float,
-        default=None,
-        metavar="DPS",
-        help="fit a gyro with this zero-rate offset in deg/s "
-        "(omit for no gyro; 0 for a perfect one)",
-    )
-    p.add_argument(
         "--open",
         action="store_true",
         help="an open plaza instead of a corridor: every wall is "
-        "pushed beyond the scan matcher's range, which is the "
-        "case the gyro exists for",
+        "pushed beyond the scan matcher's range",
     )
     args = p.parse_args()
 

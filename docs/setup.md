@@ -1,7 +1,7 @@
 # Setting up a new Pi 5 for Shappe Guide
 
 Checked against the working rig on 2026-09-28 (Raspberry Pi 5, Arducam CamArray UC-512 +
-4× IMX519, Hailo-10H, RPLIDAR A2M12, 6× A121 radar, MPU-6500 on SPI0).
+4× IMX519, Hailo-10H, RPLIDAR A2M12, 6× A121 radar).
 
 ## 1. Camera driver (Arducam Pivariety packages)
 
@@ -21,7 +21,6 @@ dtoverlay=imx519,cam1
 dtoverlay=arducam-pivariety,cam0   # ToF depth camera in CAM/DISP 0. One camera per port:
                                    # no imx519,cam0, and no bare arducam-pivariety (= cam1)
 dtparam=i2c_arm=on
-dtparam=spi=on          # MPU-6500 on SPI0 CE0 -> /dev/spidev0.0
 ```
 
 ## 3. System packages (apt: these are NOT on PyPI in a usable form)
@@ -36,7 +35,7 @@ sudo apt install -y python3-picamera2 python3-libcamera libcamera-apps libcap-de
 The user needs these groups (log out and in after adding):
 
 ```bash
-sudo usermod -aG dialout,spi,i2c,video,audio,gpio $USER
+sudo usermod -aG dialout,i2c,video,audio,gpio $USER
 ```
 
 ## 4. The app
@@ -66,7 +65,6 @@ python3 -m venv --system-site-packages venv    # REQUIRED: picamera2 and hailo c
 ```bash
 python -m rplidar /dev/ttyUSB0 256000          # LiDAR (stop the app first: one owner per port)
 ./venv/bin/python -m app.sensors.radar_utils --check # radar boards present / measured
-./venv/bin/python -m app.sensors.gyro_reader --check # IMU: turn right, yaw must go POSITIVE
 ./venv/bin/python -m tools.device.tof_check    # ToF depth camera, step by step (stop the app first)
 hailortcli scan                                # NPU
 rpicam-hello --list-cameras                    # camera and its sensor modes

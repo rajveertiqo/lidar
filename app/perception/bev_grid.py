@@ -187,9 +187,8 @@ class BEVGrid:
             return None
 
         yaw_q = float(heading.get("yaw_quality") or 0.0)
-        from_gyro = heading.get("yaw_source") == "gyro"
         trans_q = float(heading.get("translation_quality") or 0.0)
-        if not (from_gyro or yaw_q >= BEV_MIN_MOTION_QUALITY):
+        if yaw_q < BEV_MIN_MOTION_QUALITY:
             self.last_reset_reason = f"yaw quality {yaw_q:.2f} below threshold"
             return None
 

@@ -13,9 +13,6 @@ This is the part worth reading before any code.
   straight **through** a glass door and reports the room beyond it, so a
   LiDAR-only guide walks the user face-first into it. 60 GHz radar reflects off
   glass. The radar exists solely to cover that failure.
-- **IMU — rotation.** How fast the body is turning, over seconds, without
-  needing the room to have any features in it. It measures no distance and no
-  position, and it is never asked to.
 
 **Consequences that are deliberate, not accidental:**
 
@@ -114,84 +111,16 @@ straighten up"_, not a new heading to aim at.
   nominal one. Without it a walking user reads as standing still, which silences
   the veer warning exactly where no wall geometry exists to catch them.
 
-**Yaw comes from the gyro, kept honest by the LiDAR.** The two fail in opposite
-places, which is the entire reason for carrying both:
+**Yaw comes from the LiDAR's scan matching alone.** It measures against the room, so it
+has no accumulating error, but it needs the room to have features: in an open plaza there
+is nothing inside its 8 m matching range and it goes silent, which is where the open-space
+veer check would matter most. Simulated (`tools/sim/drift_sim.py --open --veer 3`), the first
+warning there comes at t = 12.3 s, 13.2 ft off course, and only because a wall finally came
+into range.
 
-- The scan match measures against the room, so it has no accumulating error —
-  but it needs the room to have features. In an open plaza there is nothing
-  inside its 8 m matching range and it goes silent, which is precisely where the
-  open-space veer check is the only thing between the user and a slow curve into
-  the road.
-- The gyro measures the body directly and does not care what the room looks
-  like — but a MEMS part's zero-rate offset walks with temperature, so an
-  uncorrected integral slides away at degrees per minute.
-
-So the gyro takes the yaw, and whenever the scan match is independently trusted,
-the disagreement between the two is fed back as a slow correction to the gyro's
-bias (`app/sensors/gyro_reader.py`). Same complementary structure the attitude filter
-uses to hold tilt steady, one level up. Measured on the bench: **0.06° of yaw
-drift over 20 seconds**, against the 15° over 6 s that counts as a veer.
-
-Simulated, in the plaza the gyro exists for
-(`tools/sim/drift_sim.py --open --veer 3`):
-
-| | first warning | user was |
-| --- | --- | --- |
-| LiDAR alone | t = 12.3 s | 13.2 ft off course, and only because a wall finally came into range |
-| with the gyro | **t = 6.9 s** | **3.6 ft off course**, warned by the veer check with nothing ahead to explain it |
-
-**Three things the gyro is deliberately not allowed to do.**
-
-- **It does not measure speed.** Double-integrating acceleration for a
-  pedestrian drifts to metres within seconds. Pace stays the scan matcher's job
-  and the nominal fallback is unchanged. The accelerometer is used only for
-  whether the user is *stepping* — a yes/no the LiDAR cannot always give, since
-  down a bare corridor forward motion is geometrically unobservable.
-- **It cannot claim the user is still, only that they are moving.** The veto is
-  one-way. A missed footfall silencing the veer warning for someone genuinely
-  walking is the failure this layer exists to prevent; a spurious step costs a
-  nuisance cue.
-- **It may not steer on an unproven zero-rate offset.** A wearable is switched
-  on and then walked off in, so the calibration that assumes stillness is the
-  one most likely to be taken during motion — and a 2°/s offset is
-  indistinguishable from the 2.5°/s veer being detected. Movement during
-  calibration is visible in the *spread* of the samples, and a bias taken that
-  way is marked untrusted: the gyro is kept out of the yaw path entirely, and
-  the tracker behaves exactly as it did before one was fitted, until either the
-  LiDAR vouches for a standstill or the two sensors have simply agreed for ten
-  seconds running. The bias correction keeps running throughout, because that
-  agreement is how the offset earns its way back in.
-
-**It is not commissioned yet.** The board is not mounted, so which of its axes
-points up when worn is unknown, and `GYRO_MOUNTING_CONFIRMED` is False: the
-reader connects and reports health, tilt and gait on `/guidance/gyro`, and the
-heading tracker ignores it completely and runs exactly as it did before one was
-fitted. This is a switch rather than a note because guessing the mounting is
-worse than waiting for it — a wrong axis or sign does not degrade the guidance,
-it **inverts** it, and tells a user veering right to bear right. The
-commissioning procedure is four steps in `app/config.py`, and the last one is
-setting that flag.
-
-**Verified working 2026-09-04**, against a standalone probe of the same part:
-MPU-6500 on `/dev/spidev0.0`, 100 Hz, zero rejected samples and zero dropouts
-across 350k+ samples, bias calibrated at rest (0.04 dps spread). Two things that
-look like faults and are not:
-
-- **`bias_dps` reads 0.0** while a direct probe measures a real per-axis bias
-  (e.g. −3.65 dps on Z). Expected: `app/sensors/mpu6500.py` returns *"gyro in deg/s
-  (bias removed)"* and subtracts its own calibration on every read, so the
-  reader's *additional* residual correction is legitimately ~0. The probe's own
-  live output shows the same thing — rates near zero once calibrated.
-- **`[GYRO] link down`** appearing at startup. On this device that has meant a
-  second process already holding the SPI bus, not a wiring fault. See below.
-
-**Still outstanding: the board is loose and off level** — tilt was observed
-swinging 4.7°–15.3°, past the 12° `GYRO_TILT_WARN_DEG` threshold and worse than
-the 9.1° recorded in `app/config.py`. Yaw barely cares (cos 15° ≈ 0.97), but
-cross-axis leak does: sin 15° ≈ 0.26, so a quarter of every pitch and roll rate
-lands in the yaw channel, and a walking torso pitches and rolls hard with every
-step. Until it is mounted flat, tilt and cadence are not trustworthy — the step
-count picks up desk knocks, not gait.
+A gyro (MPU-6500 on SPI) once carried the yaw there, its bias kept honest by the scan match;
+simulated, it warned at 6.9 s, 3.6 ft off course. It was unplugged on 2026-10-23 and its code
+removed on 2026-11-11 (design note 19). Pace was always the scan matcher's.
 
 ## One process at a time
 
@@ -205,33 +134,31 @@ INFO Camera camera.cpp:1021 Pipeline handler in use by another process
 [HailoRT] [error] HAILO_OUT_OF_PHYSICAL_DEVICES(74)
 [WARN] Could not start motor: Attempting to use a port that is not open
 [RADAR] no A121 boards answered
-[GYRO] link down
 ```
 
 That is **one** cause: something else holds port 8000, the camera, the NPU,
-`/dev/ttyUSB0`, the six `/dev/ttyACM*` and `/dev/spidev0.0`. The `Errno 98` line
+`/dev/ttyUSB0` and the six `/dev/ttyACM*`. The `Errno 98` line
 prints *after* the startup banner has already listed every URL, so it is easy to
 scroll past and then distrust the hardware. Check before diagnosing:
 
 ```bash
 ss -ltnp | grep :8000
-fuser /dev/ttyUSB0 /dev/ttyACM* /dev/spidev0.0
+fuser /dev/ttyUSB0 /dev/ttyACM*
 ```
 
 A start that fails for no visible reason moments after a previous run is almost
 always the previous run still shutting down.
 
-**There is no simulated gyro.** The LiDAR and the camera have development
+**There is no simulated heading.** The LiDAR and the camera have development
 fallbacks, and only when their Python package is missing — radar and NPU never
 simulate. They run only with `SHAPPE_SIMULATE_LIDAR=1` / `SHAPPE_SIMULATE_CAMERA=1`,
 and their data is flagged `simulated`, which health, walk_policy, the hazard
 list and the voice all treat as NO evidence (health says the LiDAR is down and
 the camera simulated; the voice says "Sensors offline", never "Walk straight";
 simulated camera labels name nothing). A fake *heading* is not — it would be consumed as a measurement of
-which way a real person is walking. An absent or dropped gyro reports itself
-absent and the tracker reverts to LiDAR-only. Degraded, never wrong.
+which way a real person is walking. Degraded, never wrong.
 
-Heading is **dead reckoning** either way: its error accumulates, so it means
+Heading is **dead reckoning**: its error accumulates, so it means
 something over seconds, never as an absolute bearing. The reference is zeroed
 whenever the user is told to turn, so a deliberate turn is never reported back
 to them as a veer.

@@ -33,7 +33,7 @@ lines up with a walk clip by time. `SHAPPE_LOG_LEVEL=DEBUG ./start_lidar.sh` wri
 
 The tests include the web pages (`tests/test_templates.py`): every inline script must parse
 (`node --check`, when node is installed) and no stray character may sit in a page's code —
-an editor once dropped a "🔊" into the /map page's script and the 3D view silently died.
+an editor once dropped a "🔊" into a page's script (the 3D map, since removed) and it silently died.
 
 The app still STARTS on a machine with no LiDAR, camera or NPU: a missing
 device publishes nothing and health reports it down. Only with
@@ -67,8 +67,8 @@ journalctl --user-unit=shappe-guide -f      # its log
 (guiding on the LiDAR, something else down) with HTTP 200, or `down` (no
 LiDAR, or the guidance loop is not guiding) with HTTP 503.
 
-**Who may change the device.** `/radar/calibrate`, `/radar/rediscover` and
-`/guidance/gait/stride` change how it steers, so they need `SHAPPE_ADMIN_TOKEN`
+**Who may change the device.** `/radar/calibrate` and `/radar/rediscover` change how
+it steers, so they need `SHAPPE_ADMIN_TOKEN`
 in an `X-Admin-Token` header (the installer and `start_lidar.sh` write one to
 `~/.config/shappe-guide.env`; the test pages ask for it once per browser). With
 NO token configured (uvicorn or `python app/main.py` by hand) they are refused with

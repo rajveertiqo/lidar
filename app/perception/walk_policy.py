@@ -346,7 +346,7 @@ def _walking_pace() -> Optional[float]:
     mono = m.get("updated_mono")
     if isinstance(mono, (int, float)) and time.monotonic() - float(mono) > HEADING_STATE_STALE_S:
         return None
-    if not (m.get("moving_confirmed") or m.get("walking_confirmed")) or not m.get("speed_trusted"):
+    if not m.get("moving_confirmed") or not m.get("speed_trusted"):
         return None
     v = m.get("speed_mps")
     return float(v) if isinstance(v, (int, float)) and v > 0.0 else None

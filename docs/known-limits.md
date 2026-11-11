@@ -57,7 +57,9 @@
   which needed the sensitivity hurdle described under
   [Design notes](design-notes.md), because
   fit quality and standard error are both residual-scaled and a corridor fits
-  perfectly while observing nothing.
+  perfectly while observing nothing. There is no gyro to back it up (removed
+  2026-11-11): in open space nothing else measures a turn, and a slow veer is
+  warned of late (simulated: 12.3 s in, 13.2 ft off course).
 - **A rotating LiDAR sweeps over ~67 ms**, during which the user moves, so each
   scan is slightly skewed. Under 10 cm at walking pace, and not corrected for.
 - **Segmentation is front-only.** The other three sectors are segmented on

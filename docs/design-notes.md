@@ -424,3 +424,21 @@ Kept because each one explains why the code is the way it is.
     That, and a real radar's echoes, are why it is logged as "would say" until a walk has
     checked it (`GLASS_CLOSING_SPEAK`). ~0.03 ms a frame. The scene hunt, glass, route,
     movers, ToF and drift simulators: unchanged.
+
+19. **The gyro's code removed (2026-11-11).** The MPU-6500 on SPI was unplugged on 2026-10-23
+    (`GYRO_ENABLED` False since) and does not answer (WHO_AM_I 0x00). Its code is gone:
+    `gyro_reader`, the `mpu6500` driver, the stride learned from footfalls (`gait_calibration`,
+    `/guidance/gait/*`, the gait test page), the gyro half of the heading tracker (yaw fused
+    with it, a step-counted pace, `walking_confirmed`), the live map's gyro/LiDAR choice
+    (`/map/settings`), `drift_sim --gyro`, `spidev`, and the `GYRO_*` settings. Heading and
+    pace come from the LiDAR's scan matching alone, as they did with the gyro switched off,
+    so nothing the device says changed: the tests (less the 4 that tested the gyro reader)
+    and every simulator give the same results. What it costs is the plaza case in The safety
+    model: a slow veer in open space is warned of at 12.3 s, not 6.9 (Known limits).
+
+20. **The live map removed (2026-11-11).** The `/map` page (a 3D view of what every sensor saw
+    around the wearer, display only) and its engine (`app/core/live_map.py`,
+    `app/api/map_router.py`, `templates/map_test.html`) are gone, with the dashboard's link to it
+    and the two radar helpers only it used (`radar_ring`, `radar_beam_deg`). Nothing the
+    guidance used came from it: what is said, and every test and simulator, is unchanged. The
+    radar's own scope (`/radar/view`, `/radar/map`) stays.

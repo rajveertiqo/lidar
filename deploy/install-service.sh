@@ -36,9 +36,9 @@ else
     chmod 600 "$ENV_FILE"
     echo
     if [ -t 1 ]; then
-        echo "Admin token (radar calibration, radar restart, stride): $TOKEN"
+        echo "Admin token (radar calibration, radar restart): $TOKEN"
     else
-        echo "Created an admin token (radar calibration, radar restart, stride)."
+        echo "Created an admin token (radar calibration, radar restart)."
         echo "  Not shown: this output is not a terminal. Read it with"
         echo "  grep SHAPPE_ADMIN_TOKEN $ENV_FILE"
     fi

@@ -10,7 +10,7 @@ from unittest.mock import patch
 import numpy as np
 
 from app import config
-from app.sensors import gyro_reader, lidar_utils
+from app.sensors import lidar_utils
 from app.guidance import pi_voice, simple_guidance as sg
 from app.guidance import unified_guidance
 from app.perception import walk_policy
@@ -343,43 +343,6 @@ class SparseScanTests(unittest.TestCase):
 
     def test_nothing_in_range_is_still_sparse(self):
         self.assertLess(self.fraction(lambda b: False), config.LIDAR_MIN_VALID_FRACTION)
-
-
-class GyroSampleTests(unittest.TestCase):
-    """One sample that cannot be folded in no longer ends the gyro thread."""
-
-    def test_worker_survives_a_bad_sample(self):
-        gyro = gyro_reader.GyroReader()
-
-        class Sensor:
-            def read(self):
-                return {"gz": 1.0, "gx": 0.0, "gy": 0.0, "ax": 0.0, "ay": 0.0, "az": 1.0}
-
-            def settings_intact(self):
-                return True
-
-        def connect():
-            gyro._sensor, gyro._connected = Sensor(), True
-            return True
-
-        ingest, calls = gyro._ingest, []
-
-        def flaky(*a, **k):
-            calls.append(1)
-            if len(calls) == 3:
-                raise ValueError("bad sample")
-            return ingest(*a, **k)
-
-        with patch.object(gyro_reader, "GYRO_ENABLED", True), patch.object(
-            gyro, "_connect", connect
-        ), patch.object(gyro, "_ingest", flaky):
-            gyro.start()
-            time.sleep(0.3)
-            alive = gyro._thread.is_alive()
-            gyro.stop()
-        self.assertTrue(alive)
-        self.assertGreater(len(calls), 5)
-        self.assertIn("sample skipped", gyro._last_error)
 
 
 class FrontFirstDetectionTests(unittest.TestCase):

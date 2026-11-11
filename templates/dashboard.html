@@ -748,12 +748,6 @@
         <button class="ghost" id="theme" title="Switch theme">◐ theme</button>
         <a
           class="chip"
-          href="/map"
-          title="Live 3D map of what the LiDAR, radar and cameras see"
-          >map</a
-        >
-        <a
-          class="chip"
           href="/tof/live"
           title="The ToF depth camera, live: tap to read a distance"
           >depth</a
@@ -1587,9 +1581,7 @@
             ? "standing still"
             : h.speed_source === "odometry"
               ? `walking ${kmh(h.speed_measured_mps || 0)} km/h (measured)`
-              : h.speed_source === "cadence"
-                ? `walking ${kmh(h.speed_mps || 0)} km/h (from footfalls)`
-                : "moving — speed not measured";
+              : "moving — speed not measured";
         } catch (e) {}
       }
 

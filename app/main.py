@@ -28,13 +28,11 @@ from app.config import (
 from app.sensors.pi_camera_utils import start_camera, stop_camera
 from app.sensors.lidar_utils import start_scanner, stop_scanner_thread, setup_signal_handlers
 from app.sensors.radar_utils import start_radar, stop_radar
-from app.sensors.gyro_reader import start_gyro, stop_gyro
 from app.core.shared_state import reset_all_states
 from app.api import radar_router
 from app.api import lidar_router, navigation_router, pi_camera_router
 from app.api import guidance_router
 from app.api import tof_router
-from app.api import map_router
 
 _log = logging.getLogger(__name__)
 
@@ -58,7 +56,6 @@ async def lifespan(app: FastAPI):
     setup_signal_handlers()
     reset_all_states()
     _step("camera start", start_camera)
-    _step("gyro start", start_gyro)
     _step("LiDAR start", start_scanner, asyncio.get_running_loop())
     _step("radar start", start_radar)
     from app.sensors.tof_camera import start_tof, stop_tof
@@ -94,11 +91,10 @@ async def lifespan(app: FastAPI):
     print(
         f"📝 Speech log: http://{lan_ip}:{SERVER_PORT}/guidance/log/text   (and logs/speech_*.log)"
     )
-    print(f"🗺  Live map:   http://{lan_ip}:{SERVER_PORT}/map   (3D test page, display only)")
     print("⏹  Ctrl+C to stop")
     if not ADMIN_TOKEN:
         print(
-            "⚠  No admin token: radar calibration, radar restart and the stride "
+            "⚠  No admin token: radar calibration and radar restart "
             "are REFUSED until SHAPPE_ADMIN_TOKEN is set (./start_lidar.sh and "
             "the service set one)"
         )
@@ -124,7 +120,6 @@ async def lifespan(app: FastAPI):
         _step("radar stop", stop_radar)
         _step("ToF hazards stop", stop_ground_hazards)
         _step("ToF stop", stop_tof)
-        _step("gyro stop", stop_gyro)
         print("👋 Application shutdown complete")
 
 
@@ -278,7 +273,6 @@ app.include_router(radar_router.router)
 app.include_router(navigation_router.router)
 app.include_router(guidance_router.router)
 app.include_router(tof_router.router)
-app.include_router(map_router.router)
 
 
 def _page(name: str) -> HTMLResponse:

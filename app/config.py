@@ -339,16 +339,6 @@ RADAR_PRIORITY = False
 RADAR_BEAM_H_DEG = 65.0
 
 
-def radar_beam_deg(bearing: float) -> float:
-    """How wide the board facing `bearing` hears (every board here is a ring board)."""
-    return RADAR_BEAM_H_DEG
-
-
-def radar_ring() -> tuple:
-    """The ring boards' bearings from RADAR_BEARINGS, in bearing order (used by the live map)."""
-    return tuple(sorted({b % 360.0 for b in RADAR_BEARINGS.values()}))
-
-
 RADAR_CONE_TRUST_MM = GUIDANCE_CORRIDOR_HALF_WIDTH_MM / math.sin(
     math.radians(RADAR_BEARING_OFFSET_DEG + RADAR_BEAM_H_DEG / 2)
 )
@@ -482,81 +472,6 @@ HEADING_SENS_SMOOTH_BINS = 9
 HEADING_MAX_INCIDENCE_SEC = 3.0
 HEADING_SENS_JUMP_FRACTION = 0.1
 HEADING_STATE_STALE_S = LIDAR_STALE_S
-
-GYRO_ENABLED = (
-    False  # gyro unplugged 2026-10-23; set True when it is back on the SPI bus
-)
-
-GYRO_TRANSPORT = "spi"  # "spi" or "i2c"
-GYRO_SPI_BUS = 0
-GYRO_SPI_DEVICE = 0  # CE0 -> /dev/spidev0.0
-GYRO_SPI_HZ = 1_000_000
-GYRO_I2C_BUS = 1  # only used when GYRO_TRANSPORT == "i2c"
-GYRO_I2C_ADDRESS = 0x68  # 0x69 if AD0 is pulled high
-
-GYRO_RANGE_DPS = 500
-GYRO_ACCEL_RANGE_G = 4
-
-GYRO_MOUNTING_CONFIRMED = (
-    False  # gyro yaw stays out of steering until axis and sign are commissioned
-)
-
-GYRO_YAW_AXIS = "z"  # "x", "y" or "z" — the axis pointing UP
-GYRO_YAW_SIGN = -1.0  # flip to +1.0 if a right turn reads negative
-
-GYRO_SAMPLE_HZ = 100.0
-GYRO_BUFFER_S = 12.0
-GYRO_MIN_COVERAGE = 0.75
-
-GYRO_STALE_S = 0.5
-GYRO_RECONNECT_S = 1.0  # wait between reconnect attempts after a drop
-GYRO_MAX_READ_ERRORS = 15  # consecutive failures before the link is dead
-
-GYRO_BIAS_GAIN = 0.02
-GYRO_BIAS_MAX_DPS = 8.0  # a genuine zero-rate offset is under a few
-GYRO_BIAS_MAX_ERR_DPS = 6.0
-# Startup calibration: the average gyro reading while still IS the zero offset.
-GYRO_CALIBRATION_SAMPLES = 400
-
-GYRO_CAL_MAX_STD_DPS = 2.0
-
-GYRO_TRUST_ERR_DPS = 0.75
-GYRO_TRUST_SAMPLES = 150  # at ~15 Hz, about 10 s of steady agreement
-GYRO_RECAL_ON_STILL = True
-GYRO_RECAL_MIN_INTERVAL_S = 60.0
-GYRO_RECAL_STILL_S = 2.0  # how long "still" must hold before re-zeroing
-GYRO_RECAL_MAX_YAW_DPS = 0.5
-
-GYRO_SEED_MOTION_FIT = True
-
-GYRO_MAX_RATE_DPS = 400.0
-
-GYRO_STEP_DETECT = True
-GYRO_STEP_WINDOW_S = 1.5  # rolling window the |a| variation is measured over
-GYRO_STEP_STD_G = 0.06  # standing still is well under this even handheld
-GYRO_STEP_PEAK_G = (
-    0.10  # |a| excursion above the resting mean that counts as a footfall
-)
-GYRO_STEP_REFRACTORY_S = 0.25  # no second step inside this (240 steps/min ceiling)
-
-GYRO_STEP_UPWARD_ONLY = True
-
-GYRO_STEP_REF_TAU_S = 6.0
-
-GYRO_CADENCE_WINDOW_S = 5.0
-GYRO_CADENCE_STALE_S = 2.5
-
-GYRO_TILT_WARN_DEG = 12.0
-
-GYRO_STRIDE_DEFAULT_M = 0.71  # typical adult walking stride; a seed, not a spec
-GYRO_STRIDE_MIN_M = 0.35  # clamp: below this it is a shuffle or a miscount
-GYRO_STRIDE_MAX_M = 1.10  # clamp: above this it is a run or a missed step
-GYRO_STRIDE_LEARN_TAU_S = 30.0
-
-GYRO_GAIT_CONFIRMED = (
-    False  # no stride is learned until footfalls are counted on the worn harness
-)
-
 
 DRIFT_ENABLED = True
 
@@ -1359,7 +1274,7 @@ SIMPLE_VEHICLE_APPROACH_RATE = 0.12
 SIMPLE_VEHICLE_CONFIRM_FRAMES = 3
 SIMPLE_VEHICLE_EGO_MARGIN = 1.5
 # The user's pace taken off a vehicle's approach when nothing can measure it (open space,
-# no gait reading) — until 2026-10-21 that was 0, so walking toward a parked car read as
+# a bare corridor) — until 2026-10-21 that was 0, so walking toward a parked car read as
 # the car approaching. The cost: a user who IS standing still there is warned of a slowly
 # creeping vehicle later (it must close ~1.8 m/s faster). 0.0 restores the old behaviour.
 SIMPLE_VEHICLE_PACE_UNKNOWN_MPS = HEADING_NOMINAL_SPEED_MPS

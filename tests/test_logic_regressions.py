@@ -897,6 +897,73 @@ class SpokenOnlyOnTheDashboardTests(unittest.TestCase):
         self.assertEqual(got["said_total"], 2)
 
 
+class GroundAtTheMountHeightTests(unittest.TestCase):
+    """2026-11-11: set down on a desk, the ToF took surfaces 0.45-0.96 m below it for the
+    ground and confirmed a "hole" 0.65 m ahead: "Pothole ahead" (would say). The ground is
+    TOF_MOUNT_HEIGHT_M below the camera, give or take TOF_MOUNT_HEIGHT_TOL_M."""
+
+    def _snap(self, *boxes):
+        from tools.sim import ground_hazard_sim as gs
+
+        scenes = {"s": (lambda: list(boxes), None)}
+        return gs.run_scene("s", frames=4, with_camera=False, scenes=scenes)
+
+    def test_set_down_on_a_desk_nothing_on_the_ground_is_judged(self):
+        import numpy as np
+        from app.perception import depth_fusion as df
+        from app.perception import ground_hazards as gh
+        from tools.sim import ground_hazard_sim as gs
+
+        # As the rig lay on the desk (RestingOnADeskTests), with a dip in the floor ahead
+        hz = gh.GroundHazards(df.DepthProjector(gs.CAL))
+        H, below = gs.H, float(gs.CAL.t[1]) + 0.02
+        boxes = [gs.floor(z1=1.6), gs.slab(-6, 6, -0.2, 1.6, 2.1), gs.floor(z0=2.1),
+                 gs.slab(-1.0, 1.0, H - below, -0.5, 0.6, bottom=H - 0.75)]
+        rng = np.random.default_rng(0)
+        for i in range(8):
+            depth, conf = gs.render_tof(boxes, pitch=-46.0, rng=rng)
+            snap = hz.step(depth, conf, 1000.0 + i * 0.1, None)
+        self.assertIsNotNone(snap["rest"])
+        self.assertFalse(snap["ok"])
+        self.assertIn("set down", snap["why"])
+        self.assertEqual(snap["hazards"], [])
+
+    def test_a_level_surface_far_from_the_mount_height_is_not_the_ground(self):
+        from tools.sim import ground_hazard_sim as gs
+
+        # Carried low or set on a seat: a level floor 0.6 m below is not the ground
+        snap = self._snap(gs.floor(top=gs.H - 0.6))
+        self.assertFalse(snap["ok"])
+        self.assertEqual(snap["hazards"], [])
+
+    def test_the_floor_and_a_real_hole_are_still_found(self):
+        from tools.sim import ground_hazard_sim as gs
+
+        snap = self._snap(*gs.hole())
+        self.assertTrue(snap["ok"])
+        self.assertIn("hole", [h["kind"] for h in snap["hazards"]])
+
+
+class PillarOutOfAWallTests(unittest.TestCase):
+    """2026-11-11 (the scene hunt's last "no block"): a pillar standing out of the right wall
+    1 ft ahead, its edge 0.1 m off the walking line, was "Near right wall, move left". Its face
+    was fitted as a "wall" 28 deg across the path; a wall beside you runs along it."""
+
+    def _say(self, scene):
+        from tools.sim import scene_hunt as sh
+
+        return sh.decide({"left": 2492.0, "ahead": 4585.0, "glass": None, **scene})[1]["instruction"]
+
+    def test_the_pillar_blocks(self):
+        said = self._say({"right": 378.0, "posts": [(528.0, 320.0, 211.0)]})
+        self.assertTrue(sg._is_block(said), said)
+
+    def test_a_plain_wall_beside_is_still_a_near_wall(self):
+        for lat in (250.0, 378.0):
+            with self.subTest(lateral_mm=lat):
+                self.assertEqual(self._say({"right": lat, "posts": []}), sg.NEAR_RIGHT)
+
+
 class StatusNoticeCutTests(unittest.TestCase):
     """2026-11-10: a block waited out a status notice's airtime ("Power low", "Glass sensor
     off": ~1.1 s, ~1.4 m at walking pace). Now a block cuts into it, as into any guidance

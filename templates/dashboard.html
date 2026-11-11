@@ -1171,6 +1171,8 @@
       let seenSeq = null,
         lastSaidAt = 0,
         lastSaidText = "",
+        lastSaidRule = "",
+        lastSaidWhy = "",
         busyWalk = false,
         lastObject = null,
         lastVehicle = null,
@@ -1227,11 +1229,41 @@
         const p = d.path || {},
           n = d.notify || {},
           raw = p.raw || {};
-        const rule = p.rule || (p.instruction ? "clear" : "");
-        $("now").dataset.rule = rule;
-        $("now-rule").textContent = rule ? rule.toUpperCase() : "—";
-        $("now-text").textContent = p.instruction || "…";
-        $("now-why").textContent = p.reason || "—";
+
+        // The sentence shown is the last one SAID (notify), never the one the guide is still
+        // weighing (path): that flickers, and the screen said "turn left" while the wearer had
+        // heard "turn right" (2026-11-11). Its rule and reason as they were when it was said.
+        const seq = n.cue_seq,
+          pv = n.pi_voice || {};
+        const sameAsPath = (n.instruction || "") === (p.instruction || "");
+        if (typeof seq === "number") {
+          if (seenSeq !== null && seq > seenSeq) {
+            lastSaidAt = Date.now();
+            lastSaidText = n.instruction || "";
+            lastSaidRule = sameAsPath ? p.rule || "" : "";
+            lastSaidWhy = sameAsPath ? p.reason || "" : n.reason || "";
+            if (pv.audio_enabled !== false && !piHasCue(pv, seq)) {
+              announce(lastSaidText);
+              browserSay(lastSaidText, n.level === "urgent");
+            } // audio off: shown, not spoken
+            const now = $("now");
+            now.classList.remove("pulse");
+            void now.offsetWidth;
+            now.classList.add("pulse");
+          } else if (seenSeq === null || seq < seenSeq) {
+            // The page's first look, or the app restarted (its count starts again): what it
+            // said last, shown but not announced again.
+            lastSaidAt = 0;
+            lastSaidText = n.instruction || "";
+            lastSaidRule = sameAsPath ? p.rule || "" : "";
+            lastSaidWhy = sameAsPath ? p.reason || "" : "";
+          }
+          seenSeq = seq;
+        }
+        $("now").dataset.rule = lastSaidRule;
+        $("now-rule").textContent = lastSaidRule ? lastSaidRule.toUpperCase() : "—";
+        $("now-text").textContent = lastSaidText || "Nothing said yet";
+        $("now-why").textContent = lastSaidWhy || "—";
         const ft = raw.front_ft;
         $("now-front").textContent =
           ft != null ? `front ${Number(ft).toFixed(1)} ft` : "front open";
@@ -1332,24 +1364,8 @@
         lastMovers = raw.movers || [];
         lastRadarMovers = raw.radar_movers || [];
 
-        // Announce once per sequence step; the first poll only learns it.
-        const seq = n.cue_seq,
-          pv = n.pi_voice || {};
-        if (typeof seq === "number") {
-          if (seenSeq !== null && seq > seenSeq) {
-            lastSaidAt = Date.now();
-            lastSaidText = n.instruction || "";
-            if (pv.audio_enabled !== false && !piHasCue(pv, seq)) {
-              announce(lastSaidText);
-              browserSay(lastSaidText, n.level === "urgent");
-            } // audio off: shown, not spoken
-            const now = $("now");
-            now.classList.remove("pulse");
-            void now.offsetWidth;
-            now.classList.add("pulse");
-          }
-          seenSeq = seq;
-        }
+        // When it was said; not why the guide is quiet now (that is about a sentence it has
+        // not said, and is in the terminal and the speech log).
         const ago = lastSaidAt
           ? Math.round((Date.now() - lastSaidAt) / 1000)
           : null;
@@ -1357,9 +1373,12 @@
         const v = $("now-voice");
         v.className = fresh ? "said" : "";
         v.textContent = fresh
-          ? `🔊 just said “${lastSaidText}”`
-          : `🔇 quiet — ${n.quiet_reason || "nothing new to say"}` +
-            (lastSaidText ? ` · last said “${lastSaidText}” ${ago}s ago` : "");
+          ? "🔊 just said"
+          : ago !== null
+            ? `🔊 said ${ago}s ago`
+            : lastSaidText
+              ? "🔊 said before this page opened"
+              : "—";
 
         const rd = p.readings || {};
         const f1 = (x) => (x == null ? "—" : Number(x).toFixed(1));

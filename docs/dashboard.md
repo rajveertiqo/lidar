@@ -1,7 +1,8 @@
 # Dashboard
 
 `http://<pi-ip>:8000` is **the field-test dashboard** (`templates/dashboard.html`,
-2026-09-24): what the device is saying and why, four verdict buttons that stamp
+2026-09-24): what the device last **said** and why (only spoken sentences: the sentence the
+guide is still weighing, and why it is quiet, are in the terminal, since 2026-11-11), four verdict buttons that stamp
 ✓ / ✗ / ⚠ / ✎ into the speech log (keys 1-4), the laser view drawn with the
 same corridor and rings the guide decides on, the front camera with the band
 where objects get named, **Spoken this run** (only what was actually said, as the terminal's

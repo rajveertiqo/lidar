@@ -1099,6 +1099,11 @@ SIMPLE_WALL_APPROACH_FT = 12.0
 SIMPLE_OBSTACLE_AHEAD_FT = 8.0
 
 SIMPLE_ON_WALL_MM = 60.0
+# A block is "the wall beside you" (not something in the way) only if what reaches furthest into
+# the walking path lies on a wall running within this of the walking line (2026-11-11): a
+# pillar standing out of a wall 1 ft ahead, its face fitted as a "wall" 28 deg across the
+# path, was "Near right wall, move left" with no block.
+SIMPLE_ALONGSIDE_MAX_DEG = 20.0
 SIMPLE_WALL_MATCH_FT = 1.0
 SIMPLE_CROSSING_HOLD_S = 5.0
 # After a traffic light leaves the front camera, "Walk straight" stays withheld until the

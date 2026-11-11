@@ -89,7 +89,7 @@ for this: stairs up and down, kerbs both ways, and some flat floor and walls in 
 ## Walking the drift layer without leaving the desk
 
 ```bash
-./venv/bin/python tools/sim/drift_sim.py            # 3 deg/s veer: warns 4.3 s out
+./venv/bin/python tools/sim/drift_sim.py            # 3 deg/s veer: warns 4.1 s out
 ./venv/bin/python tools/sim/drift_sim.py --veer 0   # control: no VEER cue
 ./venv/bin/python tools/sim/drift_sim.py --accuracy # odometry error vs known motion
 ```

@@ -81,7 +81,7 @@ How it decides, in one paragraph each:
   more urgent (a name flickering, the side flipping, a step back) must hold 6 s.
   Blocked sentences repeat after 30 s, 60 s, then every 2 min.
 - **The Pi speaks for itself** (`app/guidance/pi_voice.py`): the guidance loop runs on
-  the device on every LiDAR scan as it lands (~15 Hz; at least `PI_VOICE_TICK_HZ`, 10 Hz,
+  the device on every LiDAR scan as it lands (~23 Hz at full motor speed since 2026-11-05; ~15 Hz before; at least `PI_VOICE_TICK_HZ`, 10 Hz,
   without one — a 5 Hz timer until 2026-10-30). A block the LiDAR measures in two different
   scans is warned of at once (`SIMPLE_LIDAR_CONFIRM_SCANS`): an obstacle appearing 3 ft ahead
   is warned of in ~90 ms, not ~320 (simulated). What the front camera names, and its way past,

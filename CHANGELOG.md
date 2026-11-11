@@ -17,6 +17,12 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   Nothing said changes.
 
 ### Fixed
+- **No false "Pothole ahead" when the device is set down.** On a desk the ToF took the floor
+  below it for the ground and found a hole. Set down, the ground is no longer judged, and a
+  ground must lie at the mount's height (1.45 m +- 0.45 m), as the settings already said.
+- **A pillar standing out of a wall now blocks.** It was "Near right wall, move left", with
+  its edge 0.1 m off the walking line. A block is the wall beside you only if what reaches
+  furthest into your path lies on a wall running along it (`SIMPLE_ALONGSIDE_MAX_DEG`).
 - **A block warning no longer waits behind a status notice.** A post appearing while
   "Power low" (or "Glass sensor off", "Camera on", ...) was being said was warned of 1.1 s
   late; now 0.2 s, as with nothing playing. The notice it cut is said again once the path is
@@ -34,6 +40,11 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   (the LiDAR's blind side) is unchanged.
 
 ### Changed
+- **The dashboard's big sentence is the last one SAID.** It showed the sentence the guide was
+  still weighing, which flickers: the screen said "Blocked by wall, turn left" while the wearer
+  had heard "turn right". Its rule and reason are the spoken one's; "quiet — unconfirmed" is
+  gone (it is in the terminal). "Last said" could also show a stale sentence after the app
+  restarted; it now starts again with the app.
 - **The dashboard's "Spoken this run" lists only what was said**, as the terminal's 🔊 lines:
   the reason, the LiDAR scan's age and which voice said it. The silent "would say" lines (route
   planner, ToF hazards, movers) and the tester's marks had been listed with them, and read as

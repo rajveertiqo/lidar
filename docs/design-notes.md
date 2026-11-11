@@ -373,3 +373,28 @@ Kept because each one explains why the code is the way it is.
     there is, and a person standing there would be dropped with the wall, so facing a close
     wall with only the left open still says "turn around". The scene hunt never sends a turn
     toward a side with under 2 ft of room, before or after.
+
+16. **Set down, the ToF found a pothole (2026-11-11).** On the desk in the window nook the
+    terminal showed `would say: Pothole ahead`. Read on the desk, the ToF found the surface it
+    rested on on every frame, yet took a level 0.45-0.96 m below it for the ground (the floor,
+    or a plane tilted through it) and confirmed a "hole" 0.65 m ahead, and in a simulated desk a
+    "step up". Two changes: set down (`rest_surface`), the ground is not judged at all ("set
+    down on a surface: no ground to judge"; the near counts and the rest surface, which the
+    glass and desk-echo checks use, still are); and a fitted ground must lie
+    `TOF_MOUNT_HEIGHT_M` +- `TOF_MOUNT_HEIGHT_TOL_M` below the camera, as `config.py` already
+    said. The gate on the points widens with distance for the tilt, and a plane followed frame
+    to frame drifted; neither checked the plane itself. The 31 desk frames: no hazards. The
+    ground, wall and ToF-fusion simulators: unchanged.
+
+17. **A pillar out of a wall, no block (2026-11-11).** The scene hunt's last "solid on the line
+    within 4 ft, no block warning": a pillar standing out of the right wall 1 ft ahead, its edge
+    0.1 m off the walking line, said "Near right wall, move left". The walk policy had it
+    blocked; `_front_wall` and `_brushing` then explained the block as the wall beside, because
+    most of the pillar's returns lay on a "wall": its face, fitted as one, 28 deg across the
+    path (rms 50 mm, which widens the match to 150 mm). A wall beside you runs along the path,
+    and all of it lies on its line, the part nearest your path too. Now the return reaching
+    furthest into the path must lie on a wall running within `SIMPLE_ALONGSIDE_MAX_DEG` (20) of
+    the walking line. The pillar: "Blocked by wall, turn left"; a plain wall 0.25-0.38 m beside
+    you is still "Near right wall, move left". The hunt: no block missed (was 1), false glass 5
+    and the mirror check 6 unchanged. Not done: a flatness limit on those walls; in the 10:23
+    nook clip 1 real wall fit in 10 is over 33 mm rms (clutter), and would have blocked.

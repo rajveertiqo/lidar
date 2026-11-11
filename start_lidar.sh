@@ -28,6 +28,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 ENV_FILE="$HOME/.config/shappe-guide.env"
+
 # As the app will see them: the env file's (the installed unit's EnvironmentFile; sourced
 # below as well), else this shell's, else the defaults.
 CALLER_SET="${SERVER_HOST:-}${SERVER_PORT:-}"
@@ -48,6 +49,7 @@ LOCK="${XDG_RUNTIME_DIR:-/tmp}/shappe-guide.lock"
 # finds the port taken (2026-10-21). So refuse, before anything touches the hardware.
 already_running() {
     local pids p
+
     # The app as launched (".../venv/bin/uvicorn app.main:app"; "main:app" before the app/
     # package, 2026-11-10, so one started by an older checkout is still found), not any command line that
     # merely mentions it, such as a grep for it.
@@ -64,6 +66,7 @@ already_running() {
     fi
     echo -e "${YELLOW}  Stop it first: Ctrl+C in the terminal running it, or${NC}"
     echo -e "${YELLOW}    systemctl --user stop shappe-guide shappe-guide-manual${NC}"
+
     # Started some other way (another shell, a tool, a lost SSH session): neither of the
     # above reaches it, and the message used to end there (2026-11-02).
     if [ -n "$pids" ]; then
@@ -96,10 +99,12 @@ if [ "$MODE" = background ]; then
             -p Restart=on-failure -p RestartSec=3 -p RestartPreventExitStatus=$REFUSED \
             "$SCRIPT_DIR/start_lidar.sh"
     fi
+    
     echo -e "${GREEN}Started in the background as $UNIT.${NC}"
     echo "  It keeps running when this terminal closes or SSH drops; it does NOT start at boot."
     echo "  follow it:  journalctl --user-unit=$UNIT -f"
     echo "  stop it:    systemctl --user stop $UNIT"
+    
     if [ "$(loginctl show-user "$USER" -p Linger --value 2>/dev/null)" != "yes" ]; then
         echo -e "${YELLOW}  Note: lingering is off for $USER, so it stops when you log out of every${NC}"
         echo -e "${YELLOW}  session. To keep it running: sudo loginctl enable-linger $USER${NC}"
@@ -114,6 +119,7 @@ if ! flock -n 9; then
     already_running || starting_elsewhere
     exit $REFUSED
 fi
+
 # fd 9 stays open into uvicorn below (exec keeps it), so the lock lasts as long as the app.
 if already_running; then exit $REFUSED; fi
 
@@ -232,6 +238,7 @@ if [ $(( RADAR_RC & 1 )) -ne 0 ]; then
     echo -e "${YELLOW}  Check its cable and hub socket. A board that answers nothing${NC}"
     echo -e "${YELLOW}  has hung its firmware — unplug and replug its USB-C cable.${NC}"
 fi
+
 if [ $(( RADAR_RC & 2 )) -ne 0 ]; then
     echo -e "${YELLOW}Warning: radar board(s) have NO MEASURED BEARING and will not steer${NC}"
     echo -e "${YELLOW}  This is NOT a cable fault — those boards stream fine. Until a${NC}"

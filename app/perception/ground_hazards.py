@@ -299,6 +299,14 @@ class GroundAnalyser:
             coef = np.linalg.lstsq(Xa[on], y[ci][on], rcond=None)[0]
             if np.hypot(coef[0], coef[1]) >= tilt_max or coef[2] < 0.4:
                 continue
+            # The ground is under the wearer's feet: TOF_MOUNT_HEIGHT_M below the camera, give
+            # or take TOF_MOUNT_HEIGHT_TOL_M, as the plane lies (2026-11-11). The points' gate
+            # widens with distance for the tilt, and a plane followed frame to frame drifts:
+            # set down on a desk it took surfaces 0.45-0.96 m below for the ground, and a
+            # "hole" 0.65 m ahead was confirmed ("Pothole ahead", would say).
+            height = float(coef[2]) / math.sqrt(1.0 + coef[0] ** 2 + coef[1] ** 2)
+            if abs(height - TOF_MOUNT_HEIGHT_M) > TOF_MOUNT_HEIGHT_TOL_M:
+                continue
             self._plane, self._plane_t = coef, t
             return coef, int(on.sum()), ("followed" if p is not None else "found")
         return None
@@ -733,6 +741,14 @@ class GroundAnalyser:
         out["rest"] = rest
         off = ~on_rest
         out["near"] = near_counts(P[off], x[off], y[off], z[off])
+        if rest is not None:
+            # Set down, there is no floor under a wearer to judge steps, drops and holes by
+            # (2026-11-11): on the desk it took the floor 0.77 m below, or a plane tilted
+            # through it, for the ground, and confirmed a "hole" and a "step up". Worn, nothing
+            # level lies that near under the ToF (RestingOnADeskTests).
+            out["why"] = "set down on a surface (the ToF rests on it): no ground to judge"
+            out["ms"] = round((time.perf_counter() - started) * 1000.0, 1)
+            return out
         fit = self._fit_ground(x, y, z, float(t))
         if fit is None:
             out["why"] = "no ground seen (nothing level near the mount's height)"

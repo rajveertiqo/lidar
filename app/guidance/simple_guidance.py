@@ -39,6 +39,7 @@ from app.config import (
     SIMPLE_OBSTACLE_AHEAD_FT,
     SIMPLE_OFFLINE_REPEAT_S,
     SIMPLE_ON_WALL_MM,
+    SIMPLE_ALONGSIDE_MAX_DEG,
     SIMPLE_WALL_APPROACH_FT,
     SIMPLE_WALL_MATCH_FT,
     WALK_BLOCK_FT,
@@ -418,6 +419,25 @@ def _on_surface(angle: float, dist: float, surface: Dict[str, Any]) -> bool:
     return lo - SIMPLE_ON_WALL_MM <= along <= hi + SIMPLE_ON_WALL_MM and off <= tol
 
 
+def _innermost_on_a_wall_alongside(
+    cluster: List[Tuple[float, float]], walls: List[Dict[str, Any]]
+) -> bool:
+    """Does the front cluster's return reaching furthest into the walking path lie on one of
+    `walls` that runs along the path (within SIMPLE_ALONGSIDE_MAX_DEG)? A wall beside the
+    user is: all of it lies on its line. A pillar standing out of it is not (2026-11-11)."""
+    from app.perception.drift_guidance import signed_bearing
+
+    if not cluster:
+        return False
+    a, d = min(cluster, key=lambda ad: abs(ad[1] * math.sin(math.radians(signed_bearing(ad[0])))))
+    tan_max = math.tan(math.radians(SIMPLE_ALONGSIDE_MAX_DEG))
+    return any(
+        _on_surface(a, d, w)
+        and abs(float(w["direction"][1])) <= tan_max * abs(float(w["direction"][0]))
+        for w in walls
+    )
+
+
 def _front_wall(
     walk_decision: Dict[str, Any],
     lidar_state: Optional[Dict[str, Any]],
@@ -459,7 +479,8 @@ def _front_wall(
     clear_to = max(radius_ft, ft + SIMPLE_WALL_MATCH_FT)
     return {
         "ft": ft,
-        "alongside": on_line_mm is None or on_line_mm / MM_PER_FT > clear_to,
+        "alongside": (on_line_mm is None or on_line_mm / MM_PER_FT > clear_to)
+        and _innermost_on_a_wall_alongside(cluster, walls),
         "side": "right" if lateral >= 0 else "left",
     }
 
@@ -488,7 +509,9 @@ def _brushing(
         b = math.radians(signed_bearing(a))
         x, y = d * math.cos(b), d * math.sin(b)
         on += abs((y - cy) * dx - (x - cx) * dy) <= tol
-    return on * 2 > len(cluster)
+    # And what reaches furthest into the path must lie on it, a wall running along the path
+    # (2026-11-11: a pillar standing out of the wall, most of its returns near the wall line).
+    return on * 2 > len(cluster) and _innermost_on_a_wall_alongside(cluster, [surface])
 
 
 def _surfaces(lidar_state: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:

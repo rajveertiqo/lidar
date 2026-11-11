@@ -848,6 +848,55 @@ class CloseWallOpenSideTests(unittest.TestCase):
         self.assertNotEqual(self._say(corner), sg.BLOCKED_WALL_TURN["left"])
 
 
+class CameraExposureCapTests(unittest.TestCase):
+    """2026-11-11: walking blurred the camera's 24-30 ms exposures; the cap keeps it at
+    CAMERA_SHUTTER_CAP_MS while gain makes up the light, and the most light as before."""
+
+    def test_the_short_profile_caps_then_keeps_the_most_light(self):
+        try:
+            import picamera2  # noqa: F401
+        except ImportError:
+            self.skipTest("picamera2 not installed (not a Pi)")
+        from app.sensors import pi_camera_utils as pc
+
+        normal = {"shutter": [100, 10000, 30000, 60000, 120000], "gain": [1.0, 2.0, 4.0, 6.0, 8.0]}
+        tuning = {"version": 2.0, "algorithms": [{"rpi.agc": {"channels": [{"exposure_modes": {"normal": dict(normal)}}]}}]}
+        with unittest.mock.patch("picamera2.Picamera2.load_tuning_file", lambda name: tuning), \
+                unittest.mock.patch.object(pc, "CAMERA_SHUTTER_CAP_MS", 10.0):
+            got, ctrls = pc._short_exposure()
+        short = got["algorithms"][0]["rpi.agc"]["channels"][0]["exposure_modes"]["short"]
+        self.assertEqual(short["shutter"], [100.0, 10000.0, 10000.0, 10000.0, 120000.0])
+        self.assertEqual(short["gain"], [1.0, 2.0, 4.0, 8.0, 8.0])  # then longer, as before
+        self.assertIn("AeExposureMode", ctrls)
+        with unittest.mock.patch.object(pc, "CAMERA_SHUTTER_CAP_MS", None):
+            self.assertEqual(pc._short_exposure(), (None, {}))  # off: the sensor's own
+
+
+class SpokenOnlyOnTheDashboardTests(unittest.TestCase):
+    """2026-11-11: the dashboard's "Spoken this run" listed the silent "would say" lines
+    (route planner, ToF hazards, movers) and the tester's marks among what was said."""
+
+    def test_only_what_was_spoken_is_listed(self):
+        from app.api.guidance_router import field_test_snapshot
+        from app.guidance import speech_log
+
+        with unittest.mock.patch.object(speech_log, "SPEECH_LOG_TO_FILE", False):
+            speech_log.reset()
+            t = time.time()
+            speech_log.say("guidance", sg.BLOCKED_WALL_TURN["right"], level="urgent", now=t,
+                           via="phone", timing={"scan_age_ms": 59})
+            speech_log.say("route-planner", f"would say: {sg.TURN_RIGHT}", now=t + 0.1)
+            speech_log.say("tof-hazards", f"would say: {sg.OBSTACLE_AHEAD}", now=t + 0.2)
+            speech_log.say("tester", "WRONG", now=t + 0.3)
+            speech_log.say("guidance", sg.WALK_STRAIGHT, now=t + 0.4)
+            got = field_test_snapshot(limit=50)
+            speech_log.reset()
+        self.assertEqual([r["text"] for r in got["lines"]],
+                         [sg.BLOCKED_WALL_TURN["right"], sg.WALK_STRAIGHT])
+        self.assertEqual(got["lines"][0]["timing"]["scan_age_ms"], 59)
+        self.assertEqual(got["said_total"], 2)
+
+
 class StatusNoticeCutTests(unittest.TestCase):
     """2026-11-10: a block waited out a status notice's airtime ("Power low", "Glass sensor
     off": ~1.1 s, ~1.4 m at walking pace). Now a block cuts into it, as into any guidance

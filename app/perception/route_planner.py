@@ -391,8 +391,9 @@ class RoutePlanner:
             # A moving thing may bend the way by a small turn at most; a big swerve round it
             # (toward traffic, say) is worse than slowing down or waiting for it to pass.
             k = choose(
+                # Called here, in this pass of the loop, not later: eff and need are this pass's.
                 lambda k: (
-                    eff[k] >= need
+                    eff[k] >= need  # noqa: B023
                     and abs(heads[k] - heads[k_static]) <= ROUTE_STEER_MAX_DEG
                 )
             )

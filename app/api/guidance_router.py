@@ -349,7 +349,7 @@ async def walk_record(payload: dict):
 
 @router.get("/test")
 def field_test_snapshot(limit: int = 12):
-    """Everything the dashboard's Field test panel shows, in one poll: sensor health, startup, which voice is speaking, how much was said in the last minute, and the latest lines of the speech log (marks included)."""
+    """Everything the dashboard's Field test panel shows, in one poll: sensor health, startup, which voice is speaking, how much was said in the last minute, and the latest sentences actually SPOKEN (2026-11-11: the silent "would say" lines and the tester's marks were listed with them, and read as said; the speech log file and /guidance/log/text keep them all)."""
     import time as _time
     from app.guidance import pi_voice, speech_log, startup_gate
 
@@ -377,7 +377,7 @@ def field_test_snapshot(limit: int = 12):
         "labels": labels,  # labelled clips on the card, by label
         "would_say_total": int(totals.get("lidar-movers", 0)),
         "log_path": log.get("path"),
-        "lines": lines[-max(1, min(50, limit)) :],
+        "lines": spoken[-max(1, min(50, limit)) :],
         "geometry": _geometry(),
     }
 

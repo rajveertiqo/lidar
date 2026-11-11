@@ -6,8 +6,9 @@
 > and is shown on the dashboard (`/guidance/drift`), but does not speak; the surface guide and the BEV
 > caution were removed on 2026-10-05, since nothing read their output.
 
-Everything spoken comes from one module, `app/guidance/simple_guidance.py`, from a
-closed vocabulary:
+Everything spoken is decided in one module, `app/guidance/simple_guidance.py`, from a closed
+vocabulary (`app/guidance/vocabulary.py`), and said when the speech gate lets it through
+(`app/guidance/speech_gate.py`):
 
 | Situation | Sentence |
 | --- | --- |

@@ -5,8 +5,12 @@ app/main.py                 FastAPI app + lifespan (starts camera, LiDAR, radar,
 app/config.py               Every threshold, in one place — the single source of truth
 
 app/guidance/             What is said, and when
-  simple_guidance.py        THE ONE SPEAKER: the closed vocabulary, warn-fast /
-                            clear-slowly smoothing, and the gate that decides what is said
+  simple_guidance.py        THE ONE SPEAKER: what to say, from every sensor, with warn-fast /
+                            clear-slowly smoothing (re-exports the two below)
+  vocabulary.py             The closed vocabulary: every sentence (ALLOWED), what it is
+                            about, how urgent it is
+  speech_gate.py            When a sentence is said: debounce, urgency, repeats, cutting
+                            in, airtime; the sensor-lost/back notices
   pi_voice.py               The guidance loop (each LiDAR scan) and espeak-ng, so the device talks
                             without a browser; hands the voice to the phone when no
                             earpiece is connected

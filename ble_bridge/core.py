@@ -908,7 +908,7 @@ def _cmd_get_speech_log(b: Bridge, args: Dict[str, Any]):
     try:
         log = b.service.speech_log(limit)
     except Exception as exc:
-        raise CommandError("DEVICE_UNAVAILABLE", f"speech log: {exc}")
+        raise CommandError("DEVICE_UNAVAILABLE", f"speech log: {exc}") from exc
     keep = ("time", "source", "level", "text", "cue_seq", "via", "outcome")
     entries = [
         {k: _text(e.get(k)) for k in keep}
@@ -1009,7 +1009,7 @@ def _cmd_mark(b: Bridge, args: Dict[str, Any]):
     try:
         return b.service.mark(kind, note), []
     except Exception as exc:
-        raise CommandError("DEVICE_UNAVAILABLE", f"mark: {exc}")
+        raise CommandError("DEVICE_UNAVAILABLE", f"mark: {exc}") from exc
 
 
 def _cmd_set_device_settings(b: Bridge, args: Dict[str, Any]):

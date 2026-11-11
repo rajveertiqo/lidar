@@ -34,6 +34,21 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   (the LiDAR's blind side) is unchanged.
 
 ### Changed
+- **The dashboard's "Spoken this run" lists only what was said**, as the terminal's 🔊 lines:
+  the reason, the LiDAR scan's age and which voice said it. The silent "would say" lines (route
+  planner, ToF hazards, movers) and the tester's marks had been listed with them, and read as
+  said; they stay in the terminal and `/guidance/log/text`.
+- **Stricter lint** (`pyproject.toml`): statement errors (E7) and bugbear (B) now block CI
+  too. What they found, fixed: two bare `except:` that would also swallow Ctrl+C and
+  shutdown (`lidar_utils`, `unified_navigation_system`), and four errors in the phone bridge
+  re-raised without their cause (`raise ... from exc`).
+- **`simple_guidance.py` split** (4,430 -> 3,690 lines): the closed vocabulary is now
+  `app/guidance/vocabulary.py`, and the speech gate and sensor notices
+  `app/guidance/speech_gate.py`. `simple_guidance` re-exports every name, so nothing that
+  imports it changes; the tests and every simulator give the same results.
+- **Sharper camera pictures while walking:** the exposure is kept to 10 ms while gain can make
+  up the light (`CAMERA_SHUTTER_CAP_MS`); the sensor chose 24-30 ms indoors, which walking
+  blurs. Dim light gets the same most exposure as before.
 - **The app logs through `logging`** (`app/core/logs.py`), not `print()`: every line has its
   time, its level from WARNING up, and its module, and `SHAPPE_LOG_LEVEL` sets how much is
   written. Same place as before (the terminal and `logs/run_*.log`). The live guidance console,

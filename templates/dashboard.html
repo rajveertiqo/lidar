@@ -644,14 +644,6 @@
       .row.urgent b {
         color: var(--red);
       }
-      .row.mark b {
-        color: var(--blue);
-      }
-      .row.silent b {
-        font-weight: 600;
-        font-style: italic;
-        color: var(--muted);
-      }
 
       /* ---------------------------------------------------------------- sensors / around */
       .kv {
@@ -1516,23 +1508,24 @@
           $("log-path").textContent = d.log_path
             ? d.log_path.split("/").slice(-1)[0]
             : "";
+          // Only what was SPOKEN (2026-11-11): the "would say" lines and marks are in the
+          // terminal and the speech log, not here. Like the terminal's 🔊 line: the reason,
+          // how old the LiDAR scan was, and which voice said it.
           const lines = (d.lines || []).slice().reverse();
           $("log").innerHTML = lines.length
             ? lines
                 .map((r) => {
-                  const cls =
-                    r.source === "tester"
-                      ? "mark"
-                      : r.source === "lidar-movers"
-                        ? "silent"
-                        : r.level === "urgent"
-                          ? "urgent"
-                          : "";
+                  const scan = (r.timing || {}).scan_age_ms;
+                  const meta = [
+                    r.detail,
+                    typeof scan === "number" ? `⏱ scan ${Math.round(scan)} ms` : "",
+                    r.via === "pi" ? "🎧 Pi" : r.via === "phone" ? "📱 phone" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ");
                   return (
-                    `<div class="row ${cls}"><span class="t mono">${esc(r.time)}</span><span><b>${esc(r.text)}</b>` +
-                    (r.detail
-                      ? `<span class="why">${esc(r.detail)}</span>`
-                      : "") +
+                    `<div class="row ${r.level === "urgent" ? "urgent" : ""}"><span class="t mono">${esc(r.time)}</span><span><b>🔊 ${esc(r.text)}</b>` +
+                    (meta ? `<span class="why">${esc(meta)}</span>` : "") +
                     `</span></div>`
                   );
                 })

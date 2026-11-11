@@ -29,10 +29,14 @@ line-length = 100
 extend-exclude = ["venv", "logs", "model"]
 
 [tool.ruff.lint]
-# Errors that are bugs, or hide them: syntax errors and every pyflakes check (undefined
-# names, unused imports and variables, redefinitions, f-strings without placeholders).
-# More rules (style, bugbear) come once the code is formatted.
-select = ["E9", "F"]
+# Errors that are bugs, or hide them: syntax errors, every pyflakes check (undefined names,
+# unused imports and variables, redefinitions, f-strings without placeholders), statement
+# errors (E7: a bare except that swallows Ctrl+C, comparisons to None) and bugbear (B: a loop
+# variable a later call sees changed, mutable defaults, a raise that drops its cause).
+# Not: E731 (a named lambda) and E741 (a variable called l) are style; B905 (zip without
+# strict=) flags equal-length lists everywhere. Widened 2026-11-11.
+select = ["E9", "F", "E7", "B"]
+ignore = ["E731", "E741", "B905"]
 
 # ---------------------------------------------------------------- types: mypy
 [tool.mypy]

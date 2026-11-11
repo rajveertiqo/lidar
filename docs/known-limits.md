@@ -14,6 +14,10 @@
   each start: libcamera's focus never reached it, and until 2026-11-02 every lens rested
   past infinity, blurred). 1000 was the sharpest on a ceiling ~2 m away, and should hold
   from about a metre out to far — an estimate, not yet checked on people or outdoors.
+  The exposure is kept to 10 ms while gain can make up the light (`CAMERA_SHUTTER_CAP_MS`,
+  2026-11-11): left to itself the sensor chose 24-30 ms indoors, which walking blurs. The
+  price is a little more grain indoors; in dim light it lengthens as before. Not yet compared
+  on a walk.
 - **Traffic-light colour cannot be read.** The stock COCO detector emits only
   the class `traffic light` with no colour, and a bounding box cannot tell you
   which lamp is lit. Colour is reported as `unknown` rather than guessed. The

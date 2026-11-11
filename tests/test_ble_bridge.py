@@ -1074,7 +1074,7 @@ class ScenarioTests(unittest.TestCase):
             except ConnectionError as exc:
                 outs += b.on_unreachable(str(exc))
             outs += b.tick()
-            for c, d in decoded(outs):
+            for _c, d in decoded(outs):
                 if d["kind"] == "alert_text":
                     said.append(d["text"])
                 elif d["kind"] == "event":

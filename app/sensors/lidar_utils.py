@@ -958,7 +958,7 @@ def _scan_session(RPLidar, progress):
     for _ in range(3):
         try:
             lidar.clear_input()
-        except:
+        except Exception:  # not Ctrl+C or a shutdown: those must get through
             pass
         time.sleep(0.1)
     _log.info("[OK] Initial buffer cleared")

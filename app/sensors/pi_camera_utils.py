@@ -76,6 +76,8 @@ from app.config import (
     CAMERA_BLUR_CONFIRM_S,
     CAMERA_DIM_LUX,
     CAMERA_DIM_CONFIRM_S,
+    CAMERA_SHUTTER_CAP_MS,
+    CAMERA_TUNING_FILE,
     CAMERA_STALL_REOPEN_S,
     CAMERA_STALL_REOPEN_MAX_S,
     TOF_ENABLED,
@@ -534,6 +536,36 @@ def _quiet_tof_port():
                 kept = kept[os.write(2, kept):]
 
 
+def _short_exposure():
+    """(tuning, controls) that keep the exposure at CAMERA_SHUTTER_CAP_MS while gain can make
+    up the light: the tuning's "short" profile rewritten from the "normal" one (its last
+    stage, the most light, kept), and AeExposureMode Short. (None, {}) when off or the tuning
+    cannot be read: the sensor's own profile, as before."""
+    if not CAMERA_SHUTTER_CAP_MS:
+        return None, {}
+    try:
+        from libcamera import controls
+        from picamera2 import Picamera2
+
+        tuning = Picamera2.load_tuning_file(CAMERA_TUNING_FILE)
+        agc = Picamera2.find_tuning_algo(tuning, "rpi.agc")
+        cap_us = float(CAMERA_SHUTTER_CAP_MS) * 1000.0
+        for ch in agc.get("channels", [agc]):
+            normal = ch["exposure_modes"]["normal"]
+            most_us, most_gain = float(normal["shutter"][-1]), float(normal["gain"][-1])
+            ch["exposure_modes"]["short"] = {
+                "shutter": [100.0, cap_us, cap_us, cap_us, max(most_us, cap_us)],
+                "gain": [1.0, 2.0, 4.0, most_gain, most_gain],
+            }
+        return tuning, {"AeExposureMode": controls.AeExposureModeEnum.Short}
+    except Exception as e:
+        _log.warning(
+            f"Camera exposure cap not set ({type(e).__name__}: {e}) — the sensor's own "
+            f"exposure, which can blur while walking"
+        )
+        return None, {}
+
+
 def _open_camera():
     """Open, configure and start the camera, retrying until it works or we are stopped."""
     global picam2
@@ -558,14 +590,15 @@ def _open_camera():
     while running:
         cam = None
         try:
+            tuning, exposure = _short_exposure()
             with _quiet_tof_port():
-                cam = Picamera2()
+                cam = Picamera2(tuning=tuning)
             cam.configure(
                 cam.create_video_configuration(
                     main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"},
                     raw={"size": (CAMERA_WIDTH, CAMERA_HEIGHT)},
                     buffer_count=4,  # small buffer -> low latency, always-newest
-                    controls={"FrameRate": float(CAMERA_CAPTURE_FPS)},
+                    controls={"FrameRate": float(CAMERA_CAPTURE_FPS), **exposure},
                 )
             )
             cam.post_callback = _note_light  # the sensor's light reading, with each picture

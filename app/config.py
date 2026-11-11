@@ -78,6 +78,15 @@ CAMERA_BLUR_CONFIRM_S = 60.0
 # nothing said changes. NEEDS a dim walk before anything acts on it.
 CAMERA_DIM_LUX = 45.0
 CAMERA_DIM_CONFIRM_S = 3.0
+# The longest exposure the camera uses while gain can make up the light (2026-11-11). Walking
+# and the body's sway blur a long exposure: in the office the sensor chose 24-30 ms at 2x
+# gain. With this cap it takes 10 ms at ~4.8x (measured that day: the same picture level),
+# ~2.4x less blur, a little more grain. Only once the gain is at 8x does the exposure grow,
+# to the same most as before, so a dim scene gets the same light (CAMERA_DIM_LUX unchanged).
+# A custom "short" profile in the sensor's tuning (CAMERA_TUNING_FILE), the auto-exposure
+# kept. None: the sensor's own profile, as before.
+CAMERA_SHUTTER_CAP_MS = 10.0
+CAMERA_TUNING_FILE = "imx519.json"
 # No frame at all for this long: close and reopen the camera, which a stuck stream
 # sometimes needs (2026-10-09: the capture froze and never recovered by itself). Each
 # further reopen waits twice as long, up to CAMERA_STALL_REOPEN_MAX_S.

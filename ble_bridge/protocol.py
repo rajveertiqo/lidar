@@ -395,7 +395,7 @@ def unpack_alert_text(payload: bytes) -> Dict[str, Any]:
     try:
         text = payload[ALERT_TEXT_PREFIX.size :].decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise ProtocolError("BAD_FRAME", f"ALERT_TEXT not UTF-8: {exc}")
+        raise ProtocolError("BAD_FRAME", f"ALERT_TEXT not UTF-8: {exc}") from exc
     return {"epoch": epoch, "cue_seq": cue, "text": text}
 
 
@@ -414,7 +414,7 @@ def parse_json(payload: bytes) -> Dict[str, Any]:
     try:
         obj = json.loads(payload.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ProtocolError("BAD_JSON", str(exc))
+        raise ProtocolError("BAD_JSON", str(exc)) from exc
     if not isinstance(obj, dict):
         raise ProtocolError("BAD_JSON", "a message must be a JSON object")
     return obj

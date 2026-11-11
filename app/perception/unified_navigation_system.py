@@ -67,7 +67,7 @@ def safe_json(obj):
         return [safe_json(x) for x in obj]
     try:
         return safe_json(float(obj))
-    except:
+    except (TypeError, ValueError, OverflowError):  # not a number: its text
         return str(obj)
 
 

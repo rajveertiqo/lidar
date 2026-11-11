@@ -47,6 +47,7 @@ FEATURES = {
     "route": "ROUTE_PLANNER_SPEAK",  # the route planner's turns and steers
     "tof-distance": "TOF_USE_DISTANCE",  # the ToF's distance for what the camera names
     "tof-wall": "TOF_WALL_SPEAK",  # an unnamed block a wall, by the ToF (2026-11-10)
+    "glass-closing": "GLASS_CLOSING_SPEAK",  # a pane by its radar echo closing (2026-11-11)
 }
 
 
@@ -76,6 +77,8 @@ def _source(sg, text, got):
         return "route"
     if text and raw.get("tof_wall_named"):
         return "tof-wall"
+    if text in sg.BLOCKED_GLASS_ANY + (sg.GLASS_AHEAD,) and raw.get("closing_echo_ft"):
+        return "glass-closing"
     return ""
 
 

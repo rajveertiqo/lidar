@@ -119,6 +119,7 @@ from app.config import (
     TOF_USE_DISTANCE,
     TOF_WALL_MATCH_FT,
     TOF_WALL_SPEAK,
+    GLASS_CLOSING_SPEAK,
 )
 
 from app.guidance.vocabulary import (
@@ -2350,6 +2351,29 @@ def decide(
         ground=ground_text,
         in_front=in_front,
     )
+    # A pane across a narrow passage by its echo closing as the wearer walks (walk_policy's
+    # closing_echo, GLASS_CLOSING_SPEAK False): what it would say, logged, not said.
+    closing = front.get("closing_echo") if isinstance(front, dict) else None
+    closing_would_say, closing_why = None, ""
+    if closing and not GLASS_CLOSING_SPEAK and not glass:
+        c_ft = float(closing["mm"]) / MM_PER_FT
+        closing_would_say = (
+            BLOCKED_GLASS
+            if c_ft < WALK_BLOCK_FT
+            else GLASS_AHEAD
+            if c_ft <= SIMPLE_WALL_APPROACH_FT
+            else None
+        )
+        closing_why = (
+            f"radar echo {c_ft:.1f} ft ahead closing at {closing['closing_mps']} m/s"
+            + (
+                f" (walking {closing['pace_mps']} m/s)"
+                if closing.get("pace_mps")
+                else " (pace not measured)"
+            )
+            + f", followed {closing['span_s']} s on both front boards: a pane across the"
+            " passage, past its walls' echoes"
+        )
     # What it would say with the ToF's wall named (TOF_WALL_SPEAK False): logged, not said.
     wall_would_say = None
     if wall_would:
@@ -2537,6 +2561,10 @@ def decide(
         "tof_wall_named": bool(wall_tof is not None and TOF_WALL_SPEAK and wall),
         "wall_would_say": wall_would_say,
         "wall_reason": f"wall — the ToF: {wall_tof_why}" if wall_tof is not None else "",
+        "closing_would_say": closing_would_say,
+        "closing_reason": closing_why,
+        # walk_policy's pane by its closing echo, in feet, spoken (GLASS_CLOSING_SPEAK) or not
+        "closing_echo_ft": round(float(closing["mm"]) / MM_PER_FT, 2) if closing else None,
         # For the dashboard, in FEET like every figure a person reads there.
         "movers": [
             {
@@ -3097,6 +3125,7 @@ _route_shadow = (
 )  # the route planner's would-say (ROUTE_PLANNER_SPEAK False)
 _ground_shadow = _MoverShadow()  # the ToF's hazards' would-say (TOF_HAZARDS_SPEAK False)
 _wall_shadow = _MoverShadow()  # the ToF's wall named, would-say (TOF_WALL_SPEAK False)
+_closing_shadow = _MoverShadow()  # a pane by its closing echo (GLASS_CLOSING_SPEAK False)
 # The start-up hold as the wearer hears it: "Starting, please wait" when it begins, "Ready"
 # when guidance does (2026-10-21; until then the hold was silent, like a dead device).
 _startup = {"held": False, "starting_said": False, "ready_said": False}
@@ -3462,6 +3491,11 @@ def guidance(
             if not TOF_WALL_SPEAK and not hold
             else None
         )
+        closing_shadow = (
+            _closing_shadow.update(raw.get("closing_would_say"), now)
+            if not GLASS_CLOSING_SPEAK and not hold
+            else None
+        )
         # A whole tick after "Guidance stopped" (fault_notice): guidance is back, so what
         # stands now is said again rather than taken as already said, and the next fault
         # is told at once. Here, not at the top: a tick that raises must not get this far.
@@ -3554,6 +3588,8 @@ def guidance(
                 "tof_wall",
                 "tof_wall_named",
                 "wall_would_say",
+                "closing_would_say",
+                "closing_echo_ft",
             )
         },
         "speak": speak,
@@ -3572,6 +3608,9 @@ def guidance(
         # The ToF's wall, named on this poll, not spoken (TOF_WALL_SPEAK).
         "wall_shadow": wall_shadow,
         "wall_shadow_reason": raw.get("wall_reason", "") if wall_shadow else "",
+        # A pane by its radar echo closing at walking pace, not spoken (GLASS_CLOSING_SPEAK).
+        "closing_shadow": closing_shadow,
+        "closing_shadow_reason": raw.get("closing_reason", "") if closing_shadow else "",
     }
 
 
@@ -3672,6 +3711,7 @@ def reset() -> None:
         _route_shadow.reset()
         _ground_shadow.reset()
         _wall_shadow.reset()
+        _closing_shadow.reset()
         _startup.update(held=False, starting_said=False, ready_said=False)
         _fault["said_at"] = None
     try:

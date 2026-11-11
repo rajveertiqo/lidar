@@ -181,6 +181,26 @@ GLASS_TOF_SAME_MM = 150.0
 GLASS_NEAR_STEADY_FT = 2.0
 GLASS_NEAR_STEADY_S = 1.5
 GLASS_NEAR_STEADY_FRAC = 0.6
+# A pane across a narrow passage, by its echo closing as the wearer walks (2026-11-11; radar
+# target tracking, as cars do). Farther ahead than the passage's walls are to the side, a wall
+# can echo from the pane's range too (GLASS_SIDE_WALL_NEAREST_TOL_MM can't tell them apart),
+# but not in the same way over time: walking toward it, a pane straight ahead closes at the
+# full walking pace, while a side wall's echoes come from points that move along with the
+# wearer and stay put. An echo BOTH front boards hear alike (GLASS_CLOSING_PAIR_MM) is
+# followed back through the last GLASS_CLOSING_S of radar frames; closing at
+# GLASS_CLOSING_FRAC of the measured pace (GLASS_CLOSING_MIN_MPS at least, and the only test
+# when the pace is not measured), with the laser on the walking line looking past it and
+# nothing but the side walls at its range, it is a pane. A wall feature (a door frame) closes
+# at pace x cos(its bearing) and is heard by one board, mostly. Shown and logged as "would
+# say" until a walk has checked it (GLASS_CLOSING_SPEAK).
+GLASS_CLOSING_SPEAK = False
+GLASS_CLOSING_S = 1.5
+GLASS_CLOSING_MIN_SPAN_S = 0.6  # followed at least this long
+GLASS_CLOSING_MIN_FRAMES = 5
+GLASS_CLOSING_PAIR_MM = 100.0
+GLASS_CLOSING_FRAC = 0.8
+GLASS_CLOSING_MIN_MPS = 0.5
+GLASS_CLOSING_FIT_MM = 60.0  # RMS off the straight line it closes along: one echo, not two
 
 LIDAR_MAX_BACKLOG_S = 0.25
 LIDAR_KEEP_BACKLOG_S = 0.1

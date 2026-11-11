@@ -37,6 +37,16 @@ from app.config import (
     GLASS_NEAR_STEADY_FT,
     GLASS_NEAR_STEADY_S,
     GLASS_NEAR_STEADY_FRAC,
+    GLASS_CLOSING_SPEAK,
+    GLASS_CLOSING_S,
+    GLASS_CLOSING_MIN_SPAN_S,
+    GLASS_CLOSING_MIN_FRAMES,
+    GLASS_CLOSING_PAIR_MM,
+    GLASS_CLOSING_FRAC,
+    GLASS_CLOSING_MIN_MPS,
+    GLASS_CLOSING_FIT_MM,
+    HEADING_NOMINAL_SPEED_MPS,
+    HEADING_STATE_STALE_S,
     WALK_GLASS_GAP_FT,
     WALK_MIN_TURN_FT,
     WALK_TURN_MARGIN_FT,
@@ -273,6 +283,10 @@ def _laser_points(lidar_state: Dict[str, Any]) -> Tuple[List[float], List[float]
 
 _near_frames: "collections.deque[Tuple[float, Tuple[float, ...]]]" = collections.deque(maxlen=96)
 _near_lock = threading.Lock()
+# Each front board's echoes in those frames, by stamp (_closing_echo follows a pane on each
+# board apart: pooled, one wall's echo crossing the other's read as one echo closing). A stamp
+# no longer in _near_frames is gone (clearing _near_frames clears these).
+_board_peaks: Dict[float, Dict[float, Tuple[float, ...]]] = {}
 
 
 def _near_echo_steady(radar_state: Dict[str, Any], echo_ft: Optional[float] = None) -> bool:
@@ -286,12 +300,21 @@ def _near_echo_steady(radar_state: Dict[str, Any], echo_ft: Optional[float] = No
     if not isinstance(stamp, (int, float)):
         return True
     peaks = tuple(float(e) for e in (sec.get("peaks_mm") or []) if isinstance(e, (int, float)))
+    by_board: Dict[float, List[float]] = {}
+    for b, e in _board_echoes(radar_state, "front", all_peaks=True):
+        by_board.setdefault(b, []).append(e)
     with _near_lock:
         if not _near_frames or stamp > _near_frames[-1][0]:
             _near_frames.append((float(stamp), peaks))
+            _board_peaks[float(stamp)] = {b: tuple(sorted(es)) for b, es in by_board.items()}
+            oldest = _near_frames[0][0]
+            for t in [t for t in _board_peaks if t < oldest]:
+                del _board_peaks[t]
         elif stamp < _near_frames[-1][0] - 5.0:  # a clock step back: start again
             _near_frames.clear()
+            _board_peaks.clear()
             _near_frames.append((float(stamp), peaks))
+            _board_peaks[float(stamp)] = {b: tuple(sorted(es)) for b, es in by_board.items()}
         recent = [(stamp - t, p) for t, p in _near_frames if stamp - t <= GLASS_NEAR_STEADY_S]
     if echo_ft is None or len(recent) < 4:
         return True  # no history to judge by (start-up, a desk scene): as before
@@ -309,6 +332,145 @@ def _near_echo_steady(radar_state: Dict[str, Any], echo_ft: Optional[float] = No
 
 
 _WALK_MM_S = 1500.0  # a brisk walking pace: how far a pane's echo can move per second
+
+
+def _walking_pace() -> Optional[float]:
+    """The wearer's measured walking pace (m/s), or None when it is not measured: standing,
+    a stale heading state, or a pace that is a nominal guess (heading_tracker)."""
+    try:
+        from app.perception.heading_tracker import get_tracker
+
+        m = get_tracker().state() or {}
+    except Exception:
+        return None
+    mono = m.get("updated_mono")
+    if isinstance(mono, (int, float)) and time.monotonic() - float(mono) > HEADING_STATE_STALE_S:
+        return None
+    if not (m.get("moving_confirmed") or m.get("walking_confirmed")) or not m.get("speed_trusted"):
+        return None
+    v = m.get("speed_mps")
+    return float(v) if isinstance(v, (int, float)) and v > 0.0 else None
+
+
+def _echo_track(
+    e: float, frames: List[Tuple[float, Tuple[float, ...]]], closing_mm_s: float = 0.0
+) -> List[Tuple[float, float]]:
+    """(stamp, mm) of one echo followed back from `e` in the newest frame: in each older frame
+    the echo nearest where it would have been, closing at `closing_mm_s` (0: where it was),
+    within how far a walker or a pane could move in between (two frames missed at most)."""
+    if not frames:
+        return []
+    t_cur, cur = frames[-1][0], e
+    out, missed = [(t_cur, e)], 0
+    for t, peaks in reversed(frames[:-1]):
+        dt = max(0.0, t_cur - t)
+        want = cur + closing_mm_s * dt
+        gate = 150.0 + (_WALK_MM_S if closing_mm_s == 0.0 else 0.5 * closing_mm_s) * dt
+        near = min(peaks, key=lambda p: abs(p - want), default=None)
+        if near is not None and abs(near - want) <= gate:
+            out.append((t, near))
+            t_cur, cur, missed = t, near, 0
+        else:
+            missed += 1
+            if missed > 2:
+                break
+    return out
+
+
+def _closing_echo(
+    lidar_state: Dict[str, Any],
+    radar_state: Dict[str, Any],
+    lidar_ft: Optional[float],
+    lidar_measured: bool,
+    pace: Optional[float],
+) -> Optional[Dict[str, Any]]:
+    """A pane straight ahead by its echo closing at walking pace (GLASS_CLOSING_*), or None:
+    {"mm", "closing_mps", "pace_mps", "span_s", "frames"} for the nearest such echo."""
+    _near_echo_steady(radar_state, None)  # this frame is in the history
+    heard: Dict[float, List[float]] = {}
+    for b, e in _board_echoes(radar_state, "front", all_peaks=True):
+        heard.setdefault(b, []).append(e)
+    if len(heard) < 2:
+        return None
+    (b1, e1s), (b2, e2s) = sorted(heard.items())[:2]
+    pairs = sorted(
+        ((a + b) / 2.0, a, b) for a in e1s for b in e2s if abs(a - b) <= GLASS_CLOSING_PAIR_MM
+    )
+    if not pairs:
+        return None
+    with _near_lock:
+        newest = _near_frames[-1][0] if _near_frames else None
+        stamps = [t for t, _p in _near_frames if newest is not None and newest - t <= GLASS_CLOSING_S]
+        board_frames = {
+            b: [(t, (_board_peaks.get(t) or {}).get(b, ())) for t in stamps if t in _board_peaks]
+            for b in (b1, b2)
+        }
+    need = max(GLASS_CLOSING_MIN_MPS, GLASS_CLOSING_FRAC * pace) if pace else GLASS_CLOSING_MIN_MPS
+    angles, dists = _laser_points(lidar_state)
+    side_lat = _side_walls_mm(angles, dists, min_deg=15.0)
+    half = RADAR_BEAM_H_DEG / 2.0 + GLASS_BOARD_VIEW_MARGIN_DEG
+
+    def on_a_wall(a: float, d: float) -> bool:
+        """On a side wall, at any bearing: far down a passage its walls lie a few degrees off
+        ahead, where _on_side_wall (30 deg on) does not look."""
+        signed = (float(a) + 180.0) % 360.0 - 180.0
+        lat = side_lat.get(signed > 0)
+        return (
+            lat is not None
+            and abs(signed) >= 2.0
+            and abs(d * math.sin(math.radians(abs(signed))) - lat) <= _SIDE_WALL_TOL_MM
+        )
+
+    for e, at1, at2 in pairs:
+        e_ft = e / MM_PER_FT
+        if lidar_measured and lidar_ft is not None and lidar_ft - e_ft < WALK_GLASS_GAP_FT:
+            continue  # the laser stops there too: something solid
+        # Nothing but the side walls at that range, in either board's view: a person or a post
+        # there explains the echo (and the laser has it).
+        other = any(
+            e - RADAR_AGREE_MM <= d <= e + GLASS_LASER_BEYOND_MM
+            and any(abs((a - b + 180.0) % 360.0 - 180.0) <= half for b in (b1, b2))
+            and not on_a_wall(a, d)
+            and not _grazing(angles, dists, i)
+            for i, (a, d) in enumerate(zip(angles, dists))
+        )
+        if other:
+            continue
+        # On EACH board: a pane straight ahead closes on both, a wall feature on one side on
+        # one. Followed as it was, and as a closing echo would have moved: where a pane's echo
+        # crosses a wall's, the nearest echo back is the wall's. A wall's echo cannot fake the
+        # closing one: the echoes found must still lie on a straight closing line.
+        fits = []
+        for b, at in ((b1, at1), (b2, at2)):
+            best = None
+            for hyp in (0.0, 1000.0 * (pace or HEADING_NOMINAL_SPEED_MPS)):
+                fit = _closing_fit(_echo_track(at, board_frames[b], hyp))
+                if fit is not None and fit["closing_mps"] >= need:
+                    best = fit
+                    break
+            fits.append(best)
+        if all(fits):
+            slow = min(fits, key=lambda f: f["closing_mps"])
+            return {"mm": round(e, 1), "pace_mps": None if pace is None else round(pace, 2), **slow}
+    return None
+
+
+def _closing_fit(track: List[Tuple[float, float]]) -> Optional[Dict[str, Any]]:
+    """How fast an echo track closes (m/s), if it is long enough and one straight line."""
+    if len(track) < GLASS_CLOSING_MIN_FRAMES:
+        return None
+    ts = [t for t, _ in track]
+    span = max(ts) - min(ts)
+    if span < GLASS_CLOSING_MIN_SPAN_S:
+        return None
+    tm = sum(ts) / len(ts)
+    rm = sum(r for _, r in track) / len(track)
+    den = sum((t - tm) ** 2 for t in ts)
+    slope = sum((t - tm) * (r - rm) for t, r in track) / den  # mm/s, + = farther
+    rms = math.sqrt(sum((r - (rm + slope * (t - tm))) ** 2 for t, r in track) / len(track))
+    if rms > GLASS_CLOSING_FIT_MM:
+        return None
+    return {"closing_mps": round(-slope / 1000.0, 2), "span_s": round(span, 2), "frames": len(track)}
 
 
 def _echo_on_line(
@@ -495,17 +657,24 @@ _SIDE_WALL_MIN_RETURNS = 6
 _SIDE_WALL_MIN_SPAN_MM = 400.0
 
 
-def _side_walls_mm(angles: List[float], dists: List[float]) -> Dict[bool, float]:
+def _side_walls_mm(
+    angles: List[float], dists: List[float], min_deg: float = 45.0
+) -> Dict[bool, float]:
     """The lateral offset (mm) of a wall running ALONG the walking line, each side (True:
-    right), from the laser: at least _SIDE_WALL_MIN_RETURNS returns 45-135 deg off ahead whose
-    lateral offsets line up within 2 x _SIDE_WALL_TOL_MM, spread _SIDE_WALL_MIN_SPAN_MM along
-    the path — the nearest such line. A corridor's own walls."""
+    right), from the laser: at least _SIDE_WALL_MIN_RETURNS returns `min_deg`-135 deg off ahead
+    whose lateral offsets line up within 2 x _SIDE_WALL_TOL_MM, spread _SIDE_WALL_MIN_SPAN_MM
+    along the path — the nearest such line. A corridor's own walls. A smaller `min_deg` finds
+    one half hidden by the LiDAR's blind arc (the left, from 70 deg) too."""
     out: Dict[bool, float] = {}
     for right in (False, True):
         pts = []
         for a, d in zip(angles, dists):
             signed = (float(a) + 180.0) % 360.0 - 180.0
-            if (signed > 0) != right or not 45.0 <= abs(signed) <= 135.0 or not 0.0 < d < 4000.0:
+            if (
+                (signed > 0) != right
+                or not min_deg <= abs(signed) <= 135.0
+                or not 0.0 < d < 4000.0
+            ):
                 continue
             r = math.radians(abs(signed))
             pts.append((d * math.sin(r), d * math.cos(r)))  # (lateral, forward)
@@ -808,6 +977,22 @@ def read_direction(
             if door is not None:
                 radar_ft, arc_corroborates = door, False
 
+    # A pane across a narrow passage, farther than its walls are to the side: the walls
+    # "explain" its echo, but it closes as the wearer walks, and theirs do not (2026-11-11,
+    # GLASS_CLOSING_*). Found and reported always; it changes the front only with
+    # GLASS_CLOSING_SPEAK, until a walk has checked it.
+    closing = None
+    if (
+        direction == "front"
+        and radar_measured
+        and arc_corroborates
+        and lidar_ft is not None
+        and not (board_glass or door_glass)
+    ):
+        closing = _closing_echo(lidar_state, radar_state, lidar_ft, lidar_measured, _walking_pace())
+        if closing is not None and GLASS_CLOSING_SPEAK:
+            radar_ft, arc_corroborates = round(closing["mm"] / MM_PER_FT, 2), False
+
     # The laser saw nothing ahead because something right at the LiDAR hid it (a hand, the
     # wearer's body, a person pressed close: lidar_utils._front_blocked): that is no
     # evidence of glass. The radar's echo still blocks, as an obstacle (2026-11-09).
@@ -1004,6 +1189,9 @@ def read_direction(
         "arc_corroborates": arc_corroborates,
         "radar_off_axis": radar_off_axis,
         "radar_board_glass": board_glass,
+        # A pane by its echo closing at walking pace (GLASS_CLOSING_*), {"mm", "closing_mps",
+        # ...}: the front's only with GLASS_CLOSING_SPEAK, else what it would be.
+        "closing_echo": closing,
         "radar_blind": radar_ft is None,
         "lidar_blind": lidar_blind(direction),
         "units": "ft",

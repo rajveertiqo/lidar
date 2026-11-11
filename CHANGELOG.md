@@ -7,6 +7,10 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
 ## [Unreleased]
 
 ### Added
+- **Radar tracking for glass across a narrow corridor** (silent, "would say", until a walk
+  checks it: `GLASS_CLOSING_SPEAK`). A pane's echo closes at walking pace on both front
+  boards while the walls' echoes stay put, so a pane past the walls' echoes is found. In the
+  simulator it blocks panes that today get no block at all.
 - **Stairs** and **Kerb / step** label buttons on the dashboard (keys `S`, `K`), so a walk can
   score the ToF's stair, kerb and drop warnings before they are spoken
   (`label_report.py --turn-on tof-hazards`). Walk recordings now keep what those warnings

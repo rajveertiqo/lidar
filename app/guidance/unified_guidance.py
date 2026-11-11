@@ -209,6 +209,7 @@ def _record(
                         "route_shadow",
                         "wall_shadow",
                         "ground_shadow",
+                        "closing_shadow",
                     )
                 },
             )
@@ -550,6 +551,27 @@ def get_unified_guidance() -> Dict[str, Any]:
                 simple["wall_shadow"],
                 simple.get("wall_shadow_reason", ""),
                 source="ToF wall",
+            )
+        except Exception:
+            pass
+
+    if simple.get("closing_shadow"):
+        # Not spoken (GLASS_CLOSING_SPEAK False): a pane by its radar echo closing at walking
+        # pace, logged so a test walk can judge it (2026-11-11).
+        try:
+            from app.guidance import speech_log, test_console
+
+            speech_log.say(
+                source="radar-closing",
+                text=f"would say: {simple['closing_shadow']}",
+                level="silent",
+                detail=simple.get("closing_shadow_reason", ""),
+                via="none",
+            )
+            test_console.would_say(
+                simple["closing_shadow"],
+                simple.get("closing_shadow_reason", ""),
+                source="radar tracking",
             )
         except Exception:
             pass

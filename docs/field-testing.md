@@ -73,6 +73,13 @@ clip starts mid-walk without the device's held state, so run it once on unchange
 first. `--export` writes one JSON line per label, with every tick's inputs from 2 s
 (`--seconds`) before the press: the rows a classifier is trained on.
 
+**Glass at the end of a narrow corridor** (added 2026-11-11). The radar tracking of a pane's
+echo (design note 18) is silent: the terminal shows it as `👁 would say: Glass ahead` (or
+"Blocked by glass") from `radar tracking`, with how fast the echo closed. Walk toward a glass
+door down a narrow corridor, and down corridors with NO glass (with doors along them too):
+press Glass or Nothing when it shows. Score it with
+`label_report.py ~/shappe-walks --turn-on glass-closing`.
+
 **Stairs and kerbs** (added 2026-11-10). The ToF's ground warnings ("Stairs down ahead",
 "Step up ahead", "Drop in front, stop") are not spoken yet (`TOF_HAZARDS_SPEAK`), so the
 device says nothing about them and these labels score as misses. Score what they would say:

@@ -175,6 +175,54 @@ def radar_state(echoes):
     return {"sectors": secs, "boards": [], "missing": [], "last_update": now}
 
 
+# ---------------------------------------------------------------- walking (radar tracking)
+
+
+def walk_toward(lat_l, lat_r, pane_mm=None, pace=1.2, hz=10.0, seconds=4.0, extra=None,
+                measured_pace=True, noise_mm=0.0, drop=0.0, seed=0):
+    """Walk down a passage (walls lat_l / lat_r mm to each side) at `pace` m/s, the radar at
+    `hz` frames a second: (seconds walked, pane distance mm or None, the front read) per frame.
+    `noise_mm`: range noise on every echo (1 sigma); `drop`: the chance a board hears nothing
+    in a frame.
+    Each front board hears its own wall at its beam's edge (where the nearest echo of a side
+    wall stays as you walk), and the pane straight ahead. `extra(s)`: more echoes per board,
+    {key: [mm]}, s metres walked. The laser looks through the pane."""
+    from unittest import mock
+
+    walk_policy._near_frames.clear()
+    walk_policy._remember_turn(None, 0.0)
+    rng = random.Random(seed)
+    out, t0 = [], 1000.0
+    for k in range(int(seconds * hz) + 1):
+        walked = pace * k / hz * 1000.0
+        pane = None if pane_mm is None else pane_mm - walked
+        if pane is not None and pane < 150.0:
+            break
+        segs = side_wall("left", lat_l) + side_wall("right", lat_r)
+        segs += wall_across(BACK_WALL_MM - walked, reach=8000.0)
+        echoes = {"deg330": [lat_l * BEAM_EDGE], "deg030": [lat_r * BEAM_EDGE]}
+        if pane is not None:
+            for key in echoes:
+                echoes[key].append(pane)
+        for key, more in ((extra or (lambda s: {}))(walked)).items():
+            echoes[key] = echoes.get(key, []) + list(more)
+        echoes = {
+            key: [] if rng.random() < drop else [e + rng.gauss(0.0, noise_mm) for e in es]
+            for key, es in echoes.items()
+        }
+        radar = radar_state(echoes)
+        stamp = t0 + k / hz
+        for row in radar["sectors"].values():
+            row["last_update"] = stamp
+        front = radar["sectors"]["front"]
+        front["peaks_mm"] = sorted(e for key in ("deg030", "deg330") for e in radar["sectors"][key]["peaks_mm"])
+        lidar = lidar_state(segs)
+        with mock.patch.object(walk_policy, "_walking_pace", lambda: pace if measured_pace else None):
+            read = walk_policy.read_direction(lidar, radar, "front")
+        out.append((walked / 1000.0, pane, read))
+    return out
+
+
 # ---------------------------------------------------------------- scenes
 
 

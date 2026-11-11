@@ -964,6 +964,70 @@ class PillarOutOfAWallTests(unittest.TestCase):
                 self.assertEqual(self._say({"right": lat, "posts": []}), sg.NEAR_RIGHT)
 
 
+class RadarClosingEchoTests(unittest.TestCase):
+    """2026-11-11 (radar target tracking, as cars do): a pane across a narrow passage, farther
+    than its walls are to the side, by its echo closing at walking pace on both front boards
+    while the walls' echoes stay put. Logged as "would say" (GLASS_CLOSING_SPEAK False)."""
+
+    FT = 304.8
+
+    def _found(self, frames):
+        return [(p, r["closing_echo"]) for _w, p, r in frames if r.get("closing_echo")]
+
+    def test_a_pane_across_a_narrow_passage_is_found_as_it_closes(self):
+        from tools.sim import glass_sim as gs
+
+        for walls in ((457, 457), (914, 914), (600, 366), (366, 600)):
+            with self.subTest(walls=walls):
+                found = self._found(gs.walk_toward(*walls, 10 * self.FT, seconds=8))
+                self.assertTrue(found)
+                pane, c = found[0]
+                self.assertAlmostEqual(c["closing_mps"], 1.2, delta=0.15)
+                self.assertAlmostEqual(c["mm"], pane, delta=150.0)
+
+    def test_spoken_it_is_glass_all_the_way_in(self):
+        from tools.sim import glass_sim as gs
+
+        for walls in ((457, 457), (914, 914), (600, 366)):
+            with self.subTest(walls=walls), unittest.mock.patch.object(walk_policy, "GLASS_CLOSING_SPEAK", True):
+                frames = gs.walk_toward(*walls, 10 * self.FT, seconds=8)
+                missed = [round(p / self.FT, 1) for _w, p, r in frames if p and p >= 0.5 * self.FT and not r["glass"]]
+                self.assertEqual(missed, [])
+        with unittest.mock.patch.object(walk_policy, "GLASS_CLOSING_SPEAK", False):  # the gap it fills
+            frames = gs.walk_toward(457, 457, 10 * self.FT, seconds=8)
+            self.assertTrue(any(p and p >= 0.5 * self.FT and not r["glass"] for _w, p, r in frames))
+
+    def test_walls_a_door_frame_and_standing_still_are_not(self):
+        import math
+        from tools.sim import glass_sim as gs
+
+        frame = lambda key: (lambda w: {key: [math.hypot(3000 - w, 457)]} if w < 3000 else {})  # noqa: E731
+        cases = {
+            "empty 0.9 m passage": gs.walk_toward(457, 457, None),
+            "empty 1.8 m passage": gs.walk_toward(914, 914, None),
+            "empty nook": gs.walk_toward(600, 366, None),
+            "a door frame on the right": gs.walk_toward(457, 457, None, extra=frame("deg030")),
+            "a door frame on the left": gs.walk_toward(457, 457, None, extra=frame("deg330")),
+            "standing before a pane": gs.walk_toward(457, 457, 6 * self.FT, pace=0.0),
+        }
+        for seed in range(5):  # and with range noise, a board missing one frame in ten
+            cases[f"noisy empty passage {seed}"] = gs.walk_toward(457, 457, None, noise_mm=20.0, drop=0.1, seed=seed)
+        for name, frames in cases.items():
+            with self.subTest(name):
+                self.assertEqual(self._found(frames), [])
+
+    def test_it_is_said_as_would_say(self):
+        from tools.sim import glass_sim as gs
+
+        frames = gs.walk_toward(457, 457, 10 * self.FT, seconds=8)
+        r = next(r for _w, _p, r in frames if r.get("closing_echo") and not r["glass"])
+        wd = {"directions": {"front": r}, "glass_ahead": False, "blocked": False, "action": "walk_straight"}
+        raw = sg.decide(wd, None, time.time(), radar_state=None, camera_state={})
+        self.assertEqual(raw["instruction"], sg.WALK_STRAIGHT)  # not said: not yet checked on a walk
+        self.assertEqual(raw["closing_would_say"], sg.GLASS_AHEAD)
+        self.assertIn("closing at", raw["closing_reason"])
+
+
 class StatusNoticeCutTests(unittest.TestCase):
     """2026-11-10: a block waited out a status notice's airtime ("Power low", "Glass sensor
     off": ~1.1 s, ~1.4 m at walking pace). Now a block cuts into it, as into any guidance

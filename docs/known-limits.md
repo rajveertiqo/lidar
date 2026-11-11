@@ -34,9 +34,10 @@
   radar's range alone cannot tell them apart; it says "Walk straight". A frame or a wall
   around a door the laser sees is found sooner (the door-in-a-wall rule). The left wall,
   half in the LiDAR's blind arc, is often not found as a side wall at all, so a pane is found
-  later in a passage whose nearer wall is on the left. Telling them apart further would take
-  the echo's motion: a pane's range closes at walking pace, a wall beside stays put
-  (`tools/sim/glass_sim.py`'s "limit" passage scenes).
+  later in a passage whose nearer wall is on the left. Tracking the echo as the wearer walks
+  tells them apart (a pane's range closes at walking pace, a wall beside stays put: design
+  note 18), but that is logged as "would say" until a walk has checked it
+  (`GLASS_CLOSING_SPEAK`); door frames on both walls at the same distance read as a pane to it.
 - **Close to a wall, the left is not offered.** Facing a flat wall nearer than ~1.7 ft with
   only the left open, it says "turn around": the left side radar hears the wall ahead at its
   beam's edge, and the LiDAR cannot see to the left (the wearer's body) to place that echo.

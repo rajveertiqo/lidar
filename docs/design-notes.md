@@ -398,3 +398,29 @@ Kept because each one explains why the code is the way it is.
     you is still "Near right wall, move left". The hunt: no block missed (was 1), false glass 5
     and the mirror check 6 unchanged. Not done: a flatness limit on those walls; in the 10:23
     nook clip 1 real wall fit in 10 is over 33 mm rms (clutter), and would have blocked.
+
+18. **Radar tracking: a pane by its echo closing (2026-11-11).** Note 14's limit: farther ahead
+    than a narrow passage's walls are to the side, a wall can echo from the pane's range, and
+    no single radar frame can tell them apart. Cars track radar targets over time; so does
+    this now (`walk_policy._closing_echo`). Walking toward it, a pane straight ahead closes at
+    the full pace; a side wall's echoes come from points that move with the wearer (its
+    nearest point, abeam or at the beam's edge) and stay put; a feature on one wall (a door
+    frame) closes at pace x cos(its bearing) and is heard by one board. So: an echo both front
+    boards hear alike is followed back on EACH board through the last 1.5 s of frames (as it
+    was, and as a closing echo would have moved, since where a pane's echo crosses a wall's the
+    nearest one back is the wall's), and must lie on a straight line closing at 0.8 of the
+    measured pace (0.5 m/s at least, the only test when the pace is not measured: in a bare
+    corridor the laser cannot measure it, and the gyro is off), with the laser on the walking
+    line looking past it and nothing but the side walls at its range. Pooling the boards, a
+    door frame on one wall crossing the other wall's echo read as a pane; per board it does
+    not.
+    In `glass_sim.walk_toward` (radar 10 frames a second, 20 mm noise, a board missing 1 frame
+    in 10), what is said walking toward a pane, today and with it spoken: a 0.9 m passage from
+    10 ft, "Glass ahead", then no block at all / "Blocked by glass" at 2.5 ft; a 0.9/2.0 ft
+    nook, the same; a 1.8 m passage, blocked at 1.3 ft / 2.5 ft; first heard 5 ft off in the
+    0.9 m passage, nothing at all / "Glass ahead" 2.2 ft, blocked 1.5 ft. Empty passages, a
+    door frame on either wall, and standing still: never, in 45 runs with noise. Door frames
+    on BOTH walls at the same distance do read as a pane: a range cannot tell them apart.
+    That, and a real radar's echoes, are why it is logged as "would say" until a walk has
+    checked it (`GLASS_CLOSING_SPEAK`). ~0.03 ms a frame. The scene hunt, glass, route,
+    movers, ToF and drift simulators: unchanged.

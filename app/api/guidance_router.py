@@ -357,7 +357,7 @@ def field_test_snapshot(limit: int = 12):
     lines = log.get("lines") or []
     now = _time.time()
     # Tester marks and the silent "would say" lines (movers, route planner, ToF) were not said.
-    unsaid = ("tester", "lidar-movers", "route-planner", "tof-hazards", "tof-wall")
+    unsaid = ("tester", "lidar-movers", "route-planner", "tof-hazards", "tof-wall", "radar-closing")
     spoken = [r for r in lines if r.get("source") not in unsaid]
     totals = log.get("totals") or {}
     marks = int(totals.get("tester", 0))

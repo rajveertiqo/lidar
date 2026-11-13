@@ -93,6 +93,73 @@ them on would cost, such as a wall taken for stairs or a false "Drop ahead" on a
 (press Nothing for those). Turn `TOF_HAZARDS_SPEAK` on only when both look right. A good walk
 for this: stairs up and down, kerbs both ways, and some flat floor and walls in between.
 
+## The battery walk: one walk decides the silent features (added 2026-11-13)
+
+Three features run on the device but stay silent until a walk shows they are right:
+
+| Feature | Setting | Labels it is judged on |
+| --- | --- | --- |
+| Stairs, kerb and drop warnings (ToF) | `TOF_HAZARDS_SPEAK` | Stairs, Kerb / step |
+| Glass across a narrow corridor (radar tracking) | `GLASS_CLOSING_SPEAK` | Glass |
+| People and vehicles coming at you (LiDAR) | `LIDAR_MOVERS_SPEAK` | Person |
+
+One walk with enough labels decides all three, and checks the heading, which has never been
+checked on a real walk.
+
+**Before you start**
+
+- Start with the walk recorded: `SHAPPE_RECORD_WALK=1 ./start_lidar.sh`. The labels save their
+  clips either way; the recording also lets `walk_replay.py` show the whole walk.
+- The earpiece connected, the dashboard open on the tester's phone, the wearer with a cane.
+- Two people, the wearer and the tester just behind with the phone; a third, the helper, for
+  the people part.
+
+**When to press.** Press what is really there about 1.5-2 m before it, **whether or not the
+device said anything**: the silent features speak only in the terminal, so do not wait for a
+sentence. On open floor with nothing ahead, press Nothing now and then.
+
+**The route** (about 45 minutes)
+
+| Part | Do | Press | Aim for |
+| --- | --- | --- | --- |
+| Stairs and kerbs | Walk up to a flight of stairs: going up 5 times, going down 5 times. Then kerbs or single steps: up 5, down 5 | Stairs, Kerb / step | 20 |
+| Glass | Down a narrow corridor (under about 2 m wide) toward a glass door, 10 times. Down corridors with no glass toward a wall or a wooden door, 5 times | Glass; Wall | 10 + 5 |
+| People | The helper walks at the wearer head-on 5 times, crosses in front 5 times, comes up from behind 3 times, and stands still in the path 3 times | Person | 16 |
+| Everything else | Walls, open floor, chairs, poles along the way | Wall, Nothing, Obstacle | 25 or more |
+
+Each feature needs at least 10 labels of its own and 20 others before it is judged
+(`DECIDE_MIN_TARGET`, `DECIDE_MIN_REST` in `tools/field/label_report.py`).
+
+**The heading check** (at the start and again at the end)
+
+1. Stand still facing a wall. Open `http://<pi-ip>:8000/guidance/heading` on the phone and note
+   `heading_deg`.
+2. Turn on the spot a quarter turn right and refresh: it should have changed by about 90.
+3. Turn back: within 10 of the first reading. A full turn: back within 15.
+4. Walk a straight corridor for 20 m, centred: it should not say "Drifting toward ... wall".
+
+Press Note (key 4) and type the readings, so they are in the speech log with the walk.
+
+**After the walk**
+
+```bash
+rsync -av shappe@<pi-address>:Documents/lidar/logs/walks/ ~/shappe-walks/
+./venv/bin/python tools/field/label_report.py ~/shappe-walks --decide
+```
+
+(Windows: copy with `scp` as above, then `python tools\field\label_report.py $HOME\shappe-walks --decide`.)
+
+It replays every label with each feature off, then on, and prints one verdict per feature:
+
+- **TURN ON**: turned on, it names at least 70% of its own labels, more than without it, and
+  makes at most 5% of the other right labels wrong. It names the setting to change in
+  `app/config.py`.
+- **KEEP OFF**: it misses too many, adds nothing, or costs too much; the labels it would get
+  wrong are listed (replay one with `walk_replay.py --turn-on <feature> <clip>`).
+- **MORE LABELS**: how many more of which labels the next walk needs.
+
+Then `label_report.py ~/shappe-walks` on its own gives the overall score.
+
 ## Walking the drift layer without leaving the desk
 
 ```bash

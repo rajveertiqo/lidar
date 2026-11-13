@@ -31,6 +31,11 @@ drop warnings are not spoken yet either (TOF_HAZARDS_SPEAK), so the stairs and k
 are scored with --turn-on tof-hazards; the other labels in that run show what turning them
 on would cost (a wall taken for stairs).
 
+--decide answers, for each feature that runs but is not spoken yet (DECIDE: the ToF's stairs
+and kerbs, the radar's glass tracking, the LiDAR's movers), TURN ON, KEEP OFF or MORE LABELS:
+every label replayed with the feature off and on, scored on the labels it is for and on what
+it costs the rest. The battery walk in docs/field-testing.md collects enough for all three.
+
 --export writes one JSON line per label: the label, what was said, and every tick's inputs
 from LABEL_EXPORT_S before the press (lidar, radar, camera, ToF ground, ...): the rows a
 classifier is trained on. --recorded skips the replay (what was said then only, fast).
@@ -55,6 +60,18 @@ sys.path.insert(0, str(ROOT))
 
 LABEL_SAID_WINDOW_S = 6.0  # a press is about what was said this long before it, at most
 LABEL_EXPORT_S = 2.0  # the ticks exported with each label: this long before the press
+
+# --decide: each feature that runs on the device but is not spoken yet (walk_replay.FEATURES),
+# and the labels it is for. It is judged on those, and on what turning it on costs the rest.
+DECIDE = {
+    "tof-hazards": ("stairs", "kerb"),  # TOF_HAZARDS_SPEAK
+    "glass-closing": ("glass",),  # GLASS_CLOSING_SPEAK
+    "movers": ("person",),  # LIDAR_MOVERS_SPEAK
+}
+DECIDE_MIN_TARGET = 10  # labels of what a feature is for, at least, before it is judged
+DECIDE_MIN_REST = 20  # and of everything else, to see what turning it on would cost
+DECIDE_MIN_RIGHT = 0.7  # turned on, it must name at least this share of what it is for
+DECIDE_MAX_COST = 0.05  # and make at most this share of the other right labels wrong
 
 # The ToF's ground warnings, as the label a tester presses for them: a single step and a
 # drop are both "kerb" (the tester cannot tell a drop's depth); a low obstacle or an
@@ -299,6 +316,108 @@ def report(rows, replay=True, turn_on=()):
     return len(broken)
 
 
+def _key(r):
+    return (r["file"], r["label"], r.get("t"))
+
+
+def judge(base, on, targets):
+    """Should a not-yet-spoken feature speak? `base` and `on`: the same labels replayed
+    without and with it (labels_in rows). Judged on the labels it is for (`targets`): turned
+    on it must name enough of them, and more than without it; and on the rest: it must not
+    make more than DECIDE_MAX_COST of the right ones wrong (a wall taken for stairs).
+
+    Returns {"verdict": "turn on" | "keep off" | "more labels", "why", "n_target",
+    "right_off", "right_on", "n_rest", "rest_right", "broken": rows made wrong}."""
+    on_by = {_key(r): r for r in on}
+    pairs = [(b, on_by[_key(b)]) for b in base if _key(b) in on_by]
+    tgt = [(b, o) for b, o in pairs if b["label"] in targets]
+    rest = [(b, o) for b, o in pairs if b["label"] not in targets]
+
+    def right(r):
+        return r["now"]["class"] == r["label"]
+
+    right_off = sum(right(b) for b, _ in tgt)
+    right_on = sum(right(o) for _, o in tgt)
+    rest_right = sum(right(b) for b, _ in rest)
+    broken = [o for b, o in rest if right(b) and not right(o)]
+    out = {
+        "n_target": len(tgt),
+        "right_off": right_off,
+        "right_on": right_on,
+        "n_rest": len(rest),
+        "rest_right": rest_right,
+        "broken": broken,
+    }
+    short = []
+    if len(tgt) < DECIDE_MIN_TARGET:
+        short.append(f"{DECIDE_MIN_TARGET - len(tgt)} more {' / '.join(targets)}")
+    if len(rest) < DECIDE_MIN_REST:
+        short.append(f"{DECIDE_MIN_REST - len(rest)} more of the other labels")
+    if short:
+        return {**out, "verdict": "more labels", "why": "needs " + " and ".join(short)}
+    if right_on < DECIDE_MIN_RIGHT * len(tgt):
+        why = f"names only {right_on} of {len(tgt)} {' / '.join(targets)} (needs {DECIDE_MIN_RIGHT:.0%})"
+        return {**out, "verdict": "keep off", "why": why}
+    if len(broken) > DECIDE_MAX_COST * max(rest_right, 1):
+        why = (
+            f"makes {len(broken)} of the {rest_right} other right labels wrong "
+            f"(allowed {DECIDE_MAX_COST:.0%})"
+        )
+        return {**out, "verdict": "keep off", "why": why}
+    if right_on <= right_off:
+        return {**out, "verdict": "keep off", "why": "names nothing more than without it"}
+    why = f"names {right_on - right_off} more, costs {len(broken)}"
+    return {**out, "verdict": "turn on", "why": why}
+
+
+def decide(files, seconds=LABEL_EXPORT_S):
+    """Print TURN ON / KEEP OFF / MORE LABELS for each DECIDE feature; returns the verdicts."""
+    from tools.field.walk_replay import FEATURES
+
+    base = _collect(files, seconds=seconds)
+    print(f"{len(files)} files read, {len(base)} labels")
+    if not base:
+        print("No labels yet: press What was really there? on the dashboard while walking.")
+        return {}
+    counts = collections.Counter(r["label"] for r in base)
+    print("  " + " · ".join(f"{k} {counts.get(k, 0)}" for k in sorted(counts)))
+    print("\nShould each silent feature speak? (every label replayed with it off, then on)")
+    verdicts = {}
+    for feature, targets in DECIDE.items():
+        res = judge(base, _collect(files, seconds=seconds, turn_on=[feature]), targets)
+        verdicts[feature] = res
+        print(f"\n  {feature:<14} {res['verdict'].upper()}: {res['why']}")
+        if res["n_target"]:
+            print(
+                f"      {' / '.join(targets)}: right {res['right_off']}/{res['n_target']} off"
+                f" -> {res['right_on']}/{res['n_target']} on"
+            )
+        if res["n_rest"]:
+            print(
+                f"      the rest: {len(res['broken'])} of {res['rest_right']} right labels"
+                " made wrong"
+            )
+        for r in res["broken"][:5]:
+            print(
+                f"        {r['file']}  really {r['label']}, would say"
+                f" “{r['now']['instruction'] or '—'}”"
+            )
+        if res["verdict"] == "turn on":
+            print(f"      -> set {FEATURES[feature]} = True in app/config.py")
+    return verdicts
+
+
+def _collect(files, replay=True, seconds=LABEL_EXPORT_S, turn_on=()):
+    """Every label in `files`, one row each (labels_in), a bad file reported and skipped."""
+    rows = []
+    for path in files:
+        try:
+            rows += labels_in(path, replay=replay, export_s=seconds, turn_on=turn_on)
+        except Exception as e:  # one bad file must not hide the rest
+            print(f"  {path}: could not read — {type(e).__name__}: {e}")
+    return _dedupe(rows)
+
+
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -326,7 +445,15 @@ def main():
         default=LABEL_EXPORT_S,
         help=f"ticks exported before each press (default {LABEL_EXPORT_S})",
     )
+    ap.add_argument(
+        "--decide",
+        action="store_true",
+        help="for each feature not spoken yet (" + ", ".join(DECIDE) + "): TURN ON, KEEP OFF "
+        "or MORE LABELS, from every label replayed with it off and on",
+    )
     args = ap.parse_args()
+    if args.decide and (args.turn_on or args.recorded or args.export):
+        ap.error("--decide replays each feature on and off itself: no --turn-on, --recorded or --export")
     try:  # without it the replay quietly falls back, and scores labels wrong
         import numpy  # noqa: F401
     except ImportError:
@@ -339,15 +466,10 @@ def main():
     if unknown:
         ap.error(f"unknown feature(s) {', '.join(unknown)}: use {', '.join(FEATURES)}")
     files = _files(args.paths)
-    rows = []
-    for path in files:
-        try:
-            rows += labels_in(
-                path, replay=not args.recorded, export_s=args.seconds, turn_on=turn_on
-            )
-        except Exception as e:  # one bad file must not hide the rest
-            print(f"  {path}: could not read — {type(e).__name__}: {e}")
-    rows = _dedupe(rows)
+    if args.decide:
+        decide(files, seconds=args.seconds)
+        return 0
+    rows = _collect(files, replay=not args.recorded, seconds=args.seconds, turn_on=turn_on)
     print(f"{len(files)} files read")
     broken = report(rows, replay=not args.recorded, turn_on=turn_on)
     if args.export:

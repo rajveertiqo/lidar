@@ -439,6 +439,49 @@ def _innermost_on_a_wall_alongside(
     )
 
 
+_ELSE_MIN_RETURNS = 2  # this many returns off the wall, on the path: something else is there
+
+
+def _else_on_the_path(
+    lidar_state: Optional[Dict[str, Any]], side: str, radius_ft: float
+) -> bool:
+    """Is anything on the walking path within `radius_ft` that is not the wall running along
+    `side`? Only a block nothing else is part of is "the wall beside you".
+
+    The wall's line is the laser's own returns lined up along the path (walk_policy.
+    _side_walls_mm), not the drift layer's fitted surface: a pillar standing out of a wall is
+    fitted into one slightly tilted "wall" with it, and its tolerance, 3 x a fit as poor as
+    50 mm, took the pillar's tip for the wall (scene hunt, 2026-11-13: "Near right wall, move
+    left" with a pillar 2.5-2.9 ft ahead on the path; and with a post on the path's LEFT half
+    at 2.4 ft, beside a wall inside the path on the right — moved left into it). No wall found
+    along that side: nothing says the block is only the wall, so it is something else."""
+    try:
+        from app.perception.walk_policy import _laser_points, _side_walls_mm
+
+        angles, dists = _laser_points(lidar_state or {})
+        lateral = _side_walls_mm(angles, dists, min_deg=15.0).get(side == "right")
+    except Exception:
+        return True
+    if lateral is None:
+        return True
+    sign = 1.0 if side == "right" else -1.0
+    reach = radius_ft * MM_PER_FT
+    others = 0
+    for a, d in zip(angles, dists):
+        s = (a + 180.0) % 360.0 - 180.0
+        if d <= 0 or abs(s) >= 90.0:
+            continue
+        x, y = d * math.cos(math.radians(s)), d * math.sin(math.radians(s))
+        if x > reach or abs(y) > GUIDANCE_CORRIDOR_HALF_WIDTH_MM:
+            continue
+        if abs(y * sign - lateral) <= SIMPLE_ON_WALL_MM:
+            continue  # on the wall
+        others += 1
+        if others >= _ELSE_MIN_RETURNS:
+            return True
+    return False
+
+
 def _front_wall(
     walk_decision: Dict[str, Any],
     lidar_state: Optional[Dict[str, Any]],
@@ -478,11 +521,13 @@ def _front_wall(
     ) / len(cluster)
     ft = nearest_mm / MM_PER_FT
     clear_to = max(radius_ft, ft + SIMPLE_WALL_MATCH_FT)
+    side = "right" if lateral >= 0 else "left"
     return {
         "ft": ft,
         "alongside": (on_line_mm is None or on_line_mm / MM_PER_FT > clear_to)
-        and _innermost_on_a_wall_alongside(cluster, walls),
-        "side": "right" if lateral >= 0 else "left",
+        and _innermost_on_a_wall_alongside(cluster, walls)
+        and not _else_on_the_path(lidar_state, side, radius_ft),
+        "side": side,
     }
 
 
@@ -511,8 +556,13 @@ def _brushing(
         x, y = d * math.cos(b), d * math.sin(b)
         on += abs((y - cy) * dx - (x - cx) * dy) <= tol
     # And what reaches furthest into the path must lie on it, a wall running along the path
-    # (2026-11-11: a pillar standing out of the wall, most of its returns near the wall line).
-    return on * 2 > len(cluster) and _innermost_on_a_wall_alongside(cluster, [surface])
+    # (2026-11-11: a pillar standing out of the wall, most of its returns near the wall line),
+    # and nothing else be on the path (2026-11-13).
+    return (
+        on * 2 > len(cluster)
+        and _innermost_on_a_wall_alongside(cluster, [surface])
+        and not _else_on_the_path(lidar_state, "right" if cy >= 0 else "left", radius_ft)
+    )
 
 
 def _surfaces(lidar_state: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:

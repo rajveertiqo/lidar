@@ -465,3 +465,22 @@ Kept because each one explains why the code is the way it is.
     every turn needs. What is left is the radar's 0.25 m minimum range (Known limits). The
     general scene hunt and the mirror check give the same results as before; with no camera
     nothing changes.
+
+22. **"Near wall" with something else on the path (2026-11-13).** The scene hunt's block rules
+    failed in 8 of 3,000 scenes. Four were its own measure: it took a post with only its edge
+    in the walking strip to be as near as its front on its own centre line (3.8 ft for a post
+    4.1-4.3 ft off in the strip); `truth` now takes the post's nearest point inside the strip.
+    The other four were real, all "Near right wall, move left" over a block walk_policy had
+    right. Two were a pillar standing out of the right wall: the drift layer fitted wall and
+    pillar into one "wall" tilted 11 deg with a 46-52 mm residual (clean walls in the same
+    scenes: 0.5-2.5 mm; the real LiDAR's walls, from the recorded clip: median 7 mm, 90% under
+    33 mm), and `_on_surface`'s tolerance, 3 x that residual, took the pillar's tip 65-102 mm
+    off the line for the wall, past note 17's fix. One was a post on the path's left half at
+    2.4 ft beside a wall inside the path on the right: the block was the wall, and "move left"
+    walked toward the post. Now a block is the wall beside you (`_front_wall`'s alongside,
+    `_brushing`) only when nothing else is on the path within the block radius
+    (`_else_on_the_path`): the wall's line taken from the laser's own returns lined up along
+    the path (`walk_policy._side_walls_mm`), not the fitted surface, and no wall found that way
+    meaning it is not only a wall. Across 3,000 hunt scenes 5 "Near ... wall" became blocks and
+    no other sentence changed; every block rule now holds, the recorded clip replays the same,
+    and the glass, route, drift, movers, ToF and ground simulators give the same results.

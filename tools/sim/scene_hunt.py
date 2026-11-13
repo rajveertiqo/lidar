@@ -150,9 +150,14 @@ def decide(scene, blind=True, ghosts=0.0, rnd=None, camera=None):
 def truth(scene):
     """(on-line distance of the nearest solid ahead, true side rooms), mm."""
     line = scene["ahead"] or 1e9
+    strip = c.GUIDANCE_CORRIDOR_HALF_WIDTH_MM - 50.0  # clearly on the walking line
     for px, py, r in scene["posts"]:
-        if px > 0 and abs(py) - r <= c.GUIDANCE_CORRIDOR_HALF_WIDTH_MM - 50.0:  # clearly on it
-            line = min(line, px - r)
+        if px > 0 and abs(py) - r <= strip:
+            # Its nearest point INSIDE the strip: a post with only its edge in it is that far,
+            # not as far as its front on its own centre line (2026-11-13: posts 4.1-4.3 ft off
+            # in the strip were scored as 3.8 ft, "no block warning").
+            dy = max(0.0, abs(py) - strip)
+            line = min(line, px - math.sqrt(max(0.0, r * r - dy * dy)))
     room = {s: min(laser_range(scene, b + o) for o in range(-5, 6))
             for s, b in (("right", 90.0), ("left", 270.0))}
     return line, room

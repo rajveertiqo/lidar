@@ -27,6 +27,12 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   Nothing said changes.
 
 ### Fixed
+- **A pillar or post on the path is no longer called "the wall beside you".** "Near right wall,
+  move left" was said with a pillar standing out of the wall 2.5-2.9 ft ahead on the path, and
+  once with a post on the path's left half at 2.4 ft, which "move left" walked toward. A block
+  is put down to the wall beside the wearer only when nothing else is on the path within 4 ft
+  (design note 22). The scene hunt's block rules now all hold; it measures a post with only
+  its edge in the walking strip at its nearest point there.
 - **Facing a close wall, an open left is offered** ("Blocked by wall, turn left"), where it said
   "turn around". The left is the LiDAR's blind side, so the left board's echo is taken for the
   wall ahead only when the laser sees that wall stretch out past it, the echo is at least 2 ft

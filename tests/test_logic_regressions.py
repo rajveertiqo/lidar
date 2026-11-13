@@ -915,6 +915,46 @@ class BlindSideCloseWallTests(unittest.TestCase):
         self.assertFalse(clear(self._cam(dets=[{"class_name": "dog"}]), "left", now))
 
 
+class WallBesideAndSomethingOnThePathTests(unittest.TestCase):
+    """2026-11-13, the scene hunt: a block put down to the wall beside the wearer ("Near right
+    wall, move left") with something else on the path within 4 ft. A pillar standing out of
+    the right wall, fitted into one tilted "wall" with it; and a post on the path's left half
+    beside a wall inside the path on the right, which "move left" steered into. A block is the
+    wall beside you only when nothing else is on the path (_else_on_the_path)."""
+
+    def _say(self, scene):
+        from tools.sim import scene_hunt as sh
+
+        sg.reset()
+        return sh.decide(scene)[1]["instruction"]
+
+    def _scene(self, left, right, posts, glass=None):
+        return {"left": left, "right": right, "ahead": None, "glass": glass, "posts": posts}
+
+    def test_a_pillar_out_of_the_wall_blocks(self):
+        for scene in (
+            self._scene(None, 454, [(3695, 1180, 199), (1559, 283, 239), (925, 402, 158)], 3446),
+            self._scene(1527, 453, [(900, 473, 259)], 2145),
+        ):
+            with self.subTest(scene=scene["posts"]):
+                said = self._say(scene)
+                self.assertGreaterEqual(sg._LEVEL.get(said, -1), sg._BLOCKED, said)
+                self.assertNotEqual(said, sg.NEAR_RIGHT)
+
+    def test_never_moved_toward_a_post_on_the_path(self):
+        said = self._say(self._scene(None, 230, [(908, -296, 188), (2763, -1404, 49)], 1315))
+        self.assertGreaterEqual(sg._LEVEL.get(said, -1), sg._BLOCKED, said)
+        # The post is ahead on the left half: never "move left" (walking on, toward it). A
+        # stop and a turn to face the open left takes it off the path, and is fine.
+        self.assertNotIn("move left", said)
+        self.assertNotEqual(said, sg.NEAR_RIGHT)
+
+    def test_a_wall_alone_is_still_the_wall_beside_you(self):
+        for right in (230, 280):  # inside the walking path, nothing else on it
+            with self.subTest(right=right):
+                self.assertEqual(self._say(self._scene(None, right, [])), sg.NEAR_RIGHT)
+
+
 class CameraExposureCapTests(unittest.TestCase):
     """2026-11-11: walking blurred the camera's 24-30 ms exposures; the cap keeps it at
     CAMERA_SHUTTER_CAP_MS while gain makes up the light, and the most light as before."""

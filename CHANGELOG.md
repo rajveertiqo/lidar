@@ -44,11 +44,20 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   (the LiDAR's blind side) is unchanged.
 
 ### Changed
+- **The dashboard redrawn** (`templates/dashboard.html`): a new look in dark and light, the
+  last sentence said as the headline, coloured by its rule. On a phone the Right / Wrong /
+  Missed / Note buttons are pinned to the bottom of the screen, and what a press saved shows
+  above them. The label buttons have their own card; the run counts head "Spoken this run";
+  the camera key folds away; the radar boards are in order of angle. The laser view has the
+  radar circle the live map had: each board's beam out to its nearest echo, and the radar's
+  reach (from `/radar/map`, as the radar scope). Same keys; the theme saved by the old page
+  carries over.
 - **The dashboard's big sentence is the last one SAID.** It showed the sentence the guide was
   still weighing, which flickers: the screen said "Blocked by wall, turn left" while the wearer
-  had heard "turn right". Its rule and reason are the spoken one's; "quiet — unconfirmed" is
-  gone (it is in the terminal). "Last said" could also show a stale sentence after the app
-  restarted; it now starts again with the app.
+  had heard "turn right". The card shows that sentence and nothing else: the reason line, the
+  live sensor chips ("wall ✗" under "Blocked by wall" read as a contradiction), "said 19 s
+  ago" and "quiet — unconfirmed" are gone (the terminal has them). "Last said" could also show
+  a stale sentence after the app restarted; it now starts again with the app.
 - **The dashboard's "Spoken this run" lists only what was said**, as the terminal's 🔊 lines:
   the reason, the LiDAR scan's age and which voice said it. The silent "would say" lines (route
   planner, ToF hazards, movers) and the tester's marks had been listed with them, and read as

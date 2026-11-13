@@ -6,62 +6,77 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
+    <meta name="color-scheme" content="dark light" />
     <title>Shappe Guide</title>
     <style>
-      /* ---------------------------------------------------------------- themes */
+      /* ================================================================ tokens */
+      /* Every colour the laser view draws with is read from here (css()) and gets a hex alpha
+         appended ("#22d3ee" + "1f"), so each stays a 6-digit hex. */
       :root,
-      [data-theme="midnight"] {
-        --bg: #0a0e17;
-        --bg2: #0f1522;
-        --card: #131a29;
-        --card2: #182135;
-        --fg: #e8edf6;
-        --muted: #8a96ad;
-        --line: #222c42;
-        --teal: #2dd4bf;
+      [data-theme="dark"] {
+        --bg: #0a0c10;
+        --bg-2: #0f1218;
+        --panel: #13161d;
+        --panel-2: #1a1e27;
+        --line: #242a35;
+        --line-2: #313847;
+        --fg: #e9ecf2;
+        --muted: #8d95a6;
+        --faint: #5d6576;
+        --accent: #7c9cff;
+        --cyan: #22d3ee;
+        --violet: #a78bfa;
+        --green: #34d399;
         --amber: #fbbf24;
-        --red: #fb7185;
-        --green: #4ade80;
-        --blue: #60a5fa;
-        --shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+        --red: #f87171;
+        --on-accent: #0a0c10;
+        --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
         color-scheme: dark;
       }
-      [data-theme="day"] {
-        --bg: #eef2f7;
-        --bg2: #e3e9f1;
-        --card: #ffffff;
-        --card2: #f6f8fb;
-        --fg: #0c1220;
-        --muted: #4f5b70;
-        --line: #d5dce7;
-        --teal: #0d9488;
+      [data-theme="light"] {
+        --bg: #f3f5f9;
+        --bg-2: #e9edf4;
+        --panel: #ffffff;
+        --panel-2: #f5f7fb;
+        --line: #e1e5ed;
+        --line-2: #cbd2de;
+        --fg: #0e1320;
+        --muted: #586175;
+        --faint: #8a92a3;
+        --accent: #3b5bdb;
+        --cyan: #0891b2;
+        --violet: #7c3aed;
+        --green: #059669;
         --amber: #b45309;
-        --red: #be123c;
-        --green: #15803d;
-        --blue: #1d4ed8;
-        --shadow: 0 6px 20px rgba(15, 23, 42, 0.08);
+        --red: #dc2626;
+        --on-accent: #ffffff;
+        --shadow: 0 6px 20px rgba(15, 23, 42, 0.07);
         color-scheme: light;
       }
       @media (prefers-color-scheme: light) {
         [data-theme="auto"] {
-          --bg: #eef2f7;
-          --bg2: #e3e9f1;
-          --card: #ffffff;
-          --card2: #f6f8fb;
-          --fg: #0c1220;
-          --muted: #4f5b70;
-          --line: #d5dce7;
-          --teal: #0d9488;
+          --bg: #f3f5f9;
+          --bg-2: #e9edf4;
+          --panel: #ffffff;
+          --panel-2: #f5f7fb;
+          --line: #e1e5ed;
+          --line-2: #cbd2de;
+          --fg: #0e1320;
+          --muted: #586175;
+          --faint: #8a92a3;
+          --accent: #3b5bdb;
+          --cyan: #0891b2;
+          --violet: #7c3aed;
+          --green: #059669;
           --amber: #b45309;
-          --red: #be123c;
-          --green: #15803d;
-          --blue: #1d4ed8;
-          --shadow: 0 6px 20px rgba(15, 23, 42, 0.08);
+          --red: #dc2626;
+          --on-accent: #ffffff;
+          --shadow: 0 6px 20px rgba(15, 23, 42, 0.07);
           color-scheme: light;
         }
       }
 
-      /* ---------------------------------------------------------------- base */
+      /* ================================================================ base */
       * {
         box-sizing: border-box;
       }
@@ -77,38 +92,49 @@
       }
       body {
         font:
-          15px/1.45 ui-sans-serif,
-          system-ui,
+          15px/1.5 system-ui,
           -apple-system,
           "Segoe UI",
           Roboto,
+          "Helvetica Neue",
+          Arial,
           sans-serif;
         min-height: 100vh;
         background:
           radial-gradient(
-            1200px 600px at 10% -10%,
-            var(--bg2),
-            transparent 60%
+            900px 520px at 12% -18%,
+            color-mix(in srgb, var(--accent) 11%, transparent),
+            transparent 62%
           ),
           var(--bg);
+        -webkit-font-smoothing: antialiased;
       }
       a {
-        color: var(--teal);
+        color: var(--accent);
         text-decoration: none;
       }
       a:hover {
         text-decoration: underline;
       }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
       .wrap {
         max-width: 1440px;
         margin: 0 auto;
-        padding: 0 max(14px, env(safe-area-inset-left)) 48px;
+        padding: 0 max(16px, env(safe-area-inset-left)) 40px;
       }
       .mono {
+        font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo,
+          Consolas, monospace;
         font-variant-numeric: tabular-nums;
       }
       .muted {
         color: var(--muted);
+      }
+      .spacer {
+        flex: 1;
       }
       .sr {
         position: absolute;
@@ -119,106 +145,162 @@
         white-space: nowrap;
         border: 0;
       }
+      kbd {
+        font: 600 11px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        padding: 3px 6px;
+        border-radius: 6px;
+        border: 1px solid var(--line-2);
+        border-bottom-width: 2px;
+        color: var(--muted);
+        background: var(--panel);
+      }
 
-      /* ---------------------------------------------------------------- header */
-      header {
+      /* ================================================================ header */
+      header.top {
         position: sticky;
         top: 0;
         z-index: 10;
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-        background: color-mix(in srgb, var(--bg) 82%, transparent);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        background: color-mix(in srgb, var(--bg) 80%, transparent);
         border-bottom: 1px solid var(--line);
       }
-      .head {
+      .top-in {
         display: flex;
         align-items: center;
         gap: 10px;
         flex-wrap: wrap;
-        padding: 10px 0;
+        padding-top: 10px;
+        padding-bottom: 10px;
       }
       .brand {
         display: flex;
         align-items: center;
         gap: 10px;
-        font-weight: 800;
-        font-size: 17px;
-        letter-spacing: 0.01em;
+        color: var(--fg);
+        margin-right: 6px;
+      }
+      .brand:hover {
+        text-decoration: none;
       }
       .logo {
-        width: 30px;
-        height: 30px;
-        border-radius: 9px;
-        display: grid;
-        place-items: center;
-        background: linear-gradient(135deg, var(--teal), var(--blue));
-        color: #06111a;
-        font-weight: 900;
+        width: 32px;
+        height: 32px;
+        flex: none;
       }
-      .spacer {
-        flex: 1;
+      .brand b {
+        display: block;
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        line-height: 1.1;
       }
-      .chip {
+      .brand small {
+        display: block;
+        font-size: 11px;
+        color: var(--muted);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .pills {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .pill {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
-        padding: 5px 11px;
+        gap: 7px;
+        height: 30px;
+        padding: 0 12px;
         border-radius: 999px;
         border: 1px solid var(--line);
-        background: var(--card);
+        background: var(--panel);
         font-size: 13px;
         white-space: nowrap;
       }
-      .chip b {
-        font-weight: 800;
+      .pill b {
+        font-weight: 700;
       }
-      .chip.ok {
-        border-color: color-mix(in srgb, var(--green) 55%, var(--line));
+      .pill.ok {
+        border-color: color-mix(in srgb, var(--green) 45%, var(--line));
         color: var(--green);
       }
-      .chip.warn {
-        border-color: color-mix(in srgb, var(--amber) 55%, var(--line));
+      .pill.warn {
+        border-color: color-mix(in srgb, var(--amber) 50%, var(--line));
         color: var(--amber);
       }
-      .chip.bad {
-        border-color: color-mix(in srgb, var(--red) 60%, var(--line));
+      .pill.bad {
+        border-color: color-mix(in srgb, var(--red) 55%, var(--line));
         color: var(--red);
+        background: color-mix(in srgb, var(--red) 8%, var(--panel));
       }
       .dot {
         width: 8px;
         height: 8px;
         border-radius: 50%;
         background: currentColor;
-        box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 25%, transparent);
+        flex: none;
       }
-      @media (max-width: 560px) {
-        #h-clock {
-          display: none;
+      .pill.ok .dot {
+        animation: live 2s ease-out infinite;
+      }
+      @keyframes live {
+        0% {
+          box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 55%, transparent);
         }
-        .brand {
-          font-size: 16px;
+        70%,
+        100% {
+          box-shadow: 0 0 0 7px transparent;
         }
       }
-      button.ghost {
+      .clock {
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .actions {
+        display: flex;
+        gap: 6px;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 32px;
+        padding: 0 11px;
+        border-radius: 9px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--fg);
         font: inherit;
         font-size: 13px;
-        padding: 5px 11px;
-        border-radius: 999px;
-        border: 1px solid var(--line);
-        background: var(--card);
-        color: var(--fg);
+        font-weight: 600;
         cursor: pointer;
+        text-transform: capitalize;
+      }
+      .btn:hover {
+        text-decoration: none;
+        border-color: var(--line-2);
+        background: var(--panel-2);
+      }
+      .btn svg {
+        width: 16px;
+        height: 16px;
+        flex: none;
       }
 
-      /* ---------------------------------------------------------------- grid */
+      /* ================================================================ grid + cards */
       .grid {
         display: grid;
-        gap: 14px;
-        margin-top: 14px;
-        grid-template-columns: repeat(12, 1fr);
+        gap: 16px;
+        margin-top: 18px;
+        grid-template-columns: repeat(12, minmax(0, 1fr));
       }
       .span-12 {
         grid-column: span 12;
+      }
+      .span-8 {
+        grid-column: span 8;
       }
       .span-7 {
         grid-column: span 7;
@@ -232,329 +314,431 @@
       .span-3 {
         grid-column: span 3;
       }
-      .span-8 {
-        grid-column: span 8;
-      }
-      @media (max-width: 1100px) {
-        .span-7,
-        .span-5,
-        .span-4,
-        .span-3,
-        .span-8 {
-          grid-column: span 12;
-        }
-        .md-6 {
-          grid-column: span 6 !important;
-        }
-      }
-      @media (max-width: 700px) {
-        .md-6 {
-          grid-column: span 12 !important;
-        }
-      }
       .card {
-        background: var(--card);
+        background: var(--panel);
         border: 1px solid var(--line);
-        border-radius: 18px;
-        padding: 16px;
+        border-radius: 16px;
+        padding: 18px;
         box-shadow: var(--shadow);
         min-width: 0;
       }
-      .card h2 {
-        margin: 0 0 12px;
-        font-size: 12px;
-        font-weight: 800;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-        color: var(--muted);
+      .card-head {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 14px;
+        min-height: 28px;
       }
-      .card h2 .right {
+      .card-head h2 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0.005em;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+      }
+      .card-head h2::before {
+        content: "";
+        width: 3px;
+        height: 14px;
+        border-radius: 2px;
+        background: var(--accent);
+      }
+      .aside {
         margin-left: auto;
-        text-transform: none;
-        letter-spacing: 0;
-        font-weight: 600;
+        font-size: 12px;
+        color: var(--faint);
+      }
+      .sub {
+        margin: -6px 0 14px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .empty {
+        color: var(--faint);
+        font-size: 14px;
+        padding: 6px 0;
       }
 
-      /* ---------------------------------------------------------------- NOW */
-      #now {
+      /* ================================================================ last said */
+      .now {
+        --tone: var(--faint);
         position: relative;
         overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        padding-left: 26px;
+        border-color: color-mix(in srgb, var(--tone) 35%, var(--line));
+        background:
+          radial-gradient(
+            120% 150% at 0% 0%,
+            color-mix(in srgb, var(--tone) 17%, transparent),
+            transparent 58%
+          ),
+          var(--panel);
+        transition:
+          border-color 0.25s,
+          background 0.25s;
       }
-      #now::before {
+      .now::before {
         content: "";
         position: absolute;
         inset: 0 auto 0 0;
-        width: 7px;
-        background: var(--line);
+        width: 6px;
+        background: var(--tone);
         transition: background 0.25s;
       }
-      #now[data-rule="blocked"]::before,
-      #now[data-rule="offline"]::before,
-      #now[data-rule="vehicle_approaching"]::before,
-      #now[data-rule="mover_approaching"]::before {
-        background: var(--red);
+      .now[data-tone="bad"] {
+        --tone: var(--red);
       }
-      #now[data-rule="approaching"]::before,
-      #now[data-rule="drifting"]::before,
-      #now[data-rule="near_wall"]::before,
-      #now[data-rule="vehicle_ahead"]::before,
-      #now[data-rule="steering"]::before {
-        background: var(--amber);
+      .now[data-tone="warn"] {
+        --tone: var(--amber);
       }
-      #now[data-rule="clear"]::before {
-        background: var(--green);
+      .now[data-tone="ok"] {
+        --tone: var(--green);
       }
-      #now.pulse {
+      .now.pulse {
         animation: pulse 0.9s ease-out;
       }
       @keyframes pulse {
         0% {
-          box-shadow: 0 0 0 0 color-mix(in srgb, var(--teal) 55%, transparent);
+          box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
         }
         100% {
-          box-shadow: 0 0 0 22px transparent;
+          box-shadow: 0 0 0 20px transparent;
         }
       }
-      .rule {
-        padding: 3px 10px;
-        border-radius: 999px;
-        border: 1px solid var(--line);
-        font-size: 11px;
-        letter-spacing: 0.08em;
-        color: var(--fg);
-      }
-      #now-text {
-        font-size: clamp(30px, 5.2vw, 56px);
-        font-weight: 900;
-        line-height: 1.06;
-        letter-spacing: -0.015em;
-        margin: 4px 0 8px;
-      }
-      #now-why {
-        color: var(--muted);
-        font-size: 16px;
-      }
-      .ev {
+      .now-top {
         display: flex;
+        align-items: center;
+        gap: 10px;
         flex-wrap: wrap;
-        gap: 8px;
-        margin-top: 14px;
       }
-      .ev span {
-        padding: 6px 11px;
-        border-radius: 10px;
-        border: 1px solid var(--line);
-        background: var(--card2);
+      .eyebrow {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 4px 11px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--tone);
+        background: color-mix(in srgb, var(--tone) 14%, transparent);
+        border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent);
+      }
+      .now-front {
         font-size: 13px;
         color: var(--muted);
       }
-      .ev span.on {
-        color: var(--fg);
-        border-color: var(--teal);
-      }
-      #now-voice {
-        margin-top: 14px;
-        font-size: 14px;
-        color: var(--muted);
-      }
-      #now-voice.said {
-        color: var(--teal);
-        font-weight: 800;
+      /* Centred in the card, with room above and below: pinned to the bottom it sat on the
+         card's edge with an empty band above it. */
+      #now-text {
+        margin: auto 0;
+        padding: 18px 0 8px;
+        font-size: clamp(26px, 3.2vw, 42px);
+        font-weight: 700;
+        line-height: 1.18;
+        letter-spacing: -0.01em;
+        text-wrap: balance;
+        overflow-wrap: anywhere;
       }
 
-      /* ---------------------------------------------------------------- verdict */
+      /* ================================================================ verdict */
       .marks {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: 1fr 1fr;
         gap: 10px;
       }
       .marks button {
-        font: inherit;
-        font-weight: 800;
-        font-size: 16px;
-        padding: 18px 6px;
-        border-radius: 14px;
-        cursor: pointer;
-        background: var(--card2);
-        color: var(--fg);
-        border: 2px solid var(--line);
-        display: grid;
-        gap: 4px;
-        place-items: center;
-      }
-      .marks button .k {
-        font-size: 11px;
-        color: var(--muted);
-        font-weight: 600;
-      }
-      .marks button:active {
-        transform: scale(0.97);
-      }
-      .marks [data-kind="right"] {
-        border-color: color-mix(in srgb, var(--green) 70%, var(--line));
-      }
-      .marks [data-kind="wrong"] {
-        border-color: color-mix(in srgb, var(--red) 70%, var(--line));
-      }
-      .marks [data-kind="missed"] {
-        border-color: color-mix(in srgb, var(--amber) 70%, var(--line));
-      }
-      .marks .big {
-        font-size: 22px;
-        line-height: 1;
-      }
-      /* What was really there: labels for learning from walks (2026-11-10). */
-      .labels-head {
-        margin-top: 14px;
-        font-weight: 800;
-        font-size: 14px;
-      }
-      .labels-head .muted {
-        display: block;
-        font-weight: 500;
-        font-size: 12px;
-        margin-top: 2px;
-      }
-      .labels {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
-        gap: 8px;
-        margin-top: 8px;
-      }
-      .labels button {
-        font: inherit;
-        font-weight: 800;
-        font-size: 14px;
-        padding: 12px 2px;
+        --c: var(--accent);
+        position: relative;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 10px;
+        min-height: 54px;
+        padding: 8px 10px;
         border-radius: 12px;
-        cursor: pointer;
-        background: var(--card2);
+        background: var(--panel-2);
+        border: 1px solid var(--line);
         color: var(--fg);
-        border: 2px solid color-mix(in srgb, var(--teal) 55%, var(--line));
-        display: grid;
-        gap: 3px;
-        place-items: center;
-        min-width: 0;
+        font: inherit;
+        font-size: 15px;
+        font-weight: 700;
+        cursor: pointer;
+        transition:
+          transform 0.08s,
+          border-color 0.15s,
+          background 0.15s;
       }
-      .labels button .k {
-        font-size: 11px;
-        color: var(--muted);
-        font-weight: 600;
+      .marks button:hover {
+        border-color: color-mix(in srgb, var(--c) 60%, var(--line));
+        background: color-mix(in srgb, var(--c) 7%, var(--panel-2));
       }
+      .marks button:active,
       .labels button:active {
         transform: scale(0.97);
       }
-      #label-counts {
-        margin-top: 6px;
-        font-size: 12px;
-        overflow-wrap: anywhere;
+      .marks [data-kind="right"] {
+        --c: var(--green);
       }
-      #mark-ack {
+      .marks [data-kind="wrong"] {
+        --c: var(--red);
+      }
+      .marks [data-kind="missed"] {
+        --c: var(--amber);
+      }
+      .marks .ico {
+        width: 30px;
+        height: 30px;
+        border-radius: 9px;
+        display: grid;
+        place-items: center;
+        font-size: 16px;
+        color: var(--c);
+        background: color-mix(in srgb, var(--c) 15%, transparent);
+      }
+      .marks kbd {
+        margin-left: auto;
+      }
+      .hit {
+        animation: hit 0.55s ease-out;
+      }
+      @keyframes hit {
+        0% {
+          box-shadow: 0 0 0 0 color-mix(in srgb, var(--c, var(--cyan)) 60%, transparent);
+        }
+        100% {
+          box-shadow: 0 0 0 14px transparent;
+        }
+      }
+      .ack {
         min-height: 1.4em;
         margin-top: 10px;
         font-size: 13px;
+        color: var(--muted);
+      }
+      .ack[data-state="ok"] {
+        color: var(--green);
+      }
+      .ack[data-state="bad"] {
+        color: var(--red);
+      }
+
+      /* ================================================================ labels + run */
+      .labels {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+        gap: 8px;
+      }
+      .labels button {
+        --c: var(--cyan);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 12px;
+        border-radius: 12px;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        color: var(--fg);
+        font: inherit;
+        font-size: 14px;
+        font-weight: 650;
+        white-space: nowrap;
+        cursor: pointer;
+        min-width: 0;
+        transition:
+          transform 0.08s,
+          border-color 0.15s;
+      }
+      .labels button:hover {
+        border-color: color-mix(in srgb, var(--cyan) 65%, var(--line));
+      }
+      .counts {
+        margin-top: 12px;
+        font-size: 12px;
+        color: var(--muted);
+        overflow-wrap: anywhere;
       }
       .stats {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 10px;
-        margin-top: 14px;
       }
       .stat {
-        background: var(--card2);
+        background: var(--panel-2);
         border: 1px solid var(--line);
         border-radius: 12px;
-        padding: 10px;
+        padding: 10px 12px;
+      }
+      .stats {
+        margin-bottom: 8px;
       }
       .stat b {
         display: block;
         font-size: 24px;
-        font-weight: 900;
+        font-weight: 700;
+        line-height: 1.1;
+        letter-spacing: -0.02em;
       }
       .stat span {
+        display: block;
+        margin-top: 4px;
         font-size: 12px;
         color: var(--muted);
+        line-height: 1.3;
       }
 
-      /* ---------------------------------------------------------------- laser */
+      /* ================================================================ laser */
       #scan {
         width: 100%;
         aspect-ratio: 1 / 1;
         display: block;
-        border-radius: 14px;
-        background: var(--bg2);
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background:
+          radial-gradient(
+            circle at 50% 64%,
+            color-mix(in srgb, var(--cyan) 7%, var(--panel-2)),
+            var(--panel-2) 72%
+          );
+      }
+      .mini {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .mini input {
+        margin: 0;
+        accent-color: var(--violet);
       }
       .legend {
         display: flex;
         flex-wrap: wrap;
-        gap: 14px;
-        margin-top: 10px;
+        gap: 6px 14px;
+        margin-top: 12px;
         font-size: 12px;
         color: var(--muted);
       }
       .legend i {
         display: inline-block;
-        width: 10px;
-        height: 10px;
+        width: 9px;
+        height: 9px;
         border-radius: 50%;
         margin-right: 6px;
         vertical-align: -1px;
       }
       .dirs {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 8px;
-        margin-top: 12px;
+        margin-top: 14px;
       }
       .dir {
         text-align: center;
         border: 1px solid var(--line);
-        background: var(--card2);
+        background: var(--panel-2);
         border-radius: 12px;
-        padding: 8px 2px;
+        padding: 9px 4px;
+        min-width: 0;
       }
-      .dir small {
+      .dir.front {
+        border-color: color-mix(in srgb, var(--cyan) 45%, var(--line));
+      }
+      .dir-k {
         display: block;
         font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
         color: var(--muted);
       }
       .dir b {
         display: block;
         font-size: 22px;
-        font-weight: 900;
+        font-weight: 700;
+        margin: 2px 0;
+      }
+      .dir b small {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+        margin-left: 2px;
+      }
+      .dir-sub {
+        display: block;
+        font-size: 11px;
+        color: var(--faint);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .dir-glass {
+        display: block;
+        margin-top: 2px;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--cyan);
       }
 
-      /* ---------------------------------------------------------------- camera */
-      .tabs {
-        display: flex;
-        gap: 6px;
+      /* ================================================================ cameras */
+      .seg {
+        margin-left: auto;
+        display: inline-flex;
         flex-wrap: wrap;
-      }
-      .tabs button {
-        font: inherit;
-        font-size: 13px;
-        padding: 5px 12px;
-        border-radius: 999px;
-        cursor: pointer;
+        padding: 3px;
+        gap: 2px;
+        background: var(--panel-2);
         border: 1px solid var(--line);
-        background: var(--card2);
+        border-radius: 10px;
+      }
+      .seg button {
+        font: inherit;
+        font-size: 12.5px;
+        font-weight: 600;
+        padding: 5px 11px;
+        border-radius: 7px;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .seg button:hover {
         color: var(--fg);
       }
-      .tabs button[aria-pressed="true"] {
-        background: var(--teal);
-        color: #04121a;
-        border-color: var(--teal);
-        font-weight: 800;
+      .seg button[aria-pressed="true"] {
+        background: var(--panel);
+        color: var(--fg);
+        box-shadow:
+          0 1px 2px rgba(0, 0, 0, 0.2),
+          0 0 0 1px var(--line-2);
       }
       .cam {
         position: relative;
-        border-radius: 14px;
+        border-radius: 12px;
         overflow: hidden;
         background: #000;
         aspect-ratio: 4 / 3;
+      }
+      .cam img:not([src]) {
+        visibility: hidden;
       }
       .cam img {
         width: 100%;
@@ -569,17 +753,24 @@
         height: 100%;
         pointer-events: none;
       }
-      .cam .fps {
+      .cam .fps,
+      .tile-tag {
         position: absolute;
-        right: 8px;
         top: 8px;
         z-index: 2;
         padding: 3px 9px;
         border-radius: 999px;
-        background: rgba(0, 0, 0, 0.6);
+        background: rgba(0, 0, 0, 0.62);
         color: #fff;
-        font: 600 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+        font: 600 12px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
         pointer-events: none;
+      }
+      .cam .fps {
+        right: 8px;
+      }
+      .tile-tag {
+        left: 8px;
+        text-transform: capitalize;
       }
       .cam .off {
         position: absolute;
@@ -598,58 +789,263 @@
         display: flex;
         flex-wrap: wrap;
         gap: 6px;
-        margin-top: 10px;
+        margin-top: 12px;
       }
       .dets span {
         font-size: 12px;
         padding: 4px 9px;
         border-radius: 8px;
-        background: var(--card2);
+        background: var(--panel-2);
         border: 1px solid var(--line);
       }
       .dets span.named {
-        border-color: var(--teal);
-        color: var(--teal);
-        font-weight: 800;
+        border-color: var(--cyan);
+        color: var(--cyan);
+        font-weight: 700;
       }
       .dets span.ignored {
         opacity: 0.5;
         text-decoration: line-through;
       }
+      details.note {
+        margin-top: 12px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel-2);
+      }
+      details.note summary {
+        cursor: pointer;
+        list-style: none;
+        padding: 10px 14px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--muted);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      details.note summary::-webkit-details-marker {
+        display: none;
+      }
+      details.note summary::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-right: 2px solid currentColor;
+        border-bottom: 2px solid currentColor;
+        transform: rotate(-45deg);
+        transition: transform 0.15s;
+      }
+      details.note[open] summary::before {
+        transform: rotate(45deg);
+      }
+      details.note p {
+        margin: 0;
+        padding: 0 14px 14px;
+        font-size: 13px;
+        line-height: 1.6;
+        color: var(--muted);
+      }
+      details.note b {
+        color: var(--fg);
+      }
 
-      /* ---------------------------------------------------------------- log */
-      #log {
-        max-height: 480px;
+      /* ================================================================ spoken log */
+      .log {
+        max-height: 540px;
         overflow-y: auto;
+        margin-right: -8px;
+        padding-right: 8px;
       }
       .row {
         display: grid;
-        grid-template-columns: 5.4em 1fr;
-        gap: 10px;
-        padding: 8px 0;
+        grid-template-columns: 4.6em 1fr;
+        gap: 12px;
+        padding: 10px 0;
         border-bottom: 1px solid var(--line);
       }
+      .row:last-child {
+        border-bottom: 0;
+      }
       .row .t {
-        color: var(--muted);
-        font-size: 13px;
+        font-size: 12px;
+        color: var(--faint);
+        padding-top: 2px;
       }
       .row b {
-        font-weight: 800;
-      }
-      .row .why {
-        display: block;
-        font-size: 12px;
-        color: var(--muted);
+        font-weight: 650;
       }
       .row.urgent b {
         color: var(--red);
       }
+      .why {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 8px;
+        align-items: center;
+        margin-top: 3px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .tag {
+        padding: 1px 7px;
+        border-radius: 6px;
+        border: 1px solid var(--line);
+        background: var(--panel-2);
+        font-size: 11px;
+        color: var(--muted);
+      }
 
-      /* ---------------------------------------------------------------- sensors / around */
+      /* ================================================================ device */
+      .srow {
+        display: grid;
+        grid-template-columns: 8px 70px minmax(0, 1fr);
+        gap: 12px;
+        align-items: baseline;
+        padding: 9px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .sdot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--faint);
+        align-self: center;
+      }
+      .srow[data-state="ok"] .sdot {
+        background: var(--green);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent);
+      }
+      .srow[data-state="warn"] .sdot {
+        background: var(--amber);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--amber) 22%, transparent);
+      }
+      .srow[data-state="bad"] .sdot {
+        background: var(--red);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 22%, transparent);
+      }
+      .sname {
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .sval {
+        font-size: 14px;
+        overflow-wrap: anywhere;
+      }
+      .srow[data-state="warn"] .sval {
+        color: var(--amber);
+      }
+      .srow[data-state="bad"] .sval {
+        color: var(--red);
+      }
+      .boards {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 14px;
+      }
+      .board {
+        border: 1px solid var(--line);
+        background: var(--panel-2);
+        border-radius: 10px;
+        padding: 7px 10px;
+        font-size: 13px;
+      }
+      .board b {
+        display: block;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      .board.off {
+        border-color: color-mix(in srgb, var(--red) 70%, var(--line));
+        color: var(--red);
+      }
+      .board.lag {
+        border-color: color-mix(in srgb, var(--amber) 70%, var(--line));
+      }
+      .warns {
+        margin-top: 12px;
+        padding: 9px 12px;
+        border-radius: 10px;
+        font-size: 13px;
+        color: var(--amber);
+        background: color-mix(in srgb, var(--amber) 10%, transparent);
+        border: 1px solid color-mix(in srgb, var(--amber) 35%, transparent);
+      }
+      .warns:empty {
+        display: none;
+      }
+      .switch {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-top: 14px;
+        font-size: 13px;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .switch input {
+        appearance: none;
+        -webkit-appearance: none;
+        flex: none;
+        margin: 0;
+        width: 36px;
+        height: 20px;
+        border-radius: 999px;
+        background: var(--line-2);
+        position: relative;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .switch input::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #fff;
+        transition: transform 0.15s;
+      }
+      .switch input:checked {
+        background: var(--accent);
+      }
+      .switch input:checked::after {
+        transform: translateX(16px);
+      }
+
+      /* ================================================================ around */
+      .items {
+        display: grid;
+        gap: 6px;
+      }
+      .item {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        padding: 8px 11px;
+        border-radius: 10px;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        font-size: 14px;
+      }
+      .item-name {
+        font-weight: 650;
+        text-transform: capitalize;
+      }
+      .item-where {
+        flex: 1;
+        font-size: 12px;
+        color: var(--muted);
+      }
       .kv {
         display: grid;
-        grid-template-columns: auto 1fr;
-        gap: 6px 14px;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 8px 14px;
+        margin: 0;
         font-size: 14px;
       }
       .kv dt {
@@ -658,100 +1054,226 @@
       .kv dd {
         margin: 0;
       }
-      .ok-t {
-        color: var(--green);
-      }
-      .bad-t {
-        color: var(--red);
-      }
       .warn-t {
         color: var(--amber);
       }
-      .boards {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 8px;
-        margin-top: 12px;
+      .divider {
+        height: 1px;
+        background: var(--line);
+        margin: 18px 0 16px;
       }
-      .board {
-        border: 1px solid var(--line);
-        background: var(--card2);
-        border-radius: 10px;
-        padding: 7px 9px;
-        font-size: 13px;
-      }
-      .board b {
-        display: block;
-        font-size: 12px;
-        color: var(--muted);
-      }
-      .board.off {
-        border-color: var(--red);
-        color: var(--red);
-      }
-      .board.lag {
-        border-color: var(--amber);
-      }
-      .list {
-        display: grid;
-        gap: 6px;
-      }
-      .item {
-        display: flex;
-        justify-content: space-between;
-        gap: 10px;
-        padding: 7px 10px;
-        border-radius: 10px;
-        background: var(--card2);
-        border: 1px solid var(--line);
-        font-size: 14px;
-      }
-      .toggle {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        margin-top: 12px;
-        font-size: 13px;
-        color: var(--muted);
-      }
+
+      /* ================================================================ footer + toast */
       footer {
-        margin-top: 18px;
+        margin-top: 22px;
         font-size: 12px;
-        color: var(--muted);
+        color: var(--faint);
         display: flex;
-        gap: 14px;
+        gap: 16px;
         flex-wrap: wrap;
+      }
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 24px;
+        z-index: 30;
+        max-width: min(560px, calc(100vw - 32px));
+        padding: 10px 16px;
+        border-radius: 12px;
+        background: var(--fg);
+        color: var(--bg);
+        font-size: 14px;
+        font-weight: 600;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+        opacity: 0;
+        transform: translate(-50%, 12px);
+        pointer-events: none;
+        transition:
+          opacity 0.2s,
+          transform 0.2s;
+      }
+      .toast.show {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+      .toast[data-state="bad"] {
+        background: var(--red);
+        color: #fff;
+      }
+
+      /* ================================================================ narrow screens */
+      @media (max-width: 1100px) {
+        .span-8,
+        .span-7,
+        .span-5,
+        .span-4,
+        .span-3 {
+          grid-column: span 12;
+        }
+        .md-6 {
+          grid-column: span 6 !important;
+        }
+      }
+      /* On a phone the four verdict buttons are pinned to the bottom of the screen, under the
+         thumb, wherever the page is scrolled; what a press saved shows as a toast above them. */
+      @media (max-width: 760px) {
+        .md-6 {
+          grid-column: span 12 !important;
+        }
+        header.top {
+          position: static;
+        }
+        .clock,
+        .brand small,
+        .btn span {
+          display: none;
+        }
+        main.wrap {
+          padding-bottom: calc(110px + env(safe-area-inset-bottom));
+        }
+        .keys,
+        .dir-sub {
+          white-space: normal;
+        }
+        .keys {
+          display: none;
+        }
+        .grid {
+          gap: 12px;
+          margin-top: 12px;
+        }
+        .card {
+          padding: 16px;
+        }
+        .now {
+          padding-left: 22px;
+        }
+        #verdict {
+          display: contents;
+        }
+        #verdict > .card-head,
+        #verdict > .ack {
+          display: none;
+        }
+        .marks {
+          position: fixed;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          z-index: 20;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 8px;
+          padding: 10px max(12px, env(safe-area-inset-left))
+            calc(10px + env(safe-area-inset-bottom));
+          background: color-mix(in srgb, var(--bg) 86%, transparent);
+          backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px);
+          border-top: 1px solid var(--line);
+        }
+        .marks button {
+          flex-direction: column;
+          justify-content: center;
+          min-height: 62px;
+          padding: 6px 4px;
+          gap: 4px;
+          font-size: 13px;
+          border-radius: 12px;
+        }
+        .marks .ico {
+          width: 26px;
+          height: 26px;
+          border-radius: 8px;
+          font-size: 15px;
+        }
+        .marks kbd,
+        .labels kbd {
+          display: none;
+        }
+        .labels {
+          grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+        }
+        .labels button {
+          justify-content: center;
+        }
+        .toast {
+          bottom: calc(96px + env(safe-area-inset-bottom));
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation: none !important;
+          transition: none !important;
+        }
       }
     </style>
   </head>
   <body>
-    <header>
-      <div class="wrap head">
-        <div class="brand">
-          <div class="logo">S</div>
-          Shappe Guide
+    <header class="top">
+      <div class="wrap top-in">
+        <a class="brand" href="/" aria-label="Shappe Guide, field test">
+          <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+            <defs>
+              <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#7c9cff" />
+                <stop offset="1" stop-color="#22d3ee" />
+              </linearGradient>
+            </defs>
+            <rect width="32" height="32" rx="9" fill="url(#lg)" />
+            <g
+              fill="none"
+              stroke="#0a0c10"
+              stroke-width="2.3"
+              stroke-linecap="round"
+            >
+              <path d="M11.4 18.6a6.5 6.5 0 0 1 9.2 0" />
+              <path d="M7.9 15.1a11.4 11.4 0 0 1 16.2 0" />
+            </g>
+            <circle cx="16" cy="23" r="2.4" fill="#0a0c10" />
+          </svg>
+          <span><b>Shappe Guide</b><small>field test</small></span>
+        </a>
+        <div class="pills">
+          <span id="h-status" class="pill"
+            ><span class="dot"></span><b>connecting</b></span
+          >
+          <span id="h-voice" class="pill">voice …</span>
+          <span id="h-rate" class="pill mono">— /min</span>
         </div>
-        <span id="h-status" class="chip"
-          ><span class="dot"></span><b>connecting</b></span
-        >
-        <span id="h-voice" class="chip">voice …</span>
-        <span id="h-rate" class="chip mono">— /min</span>
         <div class="spacer"></div>
-        <span id="h-clock" class="chip mono">--:--:--</span>
-        <a
-          class="chip"
-          href="/guidance/log/text?limit=400"
-          download="speech-log.txt"
-          title="Download this run's speech log"
-          >⬇ log</a
-        >
-        <button class="ghost" id="theme" title="Switch theme">◐ theme</button>
-        <a
-          class="chip"
-          href="/tof/live"
-          title="The ToF depth camera, live: tap to read a distance"
-          >depth</a
-        >
+        <span id="h-clock" class="clock mono">--:--:--</span>
+        <nav class="actions" aria-label="Pages and settings">
+          <a
+            class="btn"
+            href="/guidance/log/text?limit=400"
+            download="speech-log.txt"
+            title="Download this run's speech log"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14" />
+            </svg>
+            <span>Log</span>
+          </a>
+          <a
+            class="btn"
+            href="/tof/live"
+            title="The ToF depth camera, live: tap to read a distance"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m12 3 9 5-9 5-9-5 9-5Z" />
+              <path d="m3 13 9 5 9-5" />
+            </svg>
+            <span>Depth</span>
+          </a>
+          <button class="btn" id="theme" type="button" title="Switch theme">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="12" cy="12" r="8" />
+              <path d="M12 4a8 8 0 0 1 0 16Z" fill="currentColor" />
+            </svg>
+            <span id="theme-name">auto</span>
+          </button>
+        </nav>
       </div>
     </header>
 
@@ -766,84 +1288,89 @@
 
     <main class="wrap">
       <div class="grid">
-        <!-- NOW -->
-        <section class="card span-7" id="now" data-rule="">
-          <h2>
-            Now <span id="now-rule" class="rule">—</span>
-            <span class="right muted mono" id="now-front"></span>
-          </h2>
+        <!-- LAST SAID: the sentence the device said, and nothing else. -->
+        <section class="card now span-8" id="now" data-rule="" data-tone="">
+          <div class="now-top">
+            <span class="eyebrow">Last said</span>
+            <span id="now-rule" class="badge" hidden
+              ><span class="dot"></span><span id="now-rule-text"></span
+            ></span>
+            <span class="spacer"></span>
+            <span class="now-front mono" id="now-front"></span>
+          </div>
           <div id="now-text">Connecting…</div>
-          <div id="now-why">—</div>
-          <div class="ev" id="now-ev"></div>
-          <div id="now-voice">—</div>
         </section>
 
-        <!-- VERDICT -->
-        <section class="card span-5">
-          <h2>
-            Was that right?
-            <span class="right muted" style="font-size: 12px"
-              >keys 1 – 4 · W G O P N</span
-            >
-          </h2>
+        <!-- VERDICT (pinned to the bottom of a phone's screen) -->
+        <section class="card span-4" id="verdict">
+          <div class="card-head">
+            <h2>Was that right?</h2>
+            <span class="aside keys">keys 1–4</span>
+          </div>
           <div class="marks">
-            <button data-kind="right">
-              <span class="big">✓</span>Right<span class="k">1</span>
+            <button type="button" data-kind="right">
+              <span class="ico">✓</span>Right<kbd>1</kbd>
             </button>
-            <button data-kind="wrong">
-              <span class="big">✗</span>Wrong<span class="k">2</span>
+            <button type="button" data-kind="wrong">
+              <span class="ico">✗</span>Wrong<kbd>2</kbd>
             </button>
-            <button data-kind="missed">
-              <span class="big">⚠</span>Missed<span class="k">3</span>
+            <button type="button" data-kind="missed">
+              <span class="ico">⚠</span>Missed<kbd>3</kbd>
             </button>
-            <button data-kind="note">
-              <span class="big">✎</span>Note<span class="k">4</span>
+            <button type="button" data-kind="note">
+              <span class="ico">✎</span>Note<kbd>4</kbd>
             </button>
           </div>
-          <div class="labels-head">
-            What was really there?
-            <span class="muted"
-              >The thing it just named, or what is ahead if it named nothing.
-              Saves a labelled clip to learn from.</span
-            >
+          <div id="mark-ack" class="ack">
+            Each press is stamped into the speech log.
           </div>
+        </section>
+
+        <!-- WHAT WAS REALLY THERE -->
+        <section class="card span-12">
+          <div class="card-head">
+            <h2>What was really there?</h2>
+            <span class="aside keys">keys W G O P N S K</span>
+          </div>
+          <p class="sub">
+            The thing it just named, or what is ahead if it named nothing. Each
+            press saves a labelled clip to learn from.
+          </p>
           <div class="labels">
-            <button data-label="wall">Wall<span class="k">W</span></button>
-            <button data-label="glass">Glass<span class="k">G</span></button>
-            <button data-label="obstacle">
-              Obstacle<span class="k">O</span>
+            <button type="button" data-label="wall">Wall<kbd>W</kbd></button>
+            <button type="button" data-label="glass">Glass<kbd>G</kbd></button>
+            <button type="button" data-label="obstacle">
+              Obstacle<kbd>O</kbd>
             </button>
-            <button data-label="person">Person<span class="k">P</span></button>
-            <button data-label="nothing">Nothing<span class="k">N</span></button>
-            <button data-label="stairs" title="Stairs up or down">
-              Stairs<span class="k">S</span>
+            <button type="button" data-label="person">
+              Person<kbd>P</kbd>
             </button>
-            <button data-label="kerb" title="One step up or down, a kerb, or a drop">
-              Kerb / step<span class="k">K</span>
+            <button type="button" data-label="nothing">
+              Nothing<kbd>N</kbd>
+            </button>
+            <button type="button" data-label="stairs" title="Stairs up or down">
+              Stairs<kbd>S</kbd>
+            </button>
+            <button
+              type="button"
+              data-label="kerb"
+              title="One step up or down, a kerb, or a drop"
+            >
+              Kerb / step<kbd>K</kbd>
             </button>
           </div>
-          <div id="label-counts" class="muted mono"></div>
-          <div id="mark-ack" class="muted"></div>
-          <div class="stats">
-            <div class="stat">
-              <b id="st-min" class="mono">0</b
-              ><span>said in the last minute</span>
-            </div>
-            <div class="stat">
-              <b id="st-total" class="mono">0</b><span>said this run</span>
-            </div>
-            <div class="stat">
-              <b id="st-marks" class="mono">0</b><span>your marks</span>
-            </div>
-          </div>
+          <div id="label-counts" class="counts mono"></div>
         </section>
 
         <!-- LASER -->
         <section class="card span-5">
-          <h2>
-            What the laser sees
-            <span class="right muted mono" id="scan-rate"></span>
-          </h2>
+          <div class="card-head">
+            <h2>What the laser and radar see</h2>
+            <span class="aside mono" id="scan-rate"></span>
+            <label class="mini" title="Show each radar board's beam and echoes"
+              ><input type="checkbox" id="show-radar" checked /> radar</label
+            >
+          </div>
           <canvas
             id="scan"
             aria-label="Top-down view of the LiDAR scan"
@@ -855,7 +1382,7 @@
               block radius</span
             >
             <span
-              ><i style="background: var(--teal)"></i>body corridor &amp; front
+              ><i style="background: var(--cyan)"></i>body corridor &amp; front
               beam</span
             >
             <span
@@ -863,22 +1390,27 @@
               coming at you; line: where it goes in 1 s; dashed arc: only the
               radar hears it)</span
             >
+            <span
+              ><i style="background: var(--violet)"></i>radar: each board's
+              beam, out to its nearest echo (thick arc; thin: its other echoes;
+              dotted ring: how far it reaches; red: a board off)</span
+            >
           </div>
           <div class="dirs" id="dirs"></div>
         </section>
 
-        <!-- CAMERA -->
+        <!-- CAMERAS -->
         <section class="card span-7">
-          <h2>
-            What the camera sees
-            <span class="right tabs" id="cam-tabs">
-              <button data-cam="front" aria-pressed="true">Front</button>
-              <button data-cam="left" aria-pressed="false">Left</button>
-              <button data-cam="right" aria-pressed="false">Right</button>
-              <button data-cam="back" aria-pressed="false">Back</button>
-              <button data-cam="all" aria-pressed="false">All 4</button>
+          <div class="card-head">
+            <h2>What the cameras see</h2>
+            <span class="seg" id="cam-tabs" role="group" aria-label="Camera">
+              <button type="button" data-cam="front" aria-pressed="true">Front</button>
+              <button type="button" data-cam="left" aria-pressed="false">Left</button>
+              <button type="button" data-cam="right" aria-pressed="false">Right</button>
+              <button type="button" data-cam="back" aria-pressed="false">Back</button>
+              <button type="button" data-cam="all" aria-pressed="false">All 4</button>
             </span>
-          </h2>
+          </div>
           <div id="cam-single" class="cam">
             <img id="cam-img" alt="Camera feed" />
             <svg
@@ -887,75 +1419,89 @@
               preserveAspectRatio="none"
             ></svg>
             <div class="fps" id="cam-fps" hidden></div>
-            <div class="off" id="cam-off" hidden>camera stream unavailable</div>
+            <div class="off" id="cam-off" hidden>Camera stream unavailable</div>
           </div>
           <div id="cam-all" class="cam-grid" hidden></div>
           <div class="dets" id="cam-dets"></div>
-          <div
-            class="muted"
-            style="font-size: 12px; margin-top: 8px"
-            id="cam-note"
-          >
-            Front camera: only things that can hurt the user are named —
-            vehicles, people, animals, poles, hydrants, benches (trees and
-            bollards need the custom model). Nothing else is detected at all —
-            chairs, tables, laptops never appear here
-            (config.DETECTION_CLASSES); the laser still steers round them,
-            unnamed. Each box says how far away it is: <b>10.5 ft</b> is the
-            laser's range in that direction; <b>≈38 ft</b> is guessed from the
-            box's size where the laser has nothing that matches (the lens angle
-            is assumed); <b>≤4 ft</b> means the frame cuts the box off, so it is
-            at most that far. A named object must overlap the shaded middle
-            band, be tall enough to be near — and the laser or radar must
-            already have something on the path. A vehicle in the band that is
-            getting bigger is <b>approaching</b> (red): the user is told to move
-            away from the half it is in. A stopped vehicle while the user stands
-            still is <b>be careful</b> (amber). The <b>green line</b> is where
-            the guide is steering the user past things in the way — round one
-            side, or through a gap.
+          <details class="note" id="cam-note">
+            <summary>How to read the front camera</summary>
+            <p>
+              Only things that can hurt the user are named: vehicles, people,
+              animals, poles, hydrants, benches (trees and bollards need the
+              custom model). Nothing else is detected at all; chairs, tables
+              and laptops never appear here (config.DETECTION_CLASSES), and the
+              laser still steers round them, unnamed. Each box says how far
+              away it is: <b>10.5 ft</b> is the laser's range in that
+              direction; <b>≈38 ft</b> is guessed from the box's size where the
+              laser has nothing that matches (the lens angle is assumed);
+              <b>≤4 ft</b> means the frame cuts the box off, so it is at most
+              that far. A named object must overlap the shaded middle band, be
+              tall enough to be near, and the laser or radar must already have
+              something on the path. A vehicle in the band that is getting
+              bigger is <b>approaching</b> (red): the user is told to move away
+              from the half it is in. A stopped vehicle while the user stands
+              still is <b>be careful</b> (amber). The <b>green line</b> is where
+              the guide is steering the user past things in the way: round one
+              side, or through a gap.
+            </p>
+          </details>
+        </section>
+
+        <!-- SPOKEN -->
+        <section class="card span-5">
+          <div class="card-head">
+            <h2>Spoken this run</h2>
+            <span class="aside mono" id="log-path"></span>
+          </div>
+          <div class="stats">
+            <div class="stat">
+              <b id="st-min" class="mono">0</b><span>said in the last minute</span>
+            </div>
+            <div class="stat">
+              <b id="st-total" class="mono">0</b><span>said this run</span>
+            </div>
+            <div class="stat">
+              <b id="st-marks" class="mono">0</b><span>your marks</span>
+            </div>
+          </div>
+          <div id="log" class="log">
+            <div class="empty">Nothing said yet this run</div>
           </div>
         </section>
 
-        <!-- LOG -->
-        <section class="card span-5">
-          <h2>
-            Spoken this run
-            <span
-              class="right muted"
-              id="log-path"
-              style="font-size: 11px"
-            ></span>
-          </h2>
-          <div id="log"><div class="muted">Nothing said yet this run</div></div>
-        </section>
-
-        <!-- SENSORS -->
+        <!-- DEVICE -->
         <section class="card span-4 md-6">
-          <h2>Sensors</h2>
-          <dl class="kv">
-            <dt>LiDAR</dt>
-            <dd id="s-lidar">—</dd>
-            <dt>Radar</dt>
-            <dd id="s-radar">—</dd>
-            <dt>Camera</dt>
-            <dd>
-              <span id="s-camera">—</span>
-              <span id="s-camfps" class="muted"></span>
-            </dd>
-            <dt>NPU</dt>
-            <dd id="s-npu">—</dd>
-            <dt>Startup</dt>
-            <dd id="s-start">—</dd>
-            <dt>Voice</dt>
-            <dd id="s-voice">—</dd>
-          </dl>
+          <div class="card-head"><h2>Device</h2></div>
+          <div class="srow" id="row-lidar">
+            <span class="sdot"></span><span class="sname">LiDAR</span
+            ><span class="sval" id="s-lidar">—</span>
+          </div>
+          <div class="srow" id="row-radar">
+            <span class="sdot"></span><span class="sname">Radar</span
+            ><span class="sval" id="s-radar">—</span>
+          </div>
+          <div class="srow" id="row-camera">
+            <span class="sdot"></span><span class="sname">Camera</span
+            ><span class="sval"
+              ><span id="s-camera">—</span>
+              <span id="s-camfps" class="muted"></span
+            ></span>
+          </div>
+          <div class="srow" id="row-npu">
+            <span class="sdot"></span><span class="sname">NPU</span
+            ><span class="sval" id="s-npu">—</span>
+          </div>
+          <div class="srow" id="row-start">
+            <span class="sdot"></span><span class="sname">Startup</span
+            ><span class="sval" id="s-start">—</span>
+          </div>
+          <div class="srow" id="row-voice">
+            <span class="sdot"></span><span class="sname">Voice</span
+            ><span class="sval" id="s-voice">—</span>
+          </div>
           <div class="boards" id="boards"></div>
-          <div
-            id="s-warn"
-            class="warn-t"
-            style="font-size: 13px; margin-top: 10px"
-          ></div>
-          <label class="toggle"
+          <div id="s-warn" class="warns"></div>
+          <label class="switch"
             ><input type="checkbox" id="tts-on" /> Also speak in this browser
             (laptop testing without a screen reader)</label
           >
@@ -963,11 +1509,12 @@
 
         <!-- AROUND -->
         <section class="card span-3 md-6">
-          <h2>Around you</h2>
-          <div class="list" id="around">
-            <div class="muted">Nothing close</div>
+          <div class="card-head"><h2>Around you</h2></div>
+          <div class="items" id="around">
+            <div class="empty">Nothing close</div>
           </div>
-          <h2 style="margin-top: 16px">Walking</h2>
+          <div class="divider"></div>
+          <div class="card-head"><h2>Walking</h2></div>
           <dl class="kv">
             <dt>Motion</dt>
             <dd id="m-motion">—</dd>
@@ -985,6 +1532,8 @@
         <a href="/docs">API</a>
       </footer>
     </main>
+
+    <div id="toast" class="toast" aria-hidden="true"></div>
 
     <script>
       "use strict";
@@ -1033,20 +1582,20 @@
       };
 
       // ------------------------------------------------------------ theme + clock
-      const themes = ["auto", "midnight", "day"];
+      // auto follows the system. "midnight" and "day" are the names the previous page saved.
+      const THEMES = ["auto", "dark", "light"],
+        OLD_THEME = { midnight: "dark", day: "light" };
       function applyTheme(t) {
+        t = OLD_THEME[t] || t;
+        if (!THEMES.includes(t)) t = "auto";
         document.documentElement.dataset.theme = t;
-        $("theme").textContent = `◐ ${t}`;
+        $("theme-name").textContent = t;
+        return t;
       }
-      applyTheme(store.get("sg-theme", "auto"));
+      let theme = applyTheme(store.get("sg-theme", "auto"));
       $("theme").addEventListener("click", () => {
-        const next =
-          themes[
-            (themes.indexOf(document.documentElement.dataset.theme) + 1) %
-              themes.length
-          ];
-        store.set("sg-theme", next);
-        applyTheme(next);
+        theme = applyTheme(THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]);
+        store.set("sg-theme", theme);
       });
       setInterval(() => {
         $("h-clock").textContent = new Date().toLocaleTimeString([], {
@@ -1161,12 +1710,34 @@
         };
       };
 
-      // ------------------------------------------------------------ NOW (pushed)
+      // ------------------------------------------------------------ last said (pushed)
+      // How each rule colours the card: red stops the wearer, amber warns, green is clear.
+      const TONE = {
+        blocked: "bad",
+        offline: "bad",
+        stale: "bad",
+        unavailable: "bad",
+        vehicle_approaching: "bad",
+        mover_approaching: "bad",
+        approaching: "warn",
+        drifting: "warn",
+        near_wall: "warn",
+        glass_beside: "warn",
+        vehicle_ahead: "warn",
+        steering: "warn",
+        crossing: "warn",
+        clear: "ok",
+      };
+      function showRule(rule) {
+        const now = $("now");
+        now.dataset.rule = rule || "";
+        now.dataset.tone = TONE[rule] || "";
+        $("now-rule").hidden = !rule;
+        $("now-rule-text").textContent = rule ? rule.replace(/_/g, " ") : "";
+      }
       let seenSeq = null,
-        lastSaidAt = 0,
         lastSaidText = "",
         lastSaidRule = "",
-        lastSaidWhy = "",
         busyWalk = false,
         lastObject = null,
         lastVehicle = null,
@@ -1210,9 +1781,8 @@
         try {
           renderWalk(await getJSON("/guidance/walk"));
         } catch (e) {
-          walkOkAt = 0;
+          walkOkAt = 0; // renderStatus says "No connection"
         } finally {
-          // renderStatus says "No connection"
           busyWalk = false;
           renderStatus();
         }
@@ -1226,16 +1796,15 @@
 
         // The sentence shown is the last one SAID (notify), never the one the guide is still
         // weighing (path): that flickers, and the screen said "turn left" while the wearer had
-        // heard "turn right" (2026-11-11). Its rule and reason as they were when it was said.
+        // heard "turn right" (2026-11-11). Its rule as it was when it was said; nothing else
+        // (the live readings beside it, "wall ✗" under "Blocked by wall", read as a contradiction).
         const seq = n.cue_seq,
           pv = n.pi_voice || {};
         const sameAsPath = (n.instruction || "") === (p.instruction || "");
         if (typeof seq === "number") {
           if (seenSeq !== null && seq > seenSeq) {
-            lastSaidAt = Date.now();
             lastSaidText = n.instruction || "";
             lastSaidRule = sameAsPath ? p.rule || "" : "";
-            lastSaidWhy = sameAsPath ? p.reason || "" : n.reason || "";
             if (pv.audio_enabled !== false && !piHasCue(pv, seq)) {
               announce(lastSaidText);
               browserSay(lastSaidText, n.level === "urgent");
@@ -1247,141 +1816,34 @@
           } else if (seenSeq === null || seq < seenSeq) {
             // The page's first look, or the app restarted (its count starts again): what it
             // said last, shown but not announced again.
-            lastSaidAt = 0;
             lastSaidText = n.instruction || "";
             lastSaidRule = sameAsPath ? p.rule || "" : "";
-            lastSaidWhy = sameAsPath ? p.reason || "" : "";
           }
           seenSeq = seq;
         }
-        $("now").dataset.rule = lastSaidRule;
-        $("now-rule").textContent = lastSaidRule ? lastSaidRule.toUpperCase() : "—";
+        showRule(lastSaidRule);
         $("now-text").textContent = lastSaidText || "Nothing said yet";
-        $("now-why").textContent = lastSaidWhy || "—";
         const ft = raw.front_ft;
         $("now-front").textContent =
           ft != null ? `front ${Number(ft).toFixed(1)} ft` : "front open";
-        const chip = (label, on) =>
-          `<span class="${on ? "on" : ""}">${esc(label)}</span>`;
-        $("now-ev").innerHTML = [
-          chip(raw.wall ? "wall on path ✓" : "wall ✗", raw.wall),
-          chip(raw.glass ? "glass ahead ✓" : "glass ✗", raw.glass),
-          chip(
-            raw.object ? `camera: ${raw.object}` : "camera: —",
-            !!raw.object,
-          ),
-          chip(
-            raw.drift ? `drifting toward ${raw.drift} wall` : "no drift",
-            !!raw.drift,
-          ),
-          chip(
-            raw.close
-              ? `near ${raw.close} wall`
-              : "not near a wall (this scan)",
-            !!raw.close,
-          ),
-          (() => {
-            const s = raw.steer;
-            if (!s) return chip("way past: —", false);
-            const how =
-              s.kind === "between"
-                ? s.turn
-                  ? `between them, slightly ${s.turn}`
-                  : "straight between them"
-                : `turn slightly ${s.turn} past ${String(s.word || "").toLowerCase()} (${s.where})`;
-            return chip(`way past: ${how}`, true);
-          })(),
-          (() => {
-            const v = raw.vehicles || {};
-            if (!v.class) return chip("vehicle: —", false);
-            if (v.approaching)
-              return chip(
-                `${v.class} approaching from ${v.side}` +
-                  (v.ttc_s != null
-                    ? ` · ~${Number(v.ttc_s).toFixed(1)} s`
-                    : ""),
-                true,
-              );
-            // `moving` outranks `stopped`: both flags are kept on the pick.
-            if (v.moving) return chip(`${v.class} moving ahead`, true);
-            return chip(
-              `${v.class} stopped` +
-                (raw.user_still ? " · you still" : " · you moving"),
-              !!raw.user_still,
-            );
-          })(),
-          ...["left", "right"].map((s) => {
-            const ft = (raw.beside || {})[s],
-              rate = (raw.closing || {})[s];
-            if (ft == null)
-              return chip(`${s} wall: not fitted this scan`, false);
-            const moving =
-              rate != null && rate > 0.05
-                ? ` · closing ${Number(rate).toFixed(1)} ft/s`
-                : "";
-            return chip(
-              `${s} wall ${Number(ft).toFixed(1)} ft${moving}`,
-              !!moving,
-            );
-          }),
-          (() => {
-            // LiDAR movers: spoken only with LIDAR_MOVERS_SPEAK; until then, "would say".
-            const m = raw.mover,
-              n = (raw.movers || []).length + (raw.radar_movers || []).length;
-            if (!m)
-              return chip(
-                n ? `movers: ${n} moving, none coming at you` : "movers: —",
-                false,
-              );
-            const from =
-              m.mode === "toward"
-                ? "coming at you"
-                : m.mode === "behind"
-                  ? "from behind"
-                  : `from ${m.side}`;
-            return chip(
-              `${m.source === "radar" ? "radar" : "LiDAR"}: ${String(m.word).toLowerCase()} ${from} · ${Number(m.distance_ft).toFixed(1)} ft · ${Number(m.ttc_s).toFixed(1)} s` +
-                (m.would_say && !m.spoken
-                  ? ` · would say “${m.would_say}” (silent)`
-                  : ""),
-              true,
-            );
-          })(),
-          chip(
-            d.at_crossing ? "at a crossing" : "no crossing",
-            !!d.at_crossing,
-          ),
-        ].join("");
         lastObject = raw.object || null;
         lastVehicle = raw.vehicles || null;
         lastSteer = raw.steer || null;
         lastMovers = raw.movers || [];
         lastRadarMovers = raw.radar_movers || [];
 
-        // When it was said; not why the guide is quiet now (that is about a sentence it has
-        // not said, and is in the terminal and the speech log).
-        const ago = lastSaidAt
-          ? Math.round((Date.now() - lastSaidAt) / 1000)
-          : null;
-        const fresh = ago !== null && ago < 3;
-        const v = $("now-voice");
-        v.className = fresh ? "said" : "";
-        v.textContent = fresh
-          ? "🔊 just said"
-          : ago !== null
-            ? `🔊 said ${ago}s ago`
-            : lastSaidText
-              ? "🔊 said before this page opened"
-              : "—";
-
         const rd = p.readings || {};
         const f1 = (x) => (x == null ? "—" : Number(x).toFixed(1));
         $("dirs").innerHTML = ["left", "front", "right", "back"]
           .map((k) => {
             const r = rd[k] || {};
+            const big =
+              r.fused_ft == null ? "—" : `${f1(r.fused_ft)}<small>ft</small>`;
             return (
-              `<div class="dir"><small>${k}</small><b class="mono">${r.fused_ft == null ? "—" : f1(r.fused_ft)}</b>` +
-              `<small class="mono">L ${f1(r.lidar_ft)} · R ${f1(r.radar_ft)}${r.glass ? " · glass" : ""}</small></div>`
+              `<div class="dir${k === "front" ? " front" : ""}"><span class="dir-k">${k}</span><b class="mono">${big}</b>` +
+              `<span class="dir-sub mono">L ${f1(r.lidar_ft)} · R ${f1(r.radar_ft)}</span>` +
+              (r.glass ? '<span class="dir-glass">glass</span>' : "") +
+              "</div>"
             );
           })
           .join("");
@@ -1391,13 +1853,14 @@
           ? items
               .map(
                 (o) =>
-                  `<div class="item"><span>${esc(o.object || "obstacle")} <span class="muted">· ${esc(o.clock ? o.clock + " o'clock" : o.sector || "")}</span></span>` +
+                  `<div class="item"><span class="item-name">${esc(o.object || "obstacle")}</span>` +
+                  `<span class="item-where">${esc(o.clock ? o.clock + " o'clock" : o.sector || "")}</span>` +
                   `<b class="mono">${o.distance_ft == null ? "—" : Number(o.distance_ft).toFixed(1) + " ft"}</b></div>`,
               )
               .join("")
-          : '<div class="muted">Nothing close</div>';
+          : '<div class="empty">Nothing close</div>';
         $("m-cross").innerHTML = d.at_crossing
-          ? '<span class="warn-t">at a crossing — “Walk straight” withheld</span>'
+          ? '<span class="warn-t">at a crossing: “Walk straight” withheld</span>'
           : "none detected";
       }
 
@@ -1415,11 +1878,17 @@
 
       function setStatus(level, text) {
         const el = $("h-status");
-        el.className = `chip ${level}`;
+        el.className = `pill ${level}`;
         el.innerHTML = `<span class="dot"></span><b>${esc(text)}</b>`;
       }
 
-      // ------------------------------------------------------------ status chip
+      // One line of the Device card: its dot (ok, warn, bad, or "" for neither) and its text.
+      function sensor(key, state, text) {
+        $(`row-${key}`).dataset.state = state;
+        $(`s-${key}`).textContent = text;
+      }
+
+      // ------------------------------------------------------------ status pill
       // One verdict, worst first: no fresh instruction, the guidance loop stopped, then
       // /health (sensors, under-voltage, heat, audio off).
       let walkOkAt = 0,
@@ -1430,7 +1899,7 @@
         const now = Date.now();
         if (now - walkOkAt > 3000) {
           $("now-text").textContent = "No connection to the device";
-          $("now").dataset.rule = "offline";
+          showRule("offline");
           return setStatus("bad", "no connection");
         }
         if (loopStale) return setStatus("bad", "guidance stopped");
@@ -1465,7 +1934,7 @@
         }
       }
 
-      // ------------------------------------------------------------ health + log (1 s)
+      // ------------------------------------------------------------ device + log (1 s)
       async function pollTest() {
         try {
           const d = await getJSON("/guidance/test?limit=50");
@@ -1473,10 +1942,10 @@
           const h = d.health || {},
             v = d.voice || {},
             st = d.startup || {};
-          $("h-voice").className = `chip ${v.usable ? "ok" : ""}`;
+          $("h-voice").className = `pill ${v.usable ? "ok" : ""}`;
           $("h-voice").textContent = v.usable
-            ? `🎧 Pi · ${v.output}`
-            : "📱 phone voice";
+            ? `Pi voice · ${v.output}`
+            : "phone voice";
           $("h-rate").textContent = `${d.said_last_minute || 0} /min`;
           $("st-min").textContent = d.said_last_minute || 0;
           $("st-total").textContent = d.said_total || 0;
@@ -1489,12 +1958,8 @@
                   .join(" · ") + ` — ${n} labelled`
               : "no labels yet";
           }
-          const ok = (b) =>
-            b
-              ? '<span class="ok-t">✓ up</span>'
-              : '<span class="bad-t">✗ down</span>';
-          $("s-camera").innerHTML = ok(h.camera_ok);
-          $("s-npu").innerHTML = ok(h.hailo_ok);
+          sensor("camera", h.camera_ok ? "ok" : "bad", h.camera_ok ? "up" : "down");
+          sensor("npu", h.hailo_ok ? "ok" : "bad", h.hailo_ok ? "up" : "down");
           const down = (h.radar_down || []).join(", ");
           const half = (h.radar_partial || []).join(", "),
             lag = (h.radar_lagging || []).join(", ");
@@ -1505,19 +1970,20 @@
           ]
             .filter(Boolean)
             .join(" · ");
-          $("s-radar").innerHTML = !h.radar_ok
-            ? '<span class="bad-t">✗ down</span>'
-            : radarIssues
-              ? `<span class="warn-t">partial — ${esc(radarIssues)}</span>`
-              : '<span class="ok-t">✓ all cardinals</span>';
-          $("s-start").innerHTML = st.ready
-            ? '<span class="ok-t">ready</span>'
-            : '<span class="warn-t">scanning — not speaking yet</span>';
-          $("s-voice").textContent = v.usable
-            ? `Pi → ${v.output}; the phone stays quiet`
-            : v.running
-              ? `phone screen reader (the Pi has ${v.output || "no output"}${v.error ? ` — ${v.error}` : ""})`
-              : "phone screen reader (Pi voice off)";
+          if (!h.radar_ok) sensor("radar", "bad", "down");
+          else if (radarIssues) sensor("radar", "warn", `partial: ${radarIssues}`);
+          else sensor("radar", "ok", "all cardinals");
+          if (st.ready) sensor("start", "ok", "ready");
+          else sensor("start", "warn", "scanning, not speaking yet");
+          if (v.usable)
+            sensor("voice", "ok", `Pi → ${v.output}; the phone stays quiet`);
+          else if (v.running)
+            sensor(
+              "voice",
+              v.error ? "warn" : "",
+              `phone screen reader (the Pi has ${v.output || "no output"}${v.error ? `: ${v.error}` : ""})`,
+            );
+          else sensor("voice", "", "phone screen reader (Pi voice off)");
           $("log-path").textContent = d.log_path
             ? d.log_path.split("/").slice(-1)[0]
             : "";
@@ -1529,48 +1995,64 @@
             ? lines
                 .map((r) => {
                   const scan = (r.timing || {}).scan_age_ms;
-                  const meta = [
-                    r.detail,
-                    typeof scan === "number" ? `⏱ scan ${Math.round(scan)} ms` : "",
-                    r.via === "pi" ? "🎧 Pi" : r.via === "phone" ? "📱 phone" : "",
+                  const tags = [
+                    typeof scan === "number" ? `scan ${Math.round(scan)} ms` : "",
+                    r.via === "pi" ? "Pi" : r.via === "phone" ? "phone" : "",
                   ]
                     .filter(Boolean)
-                    .join(" · ");
+                    .map((t) => `<span class="tag mono">${esc(t)}</span>`)
+                    .join("");
+                  const why =
+                    r.detail || tags
+                      ? `<div class="why">${r.detail ? `<span>${esc(r.detail)}</span>` : ""}${tags}</div>`
+                      : "";
                   return (
-                    `<div class="row ${r.level === "urgent" ? "urgent" : ""}"><span class="t mono">${esc(r.time)}</span><span><b>🔊 ${esc(r.text)}</b>` +
-                    (meta ? `<span class="why">${esc(meta)}</span>` : "") +
-                    `</span></div>`
+                    `<div class="row${r.level === "urgent" ? " urgent" : ""}"><span class="t mono">${esc(r.time)}</span>` +
+                    `<div><b>${esc(r.text)}</b>${why}</div></div>`
                   );
                 })
                 .join("")
-            : '<div class="muted">Nothing said yet this run</div>';
+            : '<div class="empty">Nothing said yet this run</div>';
         } catch (e) {
           /* pollWalk reports the lost connection */
         }
       }
 
-      // ------------------------------------------------------------ radar boards (1 s)
+      // ------------------------------------------------------------ radar (1 s)
+      // /radar/map, as the radar scope reads it: each board's bearing, beam, nearest echo and
+      // other echoes, in feet. It fills the Device card's boards and the radar circle drawn
+      // on the laser view (drawScan), so the two never disagree.
+      let radarMap = null,
+        radarAt = 0;
       async function pollRadar() {
         try {
-          const d = await getJSON("/radar/state");
-          const secs = d.sectors || {};
-          const keys = Object.keys(secs)
-            .filter((k) => /^deg\d+$/.test(k))
-            .sort();
-          $("boards").innerHTML = keys
-            .map((k) => {
-              const r = secs[k] || {};
-              const cls = !r.online ? "off" : r.degraded ? "lag" : "";
-              const val = !r.online
-                ? "offline"
-                : r.min_dist
-                  ? `${(r.min_dist / MM_PER_FT).toFixed(1)} ft`
-                  : "no echo";
-              return `<div class="board ${cls}"><b>${esc(k.replace("deg", ""))}°${r.degraded ? " · lag" : ""}</b><span class="mono">${esc(val)}</span></div>`;
+          const d = await getJSON("/radar/map");
+          radarMap = d;
+          radarAt = Date.now();
+          const slots = (d.slots || [])
+            .slice()
+            .sort((a, b) => Number(a.bearing) - Number(b.bearing));
+          $("boards").innerHTML = slots
+            .map((s) => {
+              const r = s.board;
+              const cls = !r || !r.online ? "off" : r.degraded ? "lag" : "";
+              const val = !r
+                ? "missing"
+                : !r.online
+                  ? "offline"
+                  : r.ft != null
+                    ? `${Number(r.ft).toFixed(1)} ft`
+                    : "no echo";
+              return `<div class="board ${cls}"><b>${esc(Math.round(Number(s.bearing)))}°${r && r.degraded ? " · lag" : ""}</b><span class="mono">${esc(val)}</span></div>`;
             })
             .join("");
         } catch (e) {}
       }
+      const showRadar = $("show-radar");
+      showRadar.checked = store.get("sg-radar", "1") === "1";
+      showRadar.addEventListener("change", () =>
+        store.set("sg-radar", showRadar.checked ? "1" : "0"),
+      );
 
       // ------------------------------------------------------------ motion (1 s)
       async function pollMotion() {
@@ -1581,7 +2063,7 @@
             ? "standing still"
             : h.speed_source === "odometry"
               ? `walking ${kmh(h.speed_measured_mps || 0)} km/h (measured)`
-              : "moving — speed not measured";
+              : "moving, speed not measured";
         } catch (e) {}
       }
 
@@ -1612,7 +2094,7 @@
           $("cam-all").innerHTML = ["front", "right", "left", "back"]
             .map(
               (c) =>
-                `<div class="cam" id="cam-all-${c}" role="img" aria-label="${c} camera" style="background-size:200% 200%"><svg id="cam-all-svg-${c}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"></svg><div class="chip" style="position:absolute;left:8px;top:8px">${c}<span id="cam-all-fps-${c}"></span></div></div>`,
+                `<div class="cam" id="cam-all-${c}" role="img" aria-label="${c} camera" style="background-size:200% 200%"><svg id="cam-all-svg-${c}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"></svg><div class="tile-tag">${c}<span id="cam-all-fps-${c}"></span></div></div>`,
             )
             .join("");
           placeTiles(geom.camera_layout);
@@ -1736,6 +2218,10 @@
           b.addEventListener("click", () => setCam(b.dataset.cam)),
         );
 
+      // Overlay colours: named (cyan), a hazard class not named now (amber), never named (grey).
+      const BOX_NAMED = "#22d3ee",
+        BOX_HAZARD = "#fbbf24",
+        BOX_IGNORED = "#94a3b8";
       // A camera's boxes on the picture on screen (liveBoxes): those found in this very
       // picture solid; a side camera's, detected every ~1.2 s, from its last picture —
       // dashed, faded and aged ("1.1 s ago"). `k` scales lines and labels for a small tile.
@@ -1754,16 +2240,16 @@
             lastObject.toLowerCase() ===
               String(spoken(det.class_name) || "").toLowerCase();
           const ignored = !spoken(det.class_name);
-          const colour = named ? "#2dd4bf" : ignored ? "#94a3b8" : "#fbbf24";
+          const colour = named ? BOX_NAMED : ignored ? BOX_IGNORED : BOX_HAZARD;
           const dist = distText(det);
           const label = `${det.class_name} ${Math.round((det.confidence || 0) * 100)}%${dist ? " · " + dist : ""}${old ? " · " + ago(e) : ""}`;
           const lw = Math.min(W, (18 + 12 * label.length) * k),
             lx = Math.max(0, Math.min(x1, W - lw)), // kept inside the frame
             ly = Math.max(0, y1 - 30 * k);
           out +=
-            `<g${old ? ' opacity="0.7"' : ""}><rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" fill="none" stroke="${colour}" stroke-width="${(named ? 5 : ignored ? 2 : 3) * k}"${ignored || old ? ` stroke-dasharray="${8 * k} ${6 * k}"` : ""}/>` +
-            `<rect x="${lx}" y="${ly}" width="${lw}" height="${28 * k}" fill="${colour}"/>` +
-            `<text x="${lx + 8 * k}" y="${ly + 20 * k}" font-size="${20 * k}" font-weight="700" fill="#04121a">${esc(label)}</text></g>`;
+            `<g${old ? ' opacity="0.7"' : ""}><rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" rx="${4 * k}" fill="none" stroke="${colour}" stroke-width="${(named ? 5 : ignored ? 2 : 3) * k}"${ignored || old ? ` stroke-dasharray="${8 * k} ${6 * k}"` : ""}/>` +
+            `<rect x="${lx}" y="${ly}" width="${lw}" height="${28 * k}" rx="${4 * k}" fill="${colour}"/>` +
+            `<text x="${lx + 8 * k}" y="${ly + 20 * k}" font-size="${20 * k}" font-weight="700" fill="#0a0c10">${esc(label)}</text></g>`;
         }
         return out;
       }
@@ -1798,7 +2284,7 @@
                 return `<span class="${named ? "named" : ignored ? "ignored" : ""}" title="${ignored ? "not a hazard class — never named" : "can be named: " + esc(spoken(dt.class_name))}">${camView === "all" ? esc(c) + ": " : ""}${esc(dt.class_name)} ${Math.round((dt.confidence || 0) * 100)}%${dist ? " · " + esc(dist) : ""}${boxesOld(e) ? " · " + esc(ago(e)) : ""}${named ? " · named" : ""}</span>`;
               })
               .join("")
-          : "<span>no detections</span>";
+          : '<span class="muted">no detections</span>';
       }
       function drawCamSingle(svg, W, H) {
         svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
@@ -1806,7 +2292,7 @@
         if (camView === "front") {
           const band = geom.camera_band || 0.5,
             x0 = W * (0.5 - band / 2);
-          out += `<rect x="${x0}" y="0" width="${W * band}" height="${H}" fill="rgba(45,212,191,.14)" stroke="rgba(45,212,191,.8)" stroke-dasharray="10 8" stroke-width="3"/>`;
+          out += `<rect x="${x0}" y="0" width="${W * band}" height="${H}" fill="rgba(34,211,238,.12)" stroke="rgba(34,211,238,.8)" stroke-dasharray="10 8" stroke-width="3"/>`;
           // The two halves a vehicle is placed in: left half -> "move right".
           out +=
             `<line x1="${W / 2}" y1="0" x2="${W / 2}" y2="${H}" stroke="rgba(255,255,255,.7)" stroke-dasharray="4 10" stroke-width="2"/>` +
@@ -1828,7 +2314,7 @@
             `<line x1="${x}" y1="${H * 0.15}" x2="${x}" y2="${H}" stroke="#22c55e" stroke-width="6" stroke-dasharray="14 8"/>` +
             `<polygon points="${x - 16},${H * 0.15 + 22} ${x + 16},${H * 0.15 + 22} ${x},${H * 0.15}" fill="#22c55e"/>` +
             `<rect x="${Math.min(W - 230, Math.max(0, x - 115))}" y="${H * 0.15 - 44}" width="230" height="34" rx="6" fill="#22c55e"/>` +
-            `<text x="${Math.min(W - 230, Math.max(0, x - 115)) + 115}" y="${H * 0.15 - 20}" text-anchor="middle" font-size="22" font-weight="800" fill="#04121a">${esc(label)}</text>`;
+            `<text x="${Math.min(W - 230, Math.max(0, x - 115)) + 115}" y="${H * 0.15 - 20}" text-anchor="middle" font-size="22" font-weight="700" fill="#04121a">${esc(label)}</text>`;
         }
         // The vehicle the guide is tracking, over its detector box.
         const v = lastVehicle || {};
@@ -1848,7 +2334,7 @@
           out +=
             `<rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" fill="none" stroke="${c}" stroke-width="7"/>` +
             `<rect x="${x1}" y="${Math.min(H - 30, y2 + 2)}" width="${Math.min(W - x1, 18 + 13 * label.length)}" height="28" fill="${c}"/>` +
-            `<text x="${x1 + 8}" y="${Math.min(H - 30, y2 + 2) + 20}" font-size="20" font-weight="800" fill="#fff">${esc(label)}</text>`;
+            `<text x="${x1 + 8}" y="${Math.min(H - 30, y2 + 2) + 20}" font-size="20" font-weight="700" fill="#fff">${esc(label)}</text>`;
         }
         svg.innerHTML = out;
       }
@@ -1912,6 +2398,7 @@
       }
       const canvas = $("scan"),
         ctx = canvas.getContext("2d");
+      const FONT = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
       function drawScan() {
         const rect = canvas.getBoundingClientRect(),
           dpr = window.devicePixelRatio || 1;
@@ -1928,20 +2415,33 @@
           k = (H * 0.6) / viewMm;
         const fg = css("--fg"),
           red = css("--red"),
-          teal = css("--teal"),
+          cyan = css("--cyan"),
           amber = css("--amber"),
+          violet = css("--violet"),
+          accent = css("--accent"),
           line = css("--line"),
-          card = css("--card"),
+          panel = css("--panel"),
+          faint = css("--faint"),
           muted = css("--muted");
         ctx.clearRect(0, 0, W, H);
 
-        // Soft grid: a ring every 3 ft.
+        // Axes through the wearer, then a soft ring every 3 ft with its distance.
         ctx.strokeStyle = line;
         ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, cy);
+        ctx.lineTo(W, cy);
+        ctx.moveTo(cx, 0);
+        ctx.lineTo(cx, H);
+        ctx.stroke();
+        ctx.font = `600 10px ${FONT}`;
+        ctx.fillStyle = faint;
         for (let ft = 3; ft <= geom.approach_ft + 2; ft += 3) {
+          const r = ft * MM_PER_FT * k;
           ctx.beginPath();
-          ctx.arc(cx, cy, ft * MM_PER_FT * k, 0, Math.PI * 2);
+          ctx.arc(cx, cy, r, 0, Math.PI * 2);
           ctx.stroke();
+          if (cx + r + 4 < W - 20) ctx.fillText(`${ft}`, cx + r + 4, cy - 4);
         }
 
         const labels = [];
@@ -1956,14 +2456,85 @@
           ctx.setLineDash([]);
           labels.push([text, colour, cx - r * 0.707, cy - r * 0.707]);
         };
+        // The radar circle: each board's beam, filled out to its nearest echo (a thick arc),
+        // its other echoes thin; a board off or missing is a red wedge near the wearer. The
+        // dotted ring is how far the radar reaches. Not drawn from a reading over 3 s old.
+        const rm = showRadar.checked && Date.now() - radarAt < 3000 ? radarMap : null;
+        if (rm && rm.enabled !== false) {
+          const g = rm.geometry || {},
+            beam = Number(g.beam_deg) || 65,
+            reachFt = Number(g.end_ft) || 13,
+            startFt = Number(g.start_ft) || 0.8;
+          const R = (ft) => ft * MM_PER_FT * k;
+          ctx.strokeStyle = violet + "aa";
+          ctx.lineWidth = 1.2;
+          ctx.setLineDash([2, 5]);
+          ctx.beginPath();
+          ctx.arc(cx, cy, R(reachFt), 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          labels.push([
+            `${reachFt.toFixed(0)} ft · radar reach`,
+            violet,
+            W,
+            cy - R(reachFt) * 0.707,
+          ]);
+          const sector = (r0, r1, a0, a1) => {
+            ctx.beginPath();
+            ctx.arc(cx, cy, r1, a0, a1);
+            ctx.arc(cx, cy, r0, a1, a0, true);
+            ctx.closePath();
+            ctx.fill();
+          };
+          const arcAt = (ft, a0, a1) => {
+            ctx.beginPath();
+            ctx.arc(cx, cy, R(ft), a0, a1);
+            ctx.stroke();
+          };
+          for (const s of rm.slots || []) {
+            const b = s.board,
+              mid = ((Number(s.bearing) - 90) * Math.PI) / 180,
+              half = ((beam / 2 - 1.5) * Math.PI) / 180; // a hair apart from the next
+            const a0 = mid - half,
+              a1 = mid + half;
+            if (!b || !b.online) {
+              ctx.fillStyle = red + "26";
+              sector(R(startFt), R(3), a0, a1);
+              labels.push([
+                `radar ${Math.round(Number(s.bearing))}° ${b ? "off" : "missing"}`,
+                red,
+                cx + Math.cos(mid) * R(3) + 40,
+                cy + Math.sin(mid) * R(3),
+              ]);
+              continue;
+            }
+            const echo = b.ft != null ? Number(b.ft) : null;
+            ctx.fillStyle = violet + (b.degraded ? "10" : "1c");
+            sector(R(startFt), R(echo != null ? Math.min(echo, reachFt) : reachFt), a0, a1);
+            ctx.strokeStyle = violet + "88";
+            ctx.lineWidth = 1.5;
+            for (const pf of b.peaks_ft || []) {
+              if (echo != null && Math.abs(Number(pf) - echo) < 0.05) continue;
+              if (Number(pf) <= reachFt) arcAt(Number(pf), a0, a1);
+            }
+            if (echo != null && echo <= reachFt) {
+              ctx.strokeStyle = violet;
+              ctx.lineWidth = 4;
+              if (b.degraded) ctx.setLineDash([5, 4]);
+              arcAt(echo, a0, a1);
+              ctx.setLineDash([]);
+            }
+          }
+        }
+
         ring(geom.approach_ft, amber, `${geom.approach_ft} ft · “… ahead”`);
         ring(geom.block_ft, red, `${geom.block_ft} ft · blocked`);
 
         const half = geom.corridor_half_mm * k,
           len = geom.corridor_max_mm * k;
-        ctx.fillStyle = teal + "22";
+        ctx.fillStyle = cyan + "1f";
         ctx.fillRect(cx - half, cy - len, half * 2, len);
-        ctx.strokeStyle = teal;
+        ctx.strokeStyle = cyan;
         ctx.lineWidth = 1.5;
         ctx.strokeRect(cx - half, cy - len, half * 2, len);
         const cone = ((geom.cone_deg / 2) * Math.PI) / 180,
@@ -1996,7 +2567,7 @@
             ctx.arc(
               cx + x * k,
               cy - fwd * k,
-              onPath ? 4.2 : 2.5,
+              onPath ? 4.2 : 2.3,
               0,
               Math.PI * 2,
             );
@@ -2004,7 +2575,7 @@
           }
         } else {
           ctx.fillStyle = muted;
-          ctx.font = "15px system-ui";
+          ctx.font = `15px ${FONT}`;
           ctx.fillText("waiting for the LiDAR stream…", 16, 28);
         }
 
@@ -2056,24 +2627,34 @@
           ]);
         }
 
-        ctx.font = "700 12px system-ui";
+        ctx.font = `700 12px ${FONT}`;
         for (const [text, colour, x, y] of labels) {
-          const w = ctx.measureText(text).width + 12;
+          const w = ctx.measureText(text).width + 14;
           const x0 = Math.min(Math.max(4, x - w), W - w - 4),
             y0 = Math.min(Math.max(14, y), H - 14);
-          ctx.fillStyle = card;
-          ctx.fillRect(x0, y0 - 10, w, 20);
+          ctx.fillStyle = panel;
+          ctx.strokeStyle = colour + "66";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(x0, y0 - 11, w, 22, 6);
+          else ctx.rect(x0, y0 - 11, w, 22);
+          ctx.fill();
+          ctx.stroke();
           ctx.fillStyle = colour;
-          ctx.fillText(text, x0 + 6, y0 + 4);
+          ctx.fillText(text, x0 + 7, y0 + 4);
         }
-        // The user, facing up.
-        ctx.fillStyle = teal;
+        // The wearer, facing up.
+        ctx.fillStyle = accent;
+        ctx.strokeStyle = panel;
+        ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(cx, cy - 15);
         ctx.lineTo(cx - 11, cy + 11);
+        ctx.lineTo(cx, cy + 6);
         ctx.lineTo(cx + 11, cy + 11);
         ctx.closePath();
         ctx.fill();
+        ctx.stroke();
 
         const nowMs = Date.now();
         scanTimes = scanTimes.filter((x) => nowMs - x < 2000);
@@ -2083,7 +2664,7 @@
         if (stale) {
           const ago = Math.round((nowMs - lastScanAt) / 1000);
           ctx.fillStyle = red;
-          ctx.font = "700 15px system-ui";
+          ctx.font = `700 15px ${FONT}`;
           ctx.fillText(`STALE — no scan for ${ago} s`, 16, 28);
         }
         $("scan-rate").textContent = !scan
@@ -2091,20 +2672,43 @@
           : stale
             ? "stale"
             : `${hz.toFixed(1)} scans/s · ${pts} pts`;
-        $("s-lidar").innerHTML = !scan
-          ? '<span class="bad-t">no stream</span>'
-          : stale
-            ? `<span class="bad-t">✗ no scan for ${Math.round((nowMs - lastScanAt) / 1000)} s</span>`
-            : `<span class="ok-t">✓</span> ${hz.toFixed(1)} scans/s · ${esc(pts)} points`;
+        if (!scan) sensor("lidar", "bad", "no stream");
+        else if (stale)
+          sensor("lidar", "bad", `no scan for ${Math.round((nowMs - lastScanAt) / 1000)} s`);
+        else sensor("lidar", "ok", `${hz.toFixed(1)} scans/s · ${pts} points`);
       }
 
       // ------------------------------------------------------------ verdict marks
+      let toastTimer = null;
+      function ack(text, ok) {
+        const el = $("mark-ack");
+        el.textContent = text;
+        el.dataset.state = ok ? "ok" : "bad";
+        // The same words over the pinned buttons, where a phone's thumb is.
+        const t = $("toast");
+        t.textContent = text;
+        t.dataset.state = ok ? "ok" : "bad";
+        t.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => t.classList.remove("show"), 2600);
+      }
+      function flash(btn) {
+        if (!btn) return;
+        btn.classList.remove("hit");
+        void btn.offsetWidth;
+        btn.classList.add("hit");
+      }
       async function mark(kind, label = "") {
         let note = "";
         if (kind === "note") {
           note = prompt("Note for the log:") || "";
           if (!note) return;
         }
+        flash(
+          document.querySelector(
+            label ? `.labels [data-label="${label}"]` : `.marks [data-kind="${kind}"]`,
+          ),
+        );
         try {
           const res = await fetch("/guidance/mark", {
             method: "POST",
@@ -2113,15 +2717,20 @@
           });
           const r = await res.json();
           if (!res.ok || !r.ok) throw new Error(r.error || res.status);
-          $("mark-ack").textContent = label
-            ? `✔ labelled ${label}${r.clip ? "" : " (no clip: clips are off)"} — it said “${r.last_said}”`
-            : `✔ marked ${kind} — after “${r.last_said}”`;
+          ack(
+            label
+              ? `✔ labelled ${label}${r.clip ? "" : " (no clip: clips are off)"} — it said “${r.last_said}”`
+              : `✔ marked ${kind} — after “${r.last_said}”`,
+            true,
+          );
           if (navigator.vibrate) navigator.vibrate(40);
         } catch (e) {
-          $("mark-ack").textContent =
+          ack(
             e instanceof TypeError
               ? "⚠ mark not saved — no connection"
-              : `⚠ mark not saved — ${e.message}`;
+              : `⚠ mark not saved — ${e.message}`,
+            false,
+          );
         }
         pollTest();
       }

@@ -37,7 +37,7 @@ tap on the page), so the wearer can react before the words are understood.
 
 ## Labelling what was really there (added 2026-11-10)
 
-The dashboard's verdict card has a second row, **What was really there?**: Wall, Glass,
+The dashboard's **What was really there?** card: Wall, Glass,
 Obstacle, Person, Nothing, Stairs, Kerb / step (keys `W G O P N S K`). Press the one that names the thing the device
 just talked about, or what is ahead if it named nothing. Press it whether the device was
 right or wrong; "Nothing" means nothing was there (a false alarm). "Stairs" is a flight up

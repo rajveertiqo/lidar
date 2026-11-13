@@ -38,10 +38,15 @@
   tells them apart (a pane's range closes at walking pace, a wall beside stays put: design
   note 18), but that is logged as "would say" until a walk has checked it
   (`GLASS_CLOSING_SPEAK`); door frames on both walls at the same distance read as a pane to it.
-- **Close to a wall, the left is not offered.** Facing a flat wall nearer than ~1.7 ft with
-  only the left open, it says "turn around": the left side radar hears the wall ahead at its
-  beam's edge, and the LiDAR cannot see to the left (the wearer's body) to place that echo.
-  The right is offered (design note 15).
+- **Very close to a wall, the left is not offered.** Facing a flat wall with only the left
+  open, "turn left" needs the left camera's fresh picture naming nobody, the laser to see the
+  wall ahead stretch out past the left board's echo, and that echo at least 2 ft off: nearer
+  than ~1.1 ft to the wall, or with the left camera off, stale, dark or naming anyone, it says
+  "turn around" (design notes 15, 21). The right is offered either way.
+- **Something within 0.25 m of the wearer's left is not heard** (`RADAR_START_MM`): the LiDAR
+  cannot see there and the radar does not measure that near, so the left can read open with
+  a post at the wearer's elbow, as it always could. Facing a close wall, the wall's echo used
+  to hide that by chance; the left camera is the only other check there.
 - **The 2D LiDAR sees one plane.** Overhead branches and low obstacles at foot
   height are missed. The radar helps with glass, not with height. The ToF now covers
   the ground 1–4 m ahead up to ~1.1 m (stairs, kerbs, drops, low and waist-high things:

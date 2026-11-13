@@ -442,3 +442,26 @@ Kept because each one explains why the code is the way it is.
     and the two radar helpers only it used (`radar_ring`, `radar_beam_deg`). Nothing the
     guidance used came from it: what is said, and every test and simulator, is unchanged. The
     radar's own scope (`/radar/view`, `/radar/map`) stays.
+
+21. **Facing a close wall, the left offered too (2026-11-13).** Note 15 left the left side
+    out: it is the LiDAR's blind arc (the wearer's body), so no laser line can show it clear
+    past the left board's echo, and a person standing there would be dropped with the wall.
+    Facing a wall 1.1-1.7 ft off with only the left open it said "turn around". Now the left
+    board's echo is the wall ahead, heard at its beam's edge (`_front_wall_echo`), only when
+    all of these hold: the laser's returns within 40 deg of ahead lie on one straight wall
+    across the way (`BLIND_SIDE_WALL_RMS_MM`); the echo is at that wall's range inside the
+    beam (`BLIND_SIDE_WALL_ECHO_TOL_MM`, to 1.3 x); in the part of the beam the laser can see,
+    nothing stands nearer than that wall, and the wall reaches further out to the left than
+    the echo is far (a wall on the left would end it at their corner, so a box keeps its left
+    wall); the echo is at least `WALK_MIN_TURN_FT` off; and the left camera's picture is
+    fresh (`BLIND_SIDE_CAMERA_FRESH_S`), real, not dark or blurred, and names nothing
+    (`side_camera_clear`). Then the left's room is the board's next echo, or open. The guidance
+    loop hands `walk_policy.decide` the tick's camera snapshot, the one it records, so
+    `walk_replay` decides on the same. The first version took a left wall 1.4 ft off, its
+    corner 0.7 ft ahead, for the wall ahead (the scene hunt's new `--side-camera-clear`, and a
+    focused hunt of 3,000 close-wall scenes, found it); the reach test replaced an "up to the
+    blind arc's edge" test. The 2 ft floor answers the worst case the hunt kept finding, a
+    post hidden at the echo's range that the camera does not name: the turn still has the room
+    every turn needs. What is left is the radar's 0.25 m minimum range (Known limits). The
+    general scene hunt and the mirror check give the same results as before; with no camera
+    nothing changes.

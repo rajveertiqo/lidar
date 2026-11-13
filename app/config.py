@@ -423,6 +423,19 @@ RADAR_NO_RETURN_FT = round(
 
 WALK_TURN_MARGIN_FT = 1.5
 
+# Facing a close wall, the side the laser cannot see (LIDAR_BLIND_ARCS_DEG: the left, the
+# wearer's body). Its board hears the wall ahead at its beam's edge, as on the right (design
+# note 15), but no laser line that way can show the side clear past the echo, and a person
+# standing there would be dropped with it. The echo is taken for that wall only when the laser
+# sees the wall ahead run straight (its returns within BLIND_SIDE_WALL_RMS_MM of one line) on
+# into the board's beam, the echo is at that wall's range there (BLIND_SIDE_WALL_ECHO_TOL_MM),
+# and the camera on that side has a fresh picture (BLIND_SIDE_CAMERA_FRESH_S; the side cameras
+# are detected every ~1.3 s) that is not dark or blurred and names nothing. Otherwise the
+# radar is all there is, as before (2026-11-13, design note 21).
+BLIND_SIDE_WALL_RMS_MM = 40.0
+BLIND_SIDE_WALL_ECHO_TOL_MM = 100.0
+BLIND_SIDE_CAMERA_FRESH_S = 2.5
+
 WALK_TURN_ORDER = ("left", "right", "back")
 
 WALK_TURN_HYSTERESIS_FT = 0.8

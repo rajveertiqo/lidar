@@ -7,6 +7,12 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
 ## [Unreleased]
 
 ### Added
+- **`label_report.py --decide`**: one command after a walk says, for each feature that runs but
+  is not spoken yet (stairs and kerbs, glass tracking, movers), TURN ON, KEEP OFF or MORE
+  LABELS. Every label is replayed with the feature off and on: turned on it must name 70% of
+  its own labels, more than without it, and make at most 5% of the other right labels wrong.
+  **The battery walk** in [docs/field-testing.md](docs/field-testing.md) collects enough labels
+  for all three in about 45 minutes, and checks the heading.
 - **Radar tracking for glass across a narrow corridor** (silent, "would say", until a walk
   checks it: `GLASS_CLOSING_SPEAK`). A pane's echo closes at walking pace on both front
   boards while the walls' echoes stay put, so a pane past the walls' echoes is found. In the
@@ -21,6 +27,11 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   Nothing said changes.
 
 ### Fixed
+- **Facing a close wall, an open left is offered** ("Blocked by wall, turn left"), where it said
+  "turn around". The left is the LiDAR's blind side, so the left board's echo is taken for the
+  wall ahead only when the laser sees that wall stretch out past it, the echo is at least 2 ft
+  off, and the left camera's fresh picture shows nobody (design note 21). Without the left
+  camera, or nearer than ~1.1 ft to the wall, it is "turn around" as before.
 - **No false "Pothole ahead" when the device is set down.** On a desk the ToF took the floor
   below it for the ground and found a hole. Set down, the ground is no longer judged, and a
   ground must lie at the mount's height (1.45 m +- 0.45 m), as the settings already said.

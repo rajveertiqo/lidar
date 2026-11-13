@@ -325,7 +325,8 @@ def get_unified_guidance() -> Dict[str, Any]:
     try:
         from app.perception import walk_policy
 
-        walk_decision = walk_policy.decide(lidar, radar)
+        # The tick's camera snapshot, the one recorded: a replay decides on the same.
+        walk_decision = walk_policy.decide(lidar, radar, camera or {})
     except Exception as e:
         walk_decision = {"action": "unknown", "instruction": "—", "units": "ft"}
         _warn("walk policy", e)

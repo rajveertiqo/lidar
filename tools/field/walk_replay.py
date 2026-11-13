@@ -139,8 +139,10 @@ def replay_ticks(path, recompute_policy=True, turn_on=()):
                 continue
             inp = rec["in"]
             tof["snap"] = inp.get("ground")
+            # The cameras as recorded ({} if not: never this machine's live state), for the
+            # side the laser cannot see (walk_policy.side_camera_clear, 2026-11-13).
             wd = (
-                walk_policy.decide(inp["lidar"], inp["radar"])
+                walk_policy.decide(inp["lidar"], inp["radar"], inp.get("camera") or {})
                 if recompute_policy and inp.get("lidar")
                 else inp["walk_decision"]
             )

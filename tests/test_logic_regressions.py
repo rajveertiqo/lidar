@@ -815,7 +815,9 @@ class CloseWallOpenSideTests(unittest.TestCase):
     taken as the side's room, under the turn floor. An echo the laser places off the side's
     line, with that line clear past it, is not the side's room."""
 
-    def _say(self, scene):
+    def _say(self, scene, camera=None, left=False):
+        """What it says in this scene; `camera`: the cameras' state (none by default).
+        With `left`, (sentence, the left's distance in feet)."""
         from tools.sim import scene_hunt as sh
         from app.core.shared_state import get_lidar_state, get_radar_state
 
@@ -824,8 +826,9 @@ class CloseWallOpenSideTests(unittest.TestCase):
         walk_policy._near_frames.clear()
         sh.publish(scene, True)
         lidar, radar = get_lidar_state(), get_radar_state()
-        walk = walk_policy.decide(lidar, radar)
-        return sg.decide(walk, lidar, time.time(), radar_state=radar, camera_state={})["instruction"]
+        walk = walk_policy.decide(lidar, radar, camera or {})
+        said = sg.decide(walk, lidar, time.time(), radar_state=radar, camera_state={})["instruction"]
+        return (said, walk["directions"]["left"]["distance_ft"]) if left else said
 
     def test_the_open_side_is_offered(self):
         ft = 304.8
@@ -843,9 +846,73 @@ class CloseWallOpenSideTests(unittest.TestCase):
         self.assertNotEqual(self._say(post_right), sg.BLOCKED_WALL_TURN["right"])
 
     def test_the_blind_side_keeps_the_radar(self):
-        ft = 304.8  # the left is the LiDAR's blind arc: the radar is all there is
+        ft = 304.8  # the left is the LiDAR's blind arc: with no camera the radar is all there is
         corner = {"left": None, "right": 1.7 * ft, "ahead": 1.0 * ft, "posts": [], "glass": None}
         self.assertNotEqual(self._say(corner), sg.BLOCKED_WALL_TURN["left"])
+        for f in (1.3, 1.5):
+            corner["ahead"] = f * ft
+            self.assertNotEqual(self._say(corner), sg.BLOCKED_WALL_TURN["left"])
+
+
+class BlindSideCloseWallTests(unittest.TestCase):
+    """2026-11-13 (design note 21): facing a close wall with only the left open it said "turn
+    around": the left board hears the wall ahead at its beam's edge, and the laser cannot look
+    left to place it. The echo is now that wall when the laser sees the wall ahead run straight
+    on past the echo's distance, the echo is at its range and at least 2 ft off, and the left
+    camera's fresh picture names nobody."""
+
+    FT = 304.8
+
+    def setUp(self):
+        self.say = CloseWallOpenSideTests._say.__get__(self)
+
+    def _cam(self, age=0.3, dets=(), dark=False, simulated=False):
+        return {"left": {"detections": list(dets), "num_objects": len(dets),
+                         "frame_time": time.time() - age, "simulated": simulated,
+                         "view": {"dark": dark, "blurred": False}}}
+
+    def _corner(self, ahead_ft, left_ft=None):
+        return {"left": left_ft and left_ft * self.FT, "right": 1.7 * self.FT,
+                "ahead": ahead_ft * self.FT, "posts": [], "glass": None}
+
+    def test_the_left_is_offered_when_its_camera_sees_nobody(self):
+        for f in (1.3, 1.5):
+            with self.subTest(wall_ft=f):
+                said, left = self.say(self._corner(f), self._cam(), left=True)
+                self.assertEqual(said, sg.BLOCKED_WALL_TURN["left"])
+                self.assertGreater(left, 10.0)  # open: the wall's echo was the wall ahead
+
+    def test_without_a_clear_picture_it_stays_turn_around(self):
+        person = [{"class_name": "person", "confidence": 0.8, "bbox": [100, 50, 300, 800]}]
+        for name, cam in (("a person", self._cam(dets=person)), ("4 s old", self._cam(age=4.0)),
+                          ("dark", self._cam(dark=True)), ("simulated", self._cam(simulated=True)),
+                          ("no camera", {})):
+            with self.subTest(camera=name):
+                self.assertEqual(self.say(self._corner(1.3), cam), sg.BLOCKED_WALL_TURN["around"])
+
+    def test_a_wall_close_on_the_left_is_kept(self):
+        said, left = self.say(self._corner(1.0, left_ft=1.7), self._cam(), left=True)
+        self.assertNotEqual(said, sg.BLOCKED_WALL_TURN["left"])
+        self.assertAlmostEqual(left, 1.7, delta=0.1)
+        # Farther: the wall ahead's echo goes, the side wall's stays as the left's room.
+        said, left = self.say(self._corner(1.3, left_ft=3.0), self._cam(), left=True)
+        self.assertEqual(said, sg.BLOCKED_WALL_TURN["left"])
+        self.assertAlmostEqual(left, 3.0, delta=0.1)
+
+    def test_an_echo_under_2_ft_is_never_dropped(self):
+        # 1.0 ft from the wall its echo is 1.9 ft off: a post there the camera missed would
+        # leave under the 2 ft every turn needs, so it stays "turn around".
+        self.assertEqual(self.say(self._corner(1.0), self._cam()), sg.BLOCKED_WALL_TURN["around"])
+
+    def test_side_camera_clear(self):
+        now = time.time()
+        clear = walk_policy.side_camera_clear
+        self.assertTrue(clear(self._cam(), "left", now))
+        self.assertFalse(clear(self._cam(), "right", now))  # no right camera in it
+        self.assertFalse(clear(self._cam(age=3.0), "left", now))
+        self.assertFalse(clear(self._cam(age=-5.0), "left", now))  # from the future
+        self.assertFalse(clear(None, "left", now))
+        self.assertFalse(clear(self._cam(dets=[{"class_name": "dog"}]), "left", now))
 
 
 class CameraExposureCapTests(unittest.TestCase):

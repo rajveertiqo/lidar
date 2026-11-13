@@ -9,6 +9,9 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.config import (
+    BLIND_SIDE_CAMERA_FRESH_S,
+    BLIND_SIDE_WALL_ECHO_TOL_MM,
+    BLIND_SIDE_WALL_RMS_MM,
     GLASS_BOARD_VIEW_MARGIN_DEG,
     GLASS_DOOR_MAX_BEARING_DEG,
     GLASS_DOOR_WALL_DEPTH_MM,
@@ -625,6 +628,137 @@ def _laser_explains(
     return False
 
 
+_FRONT_WALL_FIT_DEG = 40.0  # the laser's returns this far either side of ahead make the wall
+_FRONT_WALL_MAX_MM = 3000.0
+_FRONT_WALL_MIN_RETURNS = 8
+_FRONT_WALL_FACING = 0.5  # its normal within 60 deg of ahead: across the way, not alongside
+_FRONT_WALL_ON_MM = 80.0  # a return this close to the line lies on the wall
+_FRONT_WALL_IN_BEAM = 3  # returns on the line inside the board's view: the wall reaches it
+_FRONT_WALL_ECHO_FAR = 1.3  # an echo past this x the wall's nearest range in the beam: not it
+_FRONT_WALL_PAST_ECHO_MM = 100.0  # the wall ahead seen reaching this much further out than the echo
+
+
+def _front_wall_line(
+    angles: List[float], dists: List[float]
+) -> Optional[Tuple[float, float, float]]:
+    """The flat wall across the way ahead, from the laser: (nx, ny, p), its unit normal (x
+    ahead, y right) pointing away from the wearer and its distance in mm. None when the
+    returns within _FRONT_WALL_FIT_DEG of ahead are too few, not one straight line (their
+    spread off it over BLIND_SIDE_WALL_RMS_MM: a corner, a doorway, clutter), or a wall
+    alongside rather than across."""
+    pts = []
+    for a, d in zip(angles, dists):
+        if not isinstance(d, (int, float)) or not 0.0 < d < _FRONT_WALL_MAX_MM:
+            continue
+        s = (float(a) + 180.0) % 360.0 - 180.0
+        if abs(s) <= _FRONT_WALL_FIT_DEG:
+            r = math.radians(s)
+            pts.append((d * math.cos(r), d * math.sin(r)))
+    if len(pts) < _FRONT_WALL_MIN_RETURNS:
+        return None
+    n = float(len(pts))
+    mx = sum(x for x, _ in pts) / n
+    my = sum(y for _, y in pts) / n
+    sxx = sum((x - mx) ** 2 for x, _ in pts) / n
+    syy = sum((y - my) ** 2 for _, y in pts) / n
+    sxy = sum((x - mx) * (y - my) for x, y in pts) / n
+    # The scatter's smaller eigenvalue is the mean square distance off the best line, and
+    # its eigenvector that line's normal.
+    small = (sxx + syy) / 2.0 - math.sqrt(((sxx - syy) / 2.0) ** 2 + sxy * sxy)
+    if math.sqrt(max(0.0, small)) > BLIND_SIDE_WALL_RMS_MM:
+        return None
+    if abs(sxy) > 1e-9:
+        nx, ny = sxy, small - sxx
+    else:
+        nx, ny = (1.0, 0.0) if sxx <= syy else (0.0, 1.0)
+    norm = math.hypot(nx, ny)
+    nx, ny = nx / norm, ny / norm
+    p = mx * nx + my * ny
+    if p < 0:
+        nx, ny, p = -nx, -ny, -p
+    if nx < _FRONT_WALL_FACING:
+        return None
+    return nx, ny, p
+
+
+def _front_wall_echo(lidar_state: Dict[str, Any], bearing: float, echo_mm: float) -> bool:
+    """Is this side board's echo the wall ahead, heard at its beam's edge (design note 15)?
+    For a board facing where the laser cannot look (the left). All of:
+
+    - the laser sees a straight wall across the way ahead (_front_wall_line);
+    - the echo is at that wall's range inside the beam: from its nearest point there (less
+      BLIND_SIDE_WALL_ECHO_TOL_MM) to _FRONT_WALL_ECHO_FAR times that. A wall on that side
+      meeting the wall ahead past the blind arc's edge is at least ~1.5 x as far: kept;
+    - in the part of the board's view the laser can see, nothing stands nearer than the wall
+      ahead, and the laser sees that wall reach further out to the board's side than the echo
+      is far (_FRONT_WALL_PAST_ECHO_MM). A wall on that side would end it at their corner, as
+      far out as that side wall's own echo: the wall ahead cannot reach past an echo off a side
+      wall, so a box with a wall close on that side keeps it (2026-11-13: a first version that
+      only asked the wall ahead to reach the blind arc's edge took a side wall 1.4 ft off, its
+      corner 0.7 ft ahead, for the wall ahead).
+
+    Something standing on that side nearer than the wall is its own echo, and is kept. And
+    only an echo at least WALK_MIN_TURN_FT off: were it a post the camera did not name, at the
+    wall's range, the turn would still have the room every turn needs (the focused scene
+    hunt, 2026-11-13: a post hidden at a 0.6-0.9 ft wall's echo range was turned into). Closer
+    to the wall than ~1.1 ft it is "turn around", as before."""
+    if echo_mm < WALK_MIN_TURN_FT * MM_PER_FT:
+        return False
+    angles, dists = _laser_points(lidar_state)
+    line = _front_wall_line(angles, dists)
+    if line is None:
+        return False
+    nx, ny, p = line
+    half = RADAR_BEAM_H_DEG / 2.0
+    nearest = None
+    for k in range(int(round(2.0 * half)) + 1):
+        s = math.radians(((bearing - half + k) + 180.0) % 360.0 - 180.0)
+        c = nx * math.cos(s) + ny * math.sin(s)
+        if c > 1e-3:
+            r = p / c
+            nearest = r if nearest is None else min(nearest, r)
+    if nearest is None or not (
+        nearest - BLIND_SIDE_WALL_ECHO_TOL_MM <= echo_mm <= _FRONT_WALL_ECHO_FAR * nearest
+    ):
+        return False
+    view = half + GLASS_BOARD_VIEW_MARGIN_DEG
+
+    def off(a: float, ref: float) -> float:
+        return (float(a) - ref + 180.0) % 360.0 - 180.0
+
+    side = 1.0 if math.sin(math.radians(bearing)) > 0 else -1.0  # the board's side: + right
+    on, reach = 0, 0.0
+    for a, d in zip(angles, dists):
+        if not isinstance(d, (int, float)) or d <= 0 or abs(off(a, bearing)) > view:
+            continue
+        s = math.radians((float(a) + 180.0) % 360.0 - 180.0)
+        x, y = d * math.cos(s), d * math.sin(s)
+        q = x * nx + y * ny
+        if q < p - _FRONT_WALL_ON_MM:
+            return False  # something nearer than the wall in this board's view
+        if q <= p + _FRONT_WALL_ON_MM:
+            on += 1
+            reach = max(reach, y * side)
+    return on >= _FRONT_WALL_IN_BEAM and reach >= echo_mm + _FRONT_WALL_PAST_ECHO_MM
+
+
+def side_camera_clear(
+    camera_state: Optional[Dict[str, Any]], direction: str, now: float
+) -> bool:
+    """Does the camera looking `direction` show nobody and nothing there: a fresh picture
+    (BLIND_SIDE_CAMERA_FRESH_S), real, not dark or blurred, in which the detector named
+    nothing? No camera, an old picture or one it cannot see in is not clear."""
+    from app.core.freshness import is_fresh
+
+    cam = (camera_state or {}).get(direction) or {}
+    if cam.get("simulated") or not is_fresh(cam.get("frame_time"), BLIND_SIDE_CAMERA_FRESH_S, now):
+        return False
+    view = cam.get("view") or {}
+    if view.get("dark") or view.get("blurred"):
+        return False
+    return not cam.get("detections")
+
+
 def _single_board_glass_ft(
     lidar_state: Dict[str, Any], radar_state: Dict[str, Any], direction: str
 ) -> Optional[float]:
@@ -883,8 +1017,10 @@ def read_direction(
     tof_solids: Optional[List[Tuple[float, str]]] = None,
     tof_near: Optional[List[int]] = None,
     tof_rest: Optional[Dict[str, Any]] = None,
+    side_clear: bool = False,
 ) -> Dict[str, Any]:
-    """Both sensors' view of one direction, fused into a single figure in feet. `tof_rest`:
+    """Both sensors' view of one direction, fused into a single figure in feet. `side_clear`:
+    the camera on this side shows nobody there (side_camera_clear). `tof_rest`:
     the surface the rig is set down on, by the ToF (_tof_rest). `tof_near`:
     the ToF's points on the walking path per TOF_NEAR_BIN_M of distance (_tof_near). `tof_front`:
     (feet, hazard) of the ToF's nearest confirmed solid thing on the path (_tof_front).
@@ -1007,25 +1143,27 @@ def read_direction(
     # under the turn floor, and it said "turn around" with the laser seeing the right wide open
     # (turn review; fixed 2026-11-10). An echo the laser explains in that board's view, while
     # the laser's own line that way sees WALK_GLASS_GAP_FT past it, is that surface off the
-    # line: the side's room is its next echo, or none. Not where the laser is blind that way
-    # (the wearer's body): there the radar is all there is, and a person standing there would
-    # be dropped along with the wall.
+    # line: the side's room is its next echo, or none. Where the laser is blind that way (the
+    # wearer's body: the left) no line can show the side clear, and a person standing there
+    # would be dropped along with the wall; until 2026-11-13 the radar was all there was, and a
+    # close wall with only the left open said "turn around". Now the echo is the wall there
+    # only if the laser sees that wall run straight on into the board's beam with the echo at
+    # its range (_front_wall_echo) AND the side camera shows nobody there (`side_clear`).
     side_off_line = False
-    if (
-        direction in ("left", "right")
-        and radar_measured
-        and not lidar_blind(direction)
-        and isinstance(lidar_ft, (int, float))
-    ):
+    off_line = None  # (board bearing, echo mm) -> is that echo a surface off the side's line?
+    if direction in ("left", "right") and radar_measured:
+        if not lidar_blind(direction):
+            if isinstance(lidar_ft, (int, float)):
+                seen_ft = float(lidar_ft)
+                off_line = lambda b, e: (
+                    seen_ft - e / MM_PER_FT >= WALK_GLASS_GAP_FT
+                    and _laser_explains(lidar_state, b, e)
+                )
+        elif side_clear:
+            off_line = lambda b, e: _front_wall_echo(lidar_state, b, e)
+    if off_line is not None:
         echoes = sorted(_board_echoes(radar_state, direction, all_peaks=True), key=lambda be: be[1])
-        kept = [
-            e
-            for b, e in echoes
-            if not (
-                lidar_ft - e / MM_PER_FT >= WALK_GLASS_GAP_FT
-                and _laser_explains(lidar_state, b, e)
-            )
-        ]
+        kept = [e for b, e in echoes if not off_line(b, e)]
         if echoes and len(kept) < len(echoes):
             if kept:
                 radar_ft = round(min(kept) / MM_PER_FT, 2)
@@ -1205,7 +1343,11 @@ def read_all(
     tof_solids: Optional[List[Tuple[float, str]]] = None,
     tof_near: Optional[List[int]] = None,
     tof_rest: Optional[Dict[str, Any]] = None,
+    camera_state: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Dict[str, Any]]:
+    """read_direction for every direction. `camera_state`: the cameras' detections
+    (shared_state.camera_state), for the sides the laser cannot see."""
+    now = time.time()
     return {
         d: read_direction(
             lidar_state,
@@ -1215,6 +1357,9 @@ def read_all(
             tof_solids if d == "front" else None,
             tof_near if d == "front" else None,
             tof_rest if d == "front" else None,
+            side_clear=d in ("left", "right")
+            and lidar_blind(d)
+            and side_camera_clear(camera_state, d, now),
         )
         for d in GUIDANCE_SECTORS
     }
@@ -1527,13 +1672,17 @@ def choose_turn(
 def decide(
     lidar_state: Optional[Dict[str, Any]] = None,
     radar_state: Optional[Dict[str, Any]] = None,
+    camera_state: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """The walking decision. All distances in FEET."""
-    if lidar_state is None or radar_state is None:
-        from app.core.shared_state import get_lidar_state, get_radar_state
+    """The walking decision. All distances in FEET. `camera_state`, for the side the laser
+    cannot see (read_direction's `side_clear`): the live one when None, as the device runs; a
+    replay passes the recorded one."""
+    if lidar_state is None or radar_state is None or camera_state is None:
+        from app.core.shared_state import get_camera_state, get_lidar_state, get_radar_state
 
         lidar_state = get_lidar_state() if lidar_state is None else lidar_state
         radar_state = get_radar_state() if radar_state is None else radar_state
+        camera_state = get_camera_state() if camera_state is None else camera_state
 
     from app.perception.sensor_fusion import lidar_is_fresh, lidar_sparse
 
@@ -1546,6 +1695,7 @@ def decide(
         _tof_solids() if lidar_state else None,
         _tof_near() if lidar_state else None,
         _tof_rest() if lidar_state else None,
+        camera_state,
     )
     _carry_measured(views, time.time())
     front = views["front"]

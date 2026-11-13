@@ -4,6 +4,7 @@
     venv/bin/python -m tools.sim.scene_hunt mirror -n 400      # a scene and its mirror image
     venv/bin/python -m tools.sim.scene_hunt rules -n 1500      # safety rules vs the true geometry
     venv/bin/python -m tools.sim.scene_hunt rules --ghosts 0.5 # radar double-bounce ghosts too
+    venv/bin/python -m tools.sim.scene_hunt rules --side-camera-clear  # the side cameras see no one
 
 A scene: a corridor (independent left/right walls), maybe a wall ahead, 0-3 round posts,
 maybe a glass pane across the path that only the radar hears. The LiDAR scan goes through
@@ -16,7 +17,11 @@ mirror: the scene mirrored left <-> right must get the mirrored sentence ("Turn 
 rules: with the rig's blind arc, against the scene's TRUE geometry: a solid within 4 ft on
 the walking line gets a block warning; within 8 ft, never "Walk straight"; glass within 4 ft,
 never "Walk straight"; "Turn left/right" only with 2 ft of room that way; no glass sentence
-with no glass (a false alarm)."""
+with no glass (a false alarm).
+
+--side-camera-clear: the side cameras always show nobody there, even with a post on that
+side (which they would not name): the worst case for the blind side's close-wall rule
+(walk_policy._front_wall_echo, 2026-11-13), whose turns are then held to the true geometry."""
 
 import argparse
 import collections
@@ -122,7 +127,14 @@ def publish(scene, blind, ghosts=0.0, rnd=None):
             "degraded": False, "lag_s": 0.0, "phase": "streaming", "error": None})
 
 
-def decide(scene, blind=True, ghosts=0.0, rnd=None):
+def clear_cameras():
+    """Both side cameras: a fresh, real picture in which nothing is named."""
+    shot = {"detections": [], "num_objects": 0, "frame_time": time.time(), "simulated": False,
+            "view": {"dark": False, "blurred": False}}
+    return {"left": dict(shot), "right": dict(shot)}
+
+
+def decide(scene, blind=True, ghosts=0.0, rnd=None, camera=None):
     publish(scene, blind, ghosts, rnd)
     wp._last_turn.update(direction=None, at=0.0)
     wp._last_measured.clear()
@@ -131,7 +143,7 @@ def decide(scene, blind=True, ghosts=0.0, rnd=None):
     # verdict turned on how fast the run went (2026-11-10).
     wp._near_frames.clear()
     lidar, radar = get_lidar_state(), get_radar_state()
-    walk = wp.decide(lidar, radar)
+    walk = wp.decide(lidar, radar, clear_cameras() if camera == "clear" else {})
     return walk, sg.decide(walk, lidar, time.time(), radar_state=radar, camera_state={})
 
 
@@ -172,12 +184,12 @@ def run_mirror(n, seed):
     return len(bad)
 
 
-def run_rules(n, seed, ghosts):
+def run_rules(n, seed, ghosts, camera=None):
     rnd, said = random.Random(seed), collections.Counter()
     bad = collections.defaultdict(list)
     for i in range(n):
         scene = random_scene(rnd)
-        _walk, raw = decide(scene, True, ghosts, rnd)
+        _walk, raw = decide(scene, True, ghosts, rnd, camera)
         text, level = raw["instruction"], sg._LEVEL.get(raw["instruction"], -1)
         said[text] += 1
         line, room = truth(scene)
@@ -196,7 +208,8 @@ def run_rules(n, seed, ghosts):
         for side, turn in (("left", sg.TURN_LEFT), ("right", sg.TURN_RIGHT)):
             if (text == turn or sg._WAY_OUT.get(text) == side) and room[side] < c.WALK_MIN_TURN_FT * FT - m:
                 bad[f"'{text}' with < 2 ft of room that way"].append((i, text, scene))
-    print(f"{n} scenes{f', radar ghosts {ghosts:.0%}' if ghosts else ''}. Said: "
+    print(f"{n} scenes{f', radar ghosts {ghosts:.0%}' if ghosts else ''}"
+          f"{', side cameras clear' if camera else ''}. Said: "
           + ", ".join(f"{t!r} {k}" for t, k in said.most_common(6)))
     print("  no rule broken" if not bad else "")
     for rule, cases in bad.items():
@@ -212,11 +225,13 @@ def main():
     ap.add_argument("-n", type=int, default=400)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--ghosts", type=float, default=0.0, help="chance of a double-bounce ghost per wall echo")
+    ap.add_argument("--side-camera-clear", action="store_true",
+                    help="the side cameras see no one, whatever is there (rules only)")
     args = ap.parse_args()
     if args.check == "mirror":
         found = run_mirror(args.n, args.seed)
     else:
-        found = run_rules(args.n, args.seed, args.ghosts)
+        found = run_rules(args.n, args.seed, args.ghosts, "clear" if args.side_camera_clear else None)
     return 1 if found else 0
 
 

@@ -53,14 +53,17 @@ class LaserPointHardeningTests(unittest.TestCase):
         return {"points": {"angles": angles, "distances": dists}, "last_update": time.time()}
 
     def test_bad_pairs_are_dropped(self):
-        a, d = walk_policy._laser_points(self.state([0.0, None, 2.0, float("nan")], [1000, 1100, None, 900]))
+        a, d = walk_policy._laser_points(
+            self.state([0.0, None, 2.0, float("nan")], [1000, 1100, None, 900])
+        )
         self.assertEqual((a, d), ([0.0], [1000.0]))
         a, d = walk_policy._laser_points(self.state([0.0, 1.0, 2.0], [1000, 1100]))
         self.assertEqual(len(a), len(d))
 
     def test_glass_checks_survive_them(self):
-        st = self.state([0.0, None, 1.0] + [float(i) for i in range(2, 50)],
-                        [900, 950, 960] + [1000] * 40)  # a None angle, and a shorter list
+        st = self.state(
+            [0.0, None, 1.0] + [float(i) for i in range(2, 50)], [900, 950, 960] + [1000] * 40
+        )  # a None angle, and a shorter list
         walk_policy._laser_explains(st, 30.0, 1000.0)
         walk_policy._matches_ahead(st, 3.0)
 
@@ -70,27 +73,50 @@ class TurnAwayFromObstacleTests(unittest.TestCase):
     fixed order: on the rig always "Turn right", with the obstacle on the right too)."""
 
     def views(self, left=20.0, right=20.0):
-        return {d: {"direction": d, "distance_ft": ft, "unknown": False, "open": False}
-                for d, ft in (("left", left), ("right", right), ("back", 10.0))}
+        return {
+            d: {"direction": d, "distance_ft": ft, "unknown": False, "open": False}
+            for d, ft in (("left", left), ("right", right), ("back", 10.0))
+        }
 
     def test_away_from_the_obstacle(self):
-        self.assertEqual(walk_policy.choose_turn(self.views(), 2.5, obstacle_deg=20.0)["direction"], "left")
-        self.assertEqual(walk_policy.choose_turn(self.views(), 2.5, obstacle_deg=-20.0)["direction"], "right")
+        self.assertEqual(
+            walk_policy.choose_turn(self.views(), 2.5, obstacle_deg=20.0)["direction"], "left"
+        )
+        self.assertEqual(
+            walk_policy.choose_turn(self.views(), 2.5, obstacle_deg=-20.0)["direction"], "right"
+        )
 
     def test_held_turn_kept_and_near_ahead_not_judged(self):
-        self.assertEqual(walk_policy.choose_turn(self.views(), 2.5, "right", obstacle_deg=20.0)["direction"], "right")
-        self.assertEqual(walk_policy.choose_turn(self.views(18.0, 20.0), 2.5, obstacle_deg=1.0)["direction"], "right")
+        self.assertEqual(
+            walk_policy.choose_turn(self.views(), 2.5, "right", obstacle_deg=20.0)["direction"],
+            "right",
+        )
+        self.assertEqual(
+            walk_policy.choose_turn(self.views(18.0, 20.0), 2.5, obstacle_deg=1.0)["direction"],
+            "right",
+        )
 
     def test_little_room_one_way_still_goes_by_room(self):
-        self.assertEqual(walk_policy.choose_turn(self.views(5.0, 20.0), 2.5, obstacle_deg=-20.0)["direction"], "right")
+        self.assertEqual(
+            walk_policy.choose_turn(self.views(5.0, 20.0), 2.5, obstacle_deg=-20.0)["direction"],
+            "right",
+        )
 
     def test_the_rig_says_it(self):
         from tools.sim import scene_hunt as sh
 
-        post = {"left": None, "right": None, "ahead": None, "glass": None, "posts": [(800.0, 300.0, 130.0)]}
+        post = {
+            "left": None,
+            "right": None,
+            "ahead": None,
+            "glass": None,
+            "posts": [(800.0, 300.0, 130.0)],
+        }
         # Named since 2026-11-09: a post in front is not "Turn left" alone.
         self.assertEqual(sh.decide(post)[1]["instruction"], "Obstacle in front, turn left")
-        self.assertEqual(sh.decide(sh.mirror(post))[1]["instruction"], "Obstacle in front, turn right")
+        self.assertEqual(
+            sh.decide(sh.mirror(post))[1]["instruction"], "Obstacle in front, turn right"
+        )
 
 
 class GlassBehindNearerEchoTests(unittest.TestCase):
@@ -104,8 +130,13 @@ class GlassBehindNearerEchoTests(unittest.TestCase):
         return sh.decide(scene, ghosts=ghosts, rnd=random.Random(0))[1]["instruction"]
 
     def test_pane_at_a_side_posts_range(self):
-        scene = {"left": None, "right": 2667.0, "ahead": None, "glass": 836.0,
-                 "posts": [(3417.0, -135.0, 258.0), (3597.0, 1413.0, 196.0), (528.0, -776.0, 91.0)]}
+        scene = {
+            "left": None,
+            "right": 2667.0,
+            "ahead": None,
+            "glass": 836.0,
+            "posts": [(3417.0, -135.0, 258.0), (3597.0, 1413.0, 196.0), (528.0, -776.0, 91.0)],
+        }
         self.assertIn(self.said(scene), sg.BLOCKED_GLASS_TURN.values())  # with the way out
         self.assertEqual(self.said({**scene, "glass": None}), "Walk straight")
 
@@ -128,8 +159,9 @@ class BlindSideGlassTests(unittest.TestCase):
         # A post straight to the left, 1.6 ft: only the blind arc sees it (a wall would also
         # show in the laser's front-left, and that match cleared it before the fix too).
         for post in ((0.0, -600.0, 100.0), (-200.0, -500.0, 100.0)):
-            walk, _ = sh.decide({"left": None, "right": None, "ahead": None,
-                                 "glass": None, "posts": [post]})
+            walk, _ = sh.decide(
+                {"left": None, "right": None, "ahead": None, "glass": None, "posts": [post]}
+            )
             left = walk["directions"]["left"]
             self.assertTrue(left["lidar_blind"])
             self.assertTrue(left["radar_measured"])  # the radar heard the post
@@ -155,23 +187,53 @@ class RadarEchoStrengthTests(unittest.TestCase):
         from app.sensors import radar_utils as ru
         from app.core.shared_state import get_radar_state
 
-        ru._publish("deg330", {"min_dist": 900.0, "peaks_mm": [900.0, 2400.0],
-                               "peaks_db": [18.5, 31.0], "online": True, "degraded": False})
-        ru._publish("deg030", {"min_dist": 1200.0, "peaks_mm": [1200.0, 3100.0],
-                               "peaks_db": [12.0, 9.0], "online": True, "degraded": False})
+        ru._publish(
+            "deg330",
+            {
+                "min_dist": 900.0,
+                "peaks_mm": [900.0, 2400.0],
+                "peaks_db": [18.5, 31.0],
+                "online": True,
+                "degraded": False,
+            },
+        )
+        ru._publish(
+            "deg030",
+            {
+                "min_dist": 1200.0,
+                "peaks_mm": [1200.0, 3100.0],
+                "peaks_db": [12.0, 9.0],
+                "online": True,
+                "degraded": False,
+            },
+        )
         front = get_radar_state()["sectors"]["front"]
-        self.assertEqual(list(zip(front["peaks_mm"], front["peaks_db"])),
-                         [(900.0, 18.5), (1200.0, 12.0), (2400.0, 31.0), (3100.0, 9.0)])
+        self.assertEqual(
+            list(zip(front["peaks_mm"], front["peaks_db"])),
+            [(900.0, 18.5), (1200.0, 12.0), (2400.0, 31.0), (3100.0, 9.0)],
+        )
 
     def test_a_row_without_strengths_does_not_shift_them(self):
         from app.sensors import radar_utils as ru
         from app.core.shared_state import get_radar_state
 
-        ru._publish("deg330", {"min_dist": 900.0, "peaks_mm": [900.0], "online": True, "degraded": False})
-        ru._publish("deg030", {"min_dist": 1200.0, "peaks_mm": [1200.0], "peaks_db": [12.0],
-                               "online": True, "degraded": False})
+        ru._publish(
+            "deg330", {"min_dist": 900.0, "peaks_mm": [900.0], "online": True, "degraded": False}
+        )
+        ru._publish(
+            "deg030",
+            {
+                "min_dist": 1200.0,
+                "peaks_mm": [1200.0],
+                "peaks_db": [12.0],
+                "online": True,
+                "degraded": False,
+            },
+        )
         front = get_radar_state()["sectors"]["front"]
-        self.assertEqual(list(zip(front["peaks_mm"], front["peaks_db"])), [(900.0, None), (1200.0, 12.0)])
+        self.assertEqual(
+            list(zip(front["peaks_mm"], front["peaks_db"])), [(900.0, None), (1200.0, 12.0)]
+        )
 
 
 class AfternoonFixTests(unittest.TestCase):
@@ -193,12 +255,15 @@ class AfternoonFixTests(unittest.TestCase):
         lat = 1000.0
         for ft in (2.6, 3.0, 3.4):
             d = ft * gs.FT
-            segs = (gs.side_wall("left", lat) + gs.side_wall("right", lat)
-                    + gs.wall_across(d, gs.DOOR_HALF_MM) + gs.back_wall())
+            segs = (
+                gs.side_wall("left", lat)
+                + gs.side_wall("right", lat)
+                + gs.wall_across(d, gs.DOOR_HALF_MM)
+                + gs.back_wall()
+            )
             wall_echo = lat * gs.BEAM_EDGE
             both = sorted({d, wall_echo})
-            f = self._front(segs, {"deg030": d, "deg330": d},
-                            {"deg030": both, "deg330": both})
+            f = self._front(segs, {"deg030": d, "deg330": d}, {"deg030": both, "deg330": both})
             self.assertTrue(f["glass"], ft)
             self.assertAlmostEqual(f["distance_ft"], ft, delta=0.3)
 
@@ -217,8 +282,11 @@ class AfternoonFixTests(unittest.TestCase):
 
         d = 3.0 * gs.FT
         for behind_ft in (0.7, 1.3, 1.9):
-            segs = (gs.wall_across(d, gs.DOOR_HALF_MM) + gs.back_wall()
-                    + gs.post(d + behind_ft * gs.FT + 150, 0.0, 150))
+            segs = (
+                gs.wall_across(d, gs.DOOR_HALF_MM)
+                + gs.back_wall()
+                + gs.post(d + behind_ft * gs.FT + 150, 0.0, 150)
+            )
             f = self._front(segs, {"deg030": d, "deg330": d})
             self.assertAlmostEqual(f["distance_ft"], 3.0, delta=0.15, msg=behind_ft)
 
@@ -231,8 +299,11 @@ class AfternoonFixTests(unittest.TestCase):
             self.assertIsNotNone(sg.camera_path(cam, 100.0, None, None))  # no tracker
 
     def test_a_box_cut_at_both_sides_gives_no_way_past(self):
-        det = {"class_name": "car", "confidence": 0.9,
-               "bbox": [0.0, 300.0, float(sg._QUAD_W), 700.0]}
+        det = {
+            "class_name": "car",
+            "confidence": 0.9,
+            "bbox": [0.0, 300.0, float(sg._QUAD_W), 700.0],
+        }
         cam = {"front": {"frame_time": 100.0, "detections": [det]}}
         with unittest.mock.patch.object(sg, "_camera_sees", lambda *a: True):
             self.assertIsNone(sg.camera_path(cam, 100.0))
@@ -243,15 +314,23 @@ class AfternoonFixTests(unittest.TestCase):
         from tools.sim import glass_sim as gs
 
         FT = gs.FT
-        segs = segs if segs is not None else (
-            [(1.4 * FT, 1.1 * FT, 1.4 * FT, 3.0 * FT)]
-            + gs.side_wall("right", 4.1 * FT, x_from=-1.3 * FT, x_to=1.5 * FT)
+        segs = (
+            segs
+            if segs is not None
+            else (
+                [(1.4 * FT, 1.1 * FT, 1.4 * FT, 3.0 * FT)]
+                + gs.side_wall("right", 4.1 * FT, x_from=-1.3 * FT, x_to=1.5 * FT)
+            )
         )
-        return self._front(
-            segs,
-            {"deg330": 525.9, "deg030": 263.3},
-            {"deg330": [525.9, 1288.2], "deg030": [263.3, 956.1]},
-        ) if tof_solids is None else self._front_tof(segs, tof_solids)
+        return (
+            self._front(
+                segs,
+                {"deg330": 525.9, "deg030": 263.3},
+                {"deg330": [525.9, 1288.2], "deg030": [263.3, 956.1]},
+            )
+            if tof_solids is None
+            else self._front_tof(segs, tof_solids)
+        )
 
     def _front_tof(self, segs, tof_solids):
         from tools.sim import glass_sim as gs
@@ -260,9 +339,7 @@ class AfternoonFixTests(unittest.TestCase):
         radar = gs.radar_state({"deg330": 525.9, "deg030": 263.3})
         radar["sectors"]["deg330"]["peaks_mm"] = [525.9, 1288.2]
         radar["sectors"]["deg030"]["peaks_mm"] = [263.3, 956.1]
-        return walk_policy.read_direction(
-            gs.lidar_state(segs), radar, "front", None, tof_solids
-        )
+        return walk_policy.read_direction(gs.lidar_state(segs), radar, "front", None, tof_solids)
 
     def test_a_desk_the_tof_sees_and_the_radar_hears_is_not_glass(self):
         self.assertTrue(self._desk(None)["glass"])  # without the ToF: the old false glass
@@ -289,15 +366,19 @@ class AfternoonFixTests(unittest.TestCase):
         from tools.sim import glass_sim as gs
 
         FT = gs.FT
-        segs = ([(-1.0 * FT, 1.2 * FT, 4.1 * FT, 1.2 * FT)]
-                + [(4.5 * FT, -1.55 * FT, 4.5 * FT, 1.2 * FT)]
-                + [(-2.3 * FT, -4 * FT, -2.3 * FT, 4 * FT)])
+        segs = (
+            [(-1.0 * FT, 1.2 * FT, 4.1 * FT, 1.2 * FT)]
+            + [(4.5 * FT, -1.55 * FT, 4.5 * FT, 1.2 * FT)]
+            + [(-2.3 * FT, -4 * FT, -2.3 * FT, 4 * FT)]
+        )
         f = self._front(segs, {"deg030": 330.0})
         self.assertFalse(f["glass"])
         # A pane 1 ft ahead with a wall beside it is heard by BOTH boards: still glass.
         d, lat = 1.0 * FT, 1.1 * FT
-        f = self._front(gs.side_wall("left", lat, x_to=d) + gs.back_wall(),
-                        {"deg330": min(d, lat * gs.BEAM_EDGE), "deg030": d})
+        f = self._front(
+            gs.side_wall("left", lat, x_to=d) + gs.back_wall(),
+            {"deg330": min(d, lat * gs.BEAM_EDGE), "deg030": d},
+        )
         self.assertTrue(f["glass"])
 
     def test_the_tof_seeing_a_solid_thing_at_the_echo_is_not_glass(self):
@@ -323,8 +404,15 @@ class AfternoonFixTests(unittest.TestCase):
 
     def test_a_laser_measured_block_drops_the_held_glass(self):
         world = sg._World()
-        base = {"blocked": True, "near": True, "wall": False, "front_ft": 1.2,
-                "side": "left", "scan_index": 1, "in_front": True}
+        base = {
+            "blocked": True,
+            "near": True,
+            "wall": False,
+            "front_ft": 1.2,
+            "side": "left",
+            "scan_index": 1,
+            "in_front": True,
+        }
         for k in range(6):
             world.update({**base, "glass": True, "scan_index": k}, 100.0 + 0.07 * k)
         text, _ = world.update(
@@ -334,8 +422,10 @@ class AfternoonFixTests(unittest.TestCase):
         self.assertNotIn(text, sg.BLOCKED_GLASS_ANY)
 
     def test_named_block_keeps_the_walk_policys_way_out(self):
-        for side, want in (("right", sg.STEER_IN_FRONT[("Person", "right")]),
-                           ("around", sg.OBJECT_IN_FRONT_AROUND["Person"])):
+        for side, want in (
+            ("right", sg.STEER_IN_FRONT[("Person", "right")]),
+            ("around", sg.OBJECT_IN_FRONT_AROUND["Person"]),
+        ):
             text = sg._sentence(True, True, False, False, side, obj="Person")
             self.assertEqual(text, want)
             self.assertIn(text, sg.ALLOWED)
@@ -370,16 +460,20 @@ class ClockAndClipTests(unittest.TestCase):
         import tempfile
         from app.core import walk_recorder as wr
 
-        with tempfile.TemporaryDirectory() as tmp, unittest.mock.patch.object(
-            wr, "WALK_RECORD_DIR", tmp
-        ), unittest.mock.patch.object(wr, "WALK_CLIP_AFTER_S", 0.1):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            unittest.mock.patch.object(wr, "WALK_RECORD_DIR", tmp),
+            unittest.mock.patch.object(wr, "WALK_CLIP_AFTER_S", 0.1),
+        ):
             rec = wr.WalkRecorder()
             m0 = time.monotonic()
             for i in range(30):
                 rec.tick(time.time(), m0 - 1.5 + i * 0.05, {"lidar": {"i": i}}, {"speak": False})
             path = rec.clip("wrong", "a test")
             for i in range(2):  # after the mark
-                rec.tick(time.time(), time.monotonic() + 0.01 * (i + 1), {"lidar": {"i": 100 + i}}, {})
+                rec.tick(
+                    time.time(), time.monotonic() + 0.01 * (i + 1), {"lidar": {"i": 100 + i}}, {}
+                )
             for _ in range(50):
                 if os.path.exists(path):
                     break
@@ -389,8 +483,7 @@ class ClockAndClipTests(unittest.TestCase):
         self.assertEqual(sum(1 for x in lines if "in" in x), 32)
         self.assertEqual(len(marks), 1)
         self.assertEqual(lines[marks[0]]["mark"], "wrong")
-        self.assertTrue(all("in" in x for x in lines[marks[0] + 1:]))  # only after-ticks follow
-
+        self.assertTrue(all("in" in x for x in lines[marks[0] + 1 :]))  # only after-ticks follow
 
 
 class LabelTests(unittest.TestCase):
@@ -430,7 +523,9 @@ class LabelTests(unittest.TestCase):
                 counts = rec.label_counts()
         self.assertTrue(path.endswith("-wall.jsonl.gz"), path)
         mark = next(x for x in lines if "mark" in x)
-        self.assertEqual((mark["mark"], mark["label"], mark["said"]), ("label", "wall", "Obstacle ahead"))
+        self.assertEqual(
+            (mark["mark"], mark["label"], mark["said"]), ("label", "wall", "Obstacle ahead")
+        )
         self.assertEqual(counts["wall"], 1)
         self.assertEqual(sum(counts.values()), 1)
 
@@ -505,8 +600,18 @@ class LabelTests(unittest.TestCase):
                     out = {"instruction": said, "speak": i == 10}
                     if i == 30:
                         out = {"instruction": "Camera off", "speak": True}
-                    fh.write(json.dumps({"t": 100 + i / 10, "mono": 50 + i / 10, "in": {"i": i}, "out": out}) + "\n")
-                fh.write(json.dumps({"t": 104, "mono": 54.0, "mark": "label", "label": "wall", "said": said}) + "\n")
+                    fh.write(
+                        json.dumps(
+                            {"t": 100 + i / 10, "mono": 50 + i / 10, "in": {"i": i}, "out": out}
+                        )
+                        + "\n"
+                    )
+                fh.write(
+                    json.dumps(
+                        {"t": 104, "mono": 54.0, "mark": "label", "label": "wall", "said": said}
+                    )
+                    + "\n"
+                )
             rows = labels_in(path, replay=False, export_s=1.0)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["then"], {"instruction": said, "class": "obstacle"})
@@ -517,11 +622,12 @@ class LabelTests(unittest.TestCase):
         import re
         from app.config import MARK_LABELS
 
-        with open(os.path.join(os.path.dirname(__file__), "..", "templates", "dashboard.html")) as fh:
+        with open(
+            os.path.join(os.path.dirname(__file__), "..", "templates", "dashboard.html")
+        ) as fh:
             html = fh.read()
         self.assertEqual(tuple(re.findall(r'data-label="([a-z]+)"', html)), MARK_LABELS)
         self.assertEqual(len({k[0] for k in MARK_LABELS}), len(MARK_LABELS))  # one key each
-
 
 
 class ToFWallTests(unittest.TestCase):
@@ -536,21 +642,35 @@ class ToFWallTests(unittest.TestCase):
         if cls._ground is None:
             from tools.sim import ground_hazard_sim as gs
 
-            cls._ground = gs.run_scene("wall_near", frames=3, with_camera=False, scenes=gs.WALL_SCENES)
+            cls._ground = gs.run_scene(
+                "wall_near", frames=3, with_camera=False, scenes=gs.WALL_SCENES
+            )
         return {**cls._ground, "t": now}
 
     def test_flat_wide_surfaces_are_walls_and_people_and_furniture_are_not(self):
         from tools.sim import ground_hazard_sim as gs
 
-        for name, want in (("wall_angled", True), ("blind", True), ("room_corner", True),
-                           ("person", False), ("chair", False), ("cupboard", False)):
+        for name, want in (
+            ("wall_angled", True),
+            ("blind", True),
+            ("room_corner", True),
+            ("person", False),
+            ("chair", False),
+            ("cupboard", False),
+        ):
             found, why, _s, _ms = gs.wall_result(name)
             self.assertEqual(found is not None, want, f"{name}: {why}")
 
     def test_a_wall_must_hold_over_frames_and_be_fresh(self):
         from app.perception.ground_hazards import confirmed_wall
 
-        wall = {"ahead_m": 1.2, "length_m": 2.0, "flat_m": 0.01, "reaches_top": True, "height_m": 1.2}
+        wall = {
+            "ahead_m": 1.2,
+            "length_m": 2.0,
+            "flat_m": 0.01,
+            "reaches_top": True,
+            "height_m": 1.2,
+        }
         snap = lambda surfaces, t=100.0: {"ok": True, "t": t, "front_surfaces": surfaces}
         self.assertIsNotNone(confirmed_wall(snap([None, wall, wall]), 100.1)[0])
         self.assertIsNone(confirmed_wall(snap([None, None, wall]), 100.1)[0])  # one frame
@@ -570,16 +690,30 @@ class ToFWallTests(unittest.TestCase):
         got = None
         with unittest.mock.patch.object(sg, "TOF_WALL_SPEAK", speak):
             for i in range(6):
-                sh.publish({"left": None, "right": None, "ahead": None,
-                            "posts": [(1450, 0, 250)], "glass": None}, True)
+                sh.publish(
+                    {
+                        "left": None,
+                        "right": None,
+                        "ahead": None,
+                        "posts": [(1450, 0, 250)],
+                        "glass": None,
+                    },
+                    True,
+                )
                 lidar, radar = get_lidar_state(), get_radar_state()
                 now = time.time() + i * 0.15
                 ground = self.ground(now)
                 if ground_at is not None:
                     moved = {**ground["front_surfaces"][-1], "ahead_m": ground_at}
                     ground = {**ground, "front_surfaces": [moved] * 3}
-                got = sg.guidance(walk_policy.decide(lidar, radar), lidar, now=now,
-                                  radar_state=radar, camera_state={}, ground=ground)
+                got = sg.guidance(
+                    walk_policy.decide(lidar, radar),
+                    lidar,
+                    now=now,
+                    radar_state=radar,
+                    camera_state={},
+                    ground=ground,
+                )
         return got
 
     def test_the_tofs_wall_names_an_unnamed_block_keeping_its_turn(self):
@@ -595,7 +729,6 @@ class ToFWallTests(unittest.TestCase):
         got = self._block(ground_at=2.6, speak=True)
         self.assertIn(got["instruction"], sg.OBSTACLE_IN_FRONT.values())
         self.assertIsNone(got["raw"]["tof_wall"])
-
 
 
 class RestingOnADeskTests(unittest.TestCase):
@@ -649,7 +782,9 @@ class RestingOnADeskTests(unittest.TestCase):
 
         sh.publish({"left": 450, "right": 430, "ahead": 1225, "posts": [], "glass": 290}, True)
         walk_policy._near_frames.clear()
-        return walk_policy.read_direction(get_lidar_state(), get_radar_state(), "front", tof_rest=rest)
+        return walk_policy.read_direction(
+            get_lidar_state(), get_radar_state(), "front", tof_rest=rest
+        )
 
     def test_an_echo_at_the_desk_is_the_desk(self):
         desk = {"below_m": 0.02, "to_m": 0.356, "points": 3500}
@@ -757,8 +892,13 @@ class CameraLightTests(unittest.TestCase):
                     for k in range(10):
                         cam = {"front": {"view": {"lux": lux}}}
                         out = {"instruction": said, "speak": k == 2}
-                        fh.write(json.dumps({"t": k, "mono": k, "in": {"camera": cam}, "out": out}) + "\n")
-                    fh.write(json.dumps({"t": 10, "mono": 10.0, "mark": "label", "label": "wall"}) + "\n")
+                        fh.write(
+                            json.dumps({"t": k, "mono": k, "in": {"camera": cam}, "out": out})
+                            + "\n"
+                        )
+                    fh.write(
+                        json.dumps({"t": 10, "mono": 10.0, "mark": "label", "label": "wall"}) + "\n"
+                    )
                 rows += labels_in(path, replay=False)
         self.assertEqual([r["lux"] for r in rows], [380.0, 20.0])
         printed = io.StringIO()
@@ -767,7 +907,6 @@ class CameraLightTests(unittest.TestCase):
         text = printed.getvalue()
         self.assertRegex(text, r"good light\s+1\s+1 \(100%\)")
         self.assertRegex(text, r"dim\s+1\s+0 \(  0%\)")
-
 
 
 class PaneAcrossANarrowPassageTests(unittest.TestCase):
@@ -804,8 +943,12 @@ class PaneAcrossANarrowPassageTests(unittest.TestCase):
 
     def test_a_wall_cannot_explain_an_echo_nearer_than_itself(self):
         side = {True: 914.0}
-        self.assertTrue(walk_policy._wall_too_far(60.0, 914.0 / math.sin(math.radians(60)), side, 792.0))
-        self.assertFalse(walk_policy._wall_too_far(60.0, 914.0 / math.sin(math.radians(60)), side, 850.0))
+        self.assertTrue(
+            walk_policy._wall_too_far(60.0, 914.0 / math.sin(math.radians(60)), side, 792.0)
+        )
+        self.assertFalse(
+            walk_policy._wall_too_far(60.0, 914.0 / math.sin(math.radians(60)), side, 850.0)
+        )
         self.assertFalse(walk_policy._wall_too_far(10.0, 900.0, side, 500.0))  # not on the wall
 
 
@@ -827,22 +970,33 @@ class CloseWallOpenSideTests(unittest.TestCase):
         sh.publish(scene, True)
         lidar, radar = get_lidar_state(), get_radar_state()
         walk = walk_policy.decide(lidar, radar, camera or {})
-        said = sg.decide(walk, lidar, time.time(), radar_state=radar, camera_state={})["instruction"]
+        said = sg.decide(walk, lidar, time.time(), radar_state=radar, camera_state={})[
+            "instruction"
+        ]
         return (said, walk["directions"]["left"]["distance_ft"]) if left else said
 
     def test_the_open_side_is_offered(self):
         ft = 304.8
         for f in (1.0, 1.3, 1.5):
             with self.subTest(wall_ft=f):
-                said = self._say({"left": None, "right": None, "ahead": f * ft, "posts": [], "glass": None})
+                said = self._say(
+                    {"left": None, "right": None, "ahead": f * ft, "posts": [], "glass": None}
+                )
                 self.assertEqual(said, sg.BLOCKED_WALL_TURN["right"])
         corner = {"left": 1.7 * ft, "right": None, "ahead": 1.0 * ft, "posts": [], "glass": None}
-        self.assertEqual(self._say(corner), sg.BLOCKED_WALL_TURN["right"])  # was "Stop, no clear way"
+        self.assertEqual(
+            self._say(corner), sg.BLOCKED_WALL_TURN["right"]
+        )  # was "Stop, no clear way"
 
     def test_something_on_the_sides_line_still_closes_it(self):
         ft = 304.8
-        post_right = {"left": None, "right": None, "ahead": 1.0 * ft, "glass": None,
-                      "posts": [(0.0, 1.9 * ft, 150.0)]}  # a post 1.9 ft to the right, abeam
+        post_right = {
+            "left": None,
+            "right": None,
+            "ahead": 1.0 * ft,
+            "glass": None,
+            "posts": [(0.0, 1.9 * ft, 150.0)],
+        }  # a post 1.9 ft to the right, abeam
         self.assertNotEqual(self._say(post_right), sg.BLOCKED_WALL_TURN["right"])
 
     def test_the_blind_side_keeps_the_radar(self):
@@ -867,13 +1021,24 @@ class BlindSideCloseWallTests(unittest.TestCase):
         self.say = CloseWallOpenSideTests._say.__get__(self)
 
     def _cam(self, age=0.3, dets=(), dark=False, simulated=False):
-        return {"left": {"detections": list(dets), "num_objects": len(dets),
-                         "frame_time": time.time() - age, "simulated": simulated,
-                         "view": {"dark": dark, "blurred": False}}}
+        return {
+            "left": {
+                "detections": list(dets),
+                "num_objects": len(dets),
+                "frame_time": time.time() - age,
+                "simulated": simulated,
+                "view": {"dark": dark, "blurred": False},
+            }
+        }
 
     def _corner(self, ahead_ft, left_ft=None):
-        return {"left": left_ft and left_ft * self.FT, "right": 1.7 * self.FT,
-                "ahead": ahead_ft * self.FT, "posts": [], "glass": None}
+        return {
+            "left": left_ft and left_ft * self.FT,
+            "right": 1.7 * self.FT,
+            "ahead": ahead_ft * self.FT,
+            "posts": [],
+            "glass": None,
+        }
 
     def test_the_left_is_offered_when_its_camera_sees_nobody(self):
         for f in (1.3, 1.5):
@@ -884,9 +1049,13 @@ class BlindSideCloseWallTests(unittest.TestCase):
 
     def test_without_a_clear_picture_it_stays_turn_around(self):
         person = [{"class_name": "person", "confidence": 0.8, "bbox": [100, 50, 300, 800]}]
-        for name, cam in (("a person", self._cam(dets=person)), ("4 s old", self._cam(age=4.0)),
-                          ("dark", self._cam(dark=True)), ("simulated", self._cam(simulated=True)),
-                          ("no camera", {})):
+        for name, cam in (
+            ("a person", self._cam(dets=person)),
+            ("4 s old", self._cam(age=4.0)),
+            ("dark", self._cam(dark=True)),
+            ("simulated", self._cam(simulated=True)),
+            ("no camera", {}),
+        ):
             with self.subTest(camera=name):
                 self.assertEqual(self.say(self._corner(1.3), cam), sg.BLOCKED_WALL_TURN["around"])
 
@@ -985,8 +1154,11 @@ class _GlassDoorScenes:
         extra = []
         if person:
             lat, dz = person
-            extra = gs.post(d - lat * math.sin(t) + dz * math.cos(t),
-                            lat * math.cos(t) + dz * math.sin(t), half=170.0)
+            extra = gs.post(
+                d - lat * math.sin(t) + dz * math.cos(t),
+                lat * math.cos(t) + dz * math.sin(t),
+                half=170.0,
+            )
         echoes = {}
         for key, bearing in (("deg030", 30.0), ("deg330", -30.0)):
             heard = (self._heard(s, bearing) for s in (pane, wall, extra) if s)
@@ -1041,10 +1213,19 @@ class TwoPostsAnOpenWayTests(_GlassDoorScenes, unittest.TestCase):
         from tools.sim import scene_hunt as sh
         from app.core.shared_state import get_lidar_state, get_radar_state
 
-        sh.publish({"left": None, "right": None, "ahead": None, "glass": None,
-                    "posts": [(1773, -1092, 62), (2034, 682, 247)]}, True)
-        self.assertIs(walk_policy._pane_on_wall_line(get_lidar_state(), get_radar_state(), 1899.0), False)
-
+        sh.publish(
+            {
+                "left": None,
+                "right": None,
+                "ahead": None,
+                "glass": None,
+                "posts": [(1773, -1092, 62), (2034, 682, 247)],
+            },
+            True,
+        )
+        self.assertIs(
+            walk_policy._pane_on_wall_line(get_lidar_state(), get_radar_state(), 1899.0), False
+        )
 
 
 class GlassDoorAtAnAngleTests(_GlassDoorScenes, unittest.TestCase):
@@ -1074,11 +1255,20 @@ class GlassDoorAtAnAngleTests(_GlassDoorScenes, unittest.TestCase):
                     echo = d * math.cos(math.radians(angle))
                     walk_policy._near_frames.clear()
                     front = walk_policy.read_direction(
-                        gs.lidar_state(wall), gs.radar_state({"deg030": echo, "deg330": echo}), "front")
+                        gs.lidar_state(wall),
+                        gs.radar_state({"deg030": echo, "deg330": echo}),
+                        "front",
+                    )
                     self.assertFalse(front["glass"])
-                    self.assertFalse(walk_policy._door_in_tilted_wall(
-                        gs.lidar_state(wall), gs.radar_state({"deg030": echo, "deg330": echo}),
-                        echo / gs.FT, front["lidar_ft"], front["lidar_measured"]))
+                    self.assertFalse(
+                        walk_policy._door_in_tilted_wall(
+                            gs.lidar_state(wall),
+                            gs.radar_state({"deg030": echo, "deg330": echo}),
+                            echo / gs.FT,
+                            front["lidar_ft"],
+                            front["lidar_measured"],
+                        )
+                    )
 
 
 class GlassDoorWithSomeoneNearTests(_GlassDoorScenes, unittest.TestCase):
@@ -1089,8 +1279,12 @@ class GlassDoorWithSomeoneNearTests(_GlassDoorScenes, unittest.TestCase):
 
     def test_the_pane_behind_the_person_is_glass_at_its_range(self):
         # (angle, ft, person along the wall, in front of it): each missed before
-        for angle, ft, lat, dz in ((0.0, 4.5, -850.0, -250.0), (10.0, 3.0, 850.0, -250.0),
-                                   (20.0, 6.0, -650.0, -400.0), (20.0, 6.0, 650.0, -250.0)):
+        for angle, ft, lat, dz in (
+            (0.0, 4.5, -850.0, -250.0),
+            (10.0, 3.0, 850.0, -250.0),
+            (20.0, 6.0, -650.0, -400.0),
+            (20.0, 6.0, 650.0, -250.0),
+        ):
             with self.subTest(angle=angle, ft=ft, lat=lat, dz=dz):
                 lidar, radar = self._door(ft, angle, person=(lat, dz))
                 front = walk_policy.read_direction(lidar, radar, "front")
@@ -1117,10 +1311,13 @@ class GlassDoorWithSomeoneNearTests(_GlassDoorScenes, unittest.TestCase):
         from tools.sim import scene_hunt as sh
 
         sg.reset()
-        walk, _raw = sh.decide({"left": None, "right": 1659, "ahead": 2104, "glass": None, "posts": []})
+        walk, _raw = sh.decide(
+            {"left": None, "right": 1659, "ahead": 2104, "glass": None, "posts": []}
+        )
         front = walk["directions"]["front"]
         self.assertFalse(front["glass"])
         self.assertAlmostEqual(front["distance_ft"], 2104 / 304.8, delta=0.1)
+
 
 class CameraExposureCapTests(unittest.TestCase):
     """2026-11-11: walking blurred the camera's 24-30 ms exposures; the cap keeps it at
@@ -1134,9 +1331,16 @@ class CameraExposureCapTests(unittest.TestCase):
         from app.sensors import pi_camera_utils as pc
 
         normal = {"shutter": [100, 10000, 30000, 60000, 120000], "gain": [1.0, 2.0, 4.0, 6.0, 8.0]}
-        tuning = {"version": 2.0, "algorithms": [{"rpi.agc": {"channels": [{"exposure_modes": {"normal": dict(normal)}}]}}]}
-        with unittest.mock.patch("picamera2.Picamera2.load_tuning_file", lambda name: tuning), \
-                unittest.mock.patch.object(pc, "CAMERA_SHUTTER_CAP_MS", 10.0):
+        tuning = {
+            "version": 2.0,
+            "algorithms": [
+                {"rpi.agc": {"channels": [{"exposure_modes": {"normal": dict(normal)}}]}}
+            ],
+        }
+        with (
+            unittest.mock.patch("picamera2.Picamera2.load_tuning_file", lambda name: tuning),
+            unittest.mock.patch.object(pc, "CAMERA_SHUTTER_CAP_MS", 10.0),
+        ):
             got, ctrls = pc._short_exposure()
         short = got["algorithms"][0]["rpi.agc"]["channels"][0]["exposure_modes"]["short"]
         self.assertEqual(short["shutter"], [100.0, 10000.0, 10000.0, 10000.0, 120000.0])
@@ -1157,16 +1361,23 @@ class SpokenOnlyOnTheDashboardTests(unittest.TestCase):
         with unittest.mock.patch.object(speech_log, "SPEECH_LOG_TO_FILE", False):
             speech_log.reset()
             t = time.time()
-            speech_log.say("guidance", sg.BLOCKED_WALL_TURN["right"], level="urgent", now=t,
-                           via="phone", timing={"scan_age_ms": 59})
+            speech_log.say(
+                "guidance",
+                sg.BLOCKED_WALL_TURN["right"],
+                level="urgent",
+                now=t,
+                via="phone",
+                timing={"scan_age_ms": 59},
+            )
             speech_log.say("route-planner", f"would say: {sg.TURN_RIGHT}", now=t + 0.1)
             speech_log.say("tof-hazards", f"would say: {sg.OBSTACLE_AHEAD}", now=t + 0.2)
             speech_log.say("tester", "WRONG", now=t + 0.3)
             speech_log.say("guidance", sg.WALK_STRAIGHT, now=t + 0.4)
             got = field_test_snapshot(limit=50)
             speech_log.reset()
-        self.assertEqual([r["text"] for r in got["lines"]],
-                         [sg.BLOCKED_WALL_TURN["right"], sg.WALK_STRAIGHT])
+        self.assertEqual(
+            [r["text"] for r in got["lines"]], [sg.BLOCKED_WALL_TURN["right"], sg.WALK_STRAIGHT]
+        )
         self.assertEqual(got["lines"][0]["timing"]["scan_age_ms"], 59)
         self.assertEqual(got["said_total"], 2)
 
@@ -1191,8 +1402,12 @@ class GroundAtTheMountHeightTests(unittest.TestCase):
         # As the rig lay on the desk (RestingOnADeskTests), with a dip in the floor ahead
         hz = gh.GroundHazards(df.DepthProjector(gs.CAL))
         H, below = gs.H, float(gs.CAL.t[1]) + 0.02
-        boxes = [gs.floor(z1=1.6), gs.slab(-6, 6, -0.2, 1.6, 2.1), gs.floor(z0=2.1),
-                 gs.slab(-1.0, 1.0, H - below, -0.5, 0.6, bottom=H - 0.75)]
+        boxes = [
+            gs.floor(z1=1.6),
+            gs.slab(-6, 6, -0.2, 1.6, 2.1),
+            gs.floor(z0=2.1),
+            gs.slab(-1.0, 1.0, H - below, -0.5, 0.6, bottom=H - 0.75),
+        ]
         rng = np.random.default_rng(0)
         for i in range(8):
             depth, conf = gs.render_tof(boxes, pitch=-46.0, rng=rng)
@@ -1226,7 +1441,9 @@ class PillarOutOfAWallTests(unittest.TestCase):
     def _say(self, scene):
         from tools.sim import scene_hunt as sh
 
-        return sh.decide({"left": 2492.0, "ahead": 4585.0, "glass": None, **scene})[1]["instruction"]
+        return sh.decide({"left": 2492.0, "ahead": 4585.0, "glass": None, **scene})[1][
+            "instruction"
+        ]
 
     def test_the_pillar_blocks(self):
         said = self._say({"right": 378.0, "posts": [(528.0, 320.0, 211.0)]})
@@ -1263,11 +1480,20 @@ class RadarClosingEchoTests(unittest.TestCase):
         from tools.sim import glass_sim as gs
 
         for walls in ((457, 457), (914, 914), (600, 366)):
-            with self.subTest(walls=walls), unittest.mock.patch.object(walk_policy, "GLASS_CLOSING_SPEAK", True):
+            with (
+                self.subTest(walls=walls),
+                unittest.mock.patch.object(walk_policy, "GLASS_CLOSING_SPEAK", True),
+            ):
                 frames = gs.walk_toward(*walls, 10 * self.FT, seconds=8)
-                missed = [round(p / self.FT, 1) for _w, p, r in frames if p and p >= 0.5 * self.FT and not r["glass"]]
+                missed = [
+                    round(p / self.FT, 1)
+                    for _w, p, r in frames
+                    if p and p >= 0.5 * self.FT and not r["glass"]
+                ]
                 self.assertEqual(missed, [])
-        with unittest.mock.patch.object(walk_policy, "GLASS_CLOSING_SPEAK", False):  # the gap it fills
+        with unittest.mock.patch.object(
+            walk_policy, "GLASS_CLOSING_SPEAK", False
+        ):  # the gap it fills
             frames = gs.walk_toward(457, 457, 10 * self.FT, seconds=8)
             self.assertTrue(any(p and p >= 0.5 * self.FT and not r["glass"] for _w, p, r in frames))
 
@@ -1275,7 +1501,7 @@ class RadarClosingEchoTests(unittest.TestCase):
         import math
         from tools.sim import glass_sim as gs
 
-        frame = lambda key: (lambda w: {key: [math.hypot(3000 - w, 457)]} if w < 3000 else {})  # noqa: E731
+        frame = lambda key: lambda w: {key: [math.hypot(3000 - w, 457)]} if w < 3000 else {}  # noqa: E731
         cases = {
             "empty 0.9 m passage": gs.walk_toward(457, 457, None),
             "empty 1.8 m passage": gs.walk_toward(914, 914, None),
@@ -1285,7 +1511,9 @@ class RadarClosingEchoTests(unittest.TestCase):
             "standing before a pane": gs.walk_toward(457, 457, 6 * self.FT, pace=0.0),
         }
         for seed in range(5):  # and with range noise, a board missing one frame in ten
-            cases[f"noisy empty passage {seed}"] = gs.walk_toward(457, 457, None, noise_mm=20.0, drop=0.1, seed=seed)
+            cases[f"noisy empty passage {seed}"] = gs.walk_toward(
+                457, 457, None, noise_mm=20.0, drop=0.1, seed=seed
+            )
         for name, frames in cases.items():
             with self.subTest(name):
                 self.assertEqual(self._found(frames), [])
@@ -1295,9 +1523,16 @@ class RadarClosingEchoTests(unittest.TestCase):
 
         frames = gs.walk_toward(457, 457, 10 * self.FT, seconds=8)
         r = next(r for _w, _p, r in frames if r.get("closing_echo") and not r["glass"])
-        wd = {"directions": {"front": r}, "glass_ahead": False, "blocked": False, "action": "walk_straight"}
+        wd = {
+            "directions": {"front": r},
+            "glass_ahead": False,
+            "blocked": False,
+            "action": "walk_straight",
+        }
         raw = sg.decide(wd, None, time.time(), radar_state=None, camera_state={})
-        self.assertEqual(raw["instruction"], sg.WALK_STRAIGHT)  # not said: not yet checked on a walk
+        self.assertEqual(
+            raw["instruction"], sg.WALK_STRAIGHT
+        )  # not said: not yet checked on a walk
         self.assertEqual(raw["closing_would_say"], sg.GLASS_AHEAD)
         self.assertIn("closing at", raw["closing_reason"])
 
@@ -1353,11 +1588,23 @@ class StatusNoticeCutTests(unittest.TestCase):
         for i in range(int(12 / dt)):
             now = t0 + i * dt
             post = post_at is not None and post_at <= now < post_at + 3.0
-            sh.publish({"left": None, "right": None, "ahead": None,
-                        "posts": [(1000, 0, 250)] if post else [], "glass": None}, True)
+            sh.publish(
+                {
+                    "left": None,
+                    "right": None,
+                    "ahead": None,
+                    "posts": [(1000, 0, 250)] if post else [],
+                    "glass": None,
+                },
+                True,
+            )
             lidar, radar = get_lidar_state(), get_radar_state()
-            got = sg.guidance(walk_policy.decide(lidar, radar), lidar, now=now,
-                              system={"readable": True, "power_low": i > 5})
+            got = sg.guidance(
+                walk_policy.decide(lidar, radar),
+                lidar,
+                now=now,
+                system={"readable": True, "power_low": i > 5},
+            )
             if got.get("speak"):
                 said.append((now - t0, got["instruction"]))
                 if got["instruction"] == sg.POWER_LOW and post_at is None:

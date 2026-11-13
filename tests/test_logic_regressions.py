@@ -955,6 +955,173 @@ class WallBesideAndSomethingOnThePathTests(unittest.TestCase):
                 self.assertEqual(self._say(self._scene(None, right, [])), sg.NEAR_RIGHT)
 
 
+class _GlassDoorScenes:
+    """A glass door in a wall, met at an angle, maybe someone beside it, as the boards hear it."""
+
+    def _heard(self, segments, bearing, half=32.5):
+        """The nearest range of `segments` inside a board's beam."""
+        best = None
+        for k in range(-int(half), int(half) + 1):
+            r = math.radians(bearing + k)
+            dx, dy = math.cos(r), math.sin(r)
+            for x1, y1, x2, y2 in segments:
+                ex, ey = x2 - x1, y2 - y1
+                den = dx * ey - dy * ex
+                if abs(den) < 1e-9:
+                    continue
+                t, u = (x1 * ey - y1 * ex) / den, (x1 * dy - y1 * dx) / den
+                if t > 0 and 0.0 <= u <= 1.0:
+                    best = t if best is None else min(best, t)
+        return best
+
+    def _door(self, ft, angle=0.0, person=None):
+        """A glass door in a wall `ft` ahead, met at `angle` deg, maybe a person (lat mm along
+        the wall from the door's centre, dz mm in front of it): (lidar, radar) states."""
+        from tools.sim import glass_sim as gs
+
+        d, t = ft * gs.FT, math.radians(angle)
+        wall = gs.wall_across(d, gs.DOOR_HALF_MM, angle_deg=angle)
+        pane = gs.wall_across(d, None, reach=gs.DOOR_HALF_MM, angle_deg=angle)
+        extra = []
+        if person:
+            lat, dz = person
+            extra = gs.post(d - lat * math.sin(t) + dz * math.cos(t),
+                            lat * math.cos(t) + dz * math.sin(t), half=170.0)
+        echoes = {}
+        for key, bearing in (("deg030", 30.0), ("deg330", -30.0)):
+            heard = (self._heard(s, bearing) for s in (pane, wall, extra) if s)
+            echoes[key] = sorted(h for h in heard if h)
+        walk_policy._near_frames.clear()
+        return gs.lidar_state(wall + extra + gs.back_wall()), gs.radar_state(echoes)
+
+
+class TwoPostsAnOpenWayTests(_GlassDoorScenes, unittest.TestCase):
+    """2026-11-13, the scene hunt: two posts either side of an open way read as the wall a
+    glass door is set in ("Glass ahead", "Blocked by glass, turn right" with no glass). A pane
+    lies on its wall's line, and each front board hears that line where it comes nearest it;
+    two posts are heard each by its own board at its own range (_pane_on_wall_line)."""
+
+    def test_posts_either_side_of_an_open_way_are_not_glass(self):
+        from tools.sim import scene_hunt as sh
+
+        for scene in (  # both glass-door rules, and a "Blocked by glass, turn right"
+            {"posts": [(1773, -1092, 62), (2034, 682, 247), (3714, -624, 142)]},
+            {"posts": [(3764, -1041, 196), (3599, 1134, 212), (2586, 1209, 259)]},
+            {"posts": [(1029, 605, 156), (718, -527, 162)]},
+        ):
+            scene.update(left=None, right=None, ahead=None, glass=None)
+            with self.subTest(posts=scene["posts"]):
+                sg.reset()
+                walk, raw = sh.decide(scene)
+                self.assertFalse(walk["directions"]["front"]["glass"])
+                self.assertNotIn(raw["instruction"], sh.GLASS_WORDS)
+
+    def test_a_glass_door_with_someone_beside_it_is_still_glass(self):
+        # Just in front of the wall beside the door, they tilt the line the laser sees; both
+        # boards still hear the pane alike.
+        for ft in (4.5, 6.0):
+            for lat in (-650.0, 650.0):
+                with self.subTest(ft=ft, lat=lat):
+                    lidar, radar = self._door(ft, person=(lat, -250.0))
+                    self.assertTrue(walk_policy.read_direction(lidar, radar, "front")["glass"])
+
+    def test_the_pane_lies_on_its_walls_line_at_any_angle(self):
+        for angle in (0.0, 10.0, -10.0, 20.0, -20.0):
+            for ft in (2.0, 4.5, 8.0):
+                with self.subTest(angle=angle, ft=ft):
+                    lidar, radar = self._door(ft, angle)
+                    echo = min(e for _b, e in walk_policy._board_echoes(radar, "front", True))
+                    on_line = walk_policy._pane_on_wall_line(lidar, radar, echo)
+                    # Never ruled out. Close and at 20 deg, the near jamb is seen too edge-on
+                    # to face the sensor: one side only, nothing to judge by (None).
+                    self.assertIsNot(on_line, False)
+                    if abs(angle) <= 10.0 or ft >= 4.5:
+                        self.assertTrue(on_line)
+        # Two posts: each board hears its own, nowhere near the line through them.
+        from tools.sim import scene_hunt as sh
+        from app.core.shared_state import get_lidar_state, get_radar_state
+
+        sh.publish({"left": None, "right": None, "ahead": None, "glass": None,
+                    "posts": [(1773, -1092, 62), (2034, 682, 247)]}, True)
+        self.assertIs(walk_policy._pane_on_wall_line(get_lidar_state(), get_radar_state(), 1899.0), False)
+
+
+
+class GlassDoorAtAnAngleTests(_GlassDoorScenes, unittest.TestCase):
+    """2026-11-13: a glass door met 15-20 deg off said "Walk straight" from 3 to 6 ft. The
+    tilted wall it is set in comes nearer than the pane past 45 deg on one side, and was taken
+    for a wall beside the wearer (_door_in_tilted_wall)."""
+
+    def test_found_at_an_angle_and_blocked_at_the_glass(self):
+        for angle in (15.0, -15.0, 20.0, -20.0):
+            for ft in (3.0, 3.5, 4.5, 6.0):
+                with self.subTest(angle=angle, ft=ft):
+                    lidar, radar = self._door(ft, angle)
+                    front = walk_policy.read_direction(lidar, radar, "front")
+                    self.assertTrue(front["glass"])
+                    # The pane's nearest point: its distance times cos(angle).
+                    near_ft = ft * math.cos(math.radians(angle))
+                    self.assertAlmostEqual(front["distance_ft"], near_ft, delta=0.2)
+
+    def test_a_plain_tilted_wall_is_a_wall(self):
+        from tools.sim import glass_sim as gs
+
+        for angle in (15.0, 20.0, 30.0):
+            for ft in (3.0, 4.5, 6.0):
+                with self.subTest(angle=angle, ft=ft):
+                    d = ft * gs.FT
+                    wall = gs.wall_across(d, angle_deg=angle)
+                    echo = d * math.cos(math.radians(angle))
+                    walk_policy._near_frames.clear()
+                    front = walk_policy.read_direction(
+                        gs.lidar_state(wall), gs.radar_state({"deg030": echo, "deg330": echo}), "front")
+                    self.assertFalse(front["glass"])
+                    self.assertFalse(walk_policy._door_in_tilted_wall(
+                        gs.lidar_state(wall), gs.radar_state({"deg030": echo, "deg330": echo}),
+                        echo / gs.FT, front["lidar_ft"], front["lidar_measured"]))
+
+
+class GlassDoorWithSomeoneNearTests(_GlassDoorScenes, unittest.TestCase):
+    """2026-11-13: a glass door with someone standing 0.5-0.8 m to its side, in front of its
+    wall, said "Walk straight" in 91 of 384 simulated scenes: the person, the nearest echo,
+    was taken for what the boards heard, and the pane's own echo, farther, was judged with
+    the person mixed into "the wall" (_wall_among, _door_on_line)."""
+
+    def test_the_pane_behind_the_person_is_glass_at_its_range(self):
+        # (angle, ft, person along the wall, in front of it): each missed before
+        for angle, ft, lat, dz in ((0.0, 4.5, -850.0, -250.0), (10.0, 3.0, 850.0, -250.0),
+                                   (20.0, 6.0, -650.0, -400.0), (20.0, 6.0, 650.0, -250.0)):
+            with self.subTest(angle=angle, ft=ft, lat=lat, dz=dz):
+                lidar, radar = self._door(ft, angle, person=(lat, dz))
+                front = walk_policy.read_direction(lidar, radar, "front")
+                self.assertTrue(front["glass"])
+                # Never later than the pane; a little early where the person, within
+                # GLASS_PANE_ON_LINE_TOL_MM of the wall's line, is the nearer echo.
+                near_ft = ft * math.cos(math.radians(angle))
+                self.assertLessEqual(front["distance_ft"], near_ft + 0.2)
+                self.assertGreaterEqual(front["distance_ft"], near_ft - 0.7)
+
+    def test_named_by_the_block_distance_walking_in(self):
+        for angle in (0.0, 20.0, -20.0):
+            for lat, dz in ((850.0, -250.0), (-850.0, -100.0), (650.0, -400.0)):
+                named = []
+                for ft in (8.0, 6.0, 4.5, 4.0):
+                    lidar, radar = self._door(ft, angle, person=(lat, dz))
+                    named.append(walk_policy.read_direction(lidar, radar, "front")["glass"])
+                with self.subTest(angle=angle, lat=lat, dz=dz):
+                    self.assertTrue(any(named), named)
+
+    def test_a_wall_ahead_keeps_its_distance(self):
+        # A side wall's echo at a beam's edge is not "a door" in the wall ahead: the wall
+        # the boards hear on its own line, which the laser ranges (first version: 6.9 -> 6.2 ft).
+        from tools.sim import scene_hunt as sh
+
+        sg.reset()
+        walk, _raw = sh.decide({"left": None, "right": 1659, "ahead": 2104, "glass": None, "posts": []})
+        front = walk["directions"]["front"]
+        self.assertFalse(front["glass"])
+        self.assertAlmostEqual(front["distance_ft"], 2104 / 304.8, delta=0.1)
+
 class CameraExposureCapTests(unittest.TestCase):
     """2026-11-11: walking blurred the camera's 24-30 ms exposures; the cap keeps it at
     CAMERA_SHUTTER_CAP_MS while gain makes up the light, and the most light as before."""

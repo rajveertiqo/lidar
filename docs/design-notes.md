@@ -484,3 +484,80 @@ Kept because each one explains why the code is the way it is.
     meaning it is not only a wall. Across 3,000 hunt scenes 5 "Near ... wall" became blocks and
     no other sentence changed; every block rule now holds, the recorded clip replays the same,
     and the glass, route, drift, movers, ToF and ground simulators give the same results.
+
+23. **"Glass ahead" between two posts (2026-11-13).** The scene hunt's one failing rule was
+    "no glass, a glass sentence": 32 in 3,000 scenes, 4 of them "Blocked by glass, turn
+    right", all with posts and no pane. 30 came from the two glass-door-in-a-wall rules. The
+    older one (2026-09-29) took ANY laser return within 45 deg of ahead at the echo's range
+    for the wall a door is set in; the newer one (`_door_in_wall_ft`, 2026-11-06) asked that
+    both sides lie at one depth, which two posts 3-4 m off often do. Two posts either side
+    of an open way look like a door frame to both. What tells them apart is where the radar
+    hears: a pane lies on the line of the wall it is set in, and each front board hears that
+    line where it comes nearest the board in its view, at whatever angle the wearer meets it;
+    two posts are heard each by its own board at its own range. Now both rules also ask
+    `_pane_on_wall_line`: the laser's facing returns at the echo's range, on both sides of
+    the walking line, fitted to one straight line (rms within `BLIND_SIDE_WALL_RMS_MM`); each
+    board must list an echo within `GLASS_PANE_ON_LINE_TOL_MM` (200 mm: the radar frame and
+    the laser scan up to ~0.1 s apart at walking pace, a board's place on the ring) of that
+    line's nearest point in its view. It rules a door out only when, as well, no range is
+    heard alike by every board (`GLASS_SAME_ECHO_MM`): the first version did not ask, and
+    someone standing 250 mm in front of the wall beside a glass door, 4.5-6 ft off, tilted
+    the line and lost the pane; a pane across the way is heard alike by both boards. With
+    returns on one side only, or not on one line, nothing changes. Against the code before
+    it, 10 of the 32 became no glass ("Walk straight", one "Near right wall"), and nothing
+    else changed in 3,000 scenes: no pane lost, no distance moved. glass_sim, a new grid of
+    384 glass doors with a person beside them (0-20 deg, 1.5-8 ft), the mirror check, every
+    other simulator and the recorded clip give the same results as before. What remains is
+    posts heard alike, which the radar's range cannot tell from a door frame, and hunt
+    artefacts (Known limits). The same grid showed a glass door met at an angle is missed at
+    some ranges: note 24.
+
+24. **A glass door met at an angle (2026-11-13).** glass_sim only met doors head-on. Met
+    15 deg off, a glass door said "Walk straight" from 4.5 to 3 ft; 20 deg off, from 6 to
+    4.5 ft; 25-45 deg off, from 11 to 8 ft (and with the laser's noise doubled to 30 mm, at
+    -25 deg from 6 ft too). The older door-in-a-wall rule found nothing wrong with the echo:
+    the tilted wall the door is set in comes nearer than the pane past 45 deg on one side,
+    and `_matches_ahead` takes anything there for a wall beside the wearer that echoed. Every
+    echo then had a laser return at its range in its board's view, so it was dropped as
+    off-axis, and the laser looks through the pane. `_door_in_tilted_wall` is that rule for a
+    tilted wall: the laser's facing returns at the echo's range on both sides of the walking
+    line make one straight wall (`_facing_wall_line`, note 23); every front board hears a pane
+    on it (`_pane_heard_on`); the laser on the walking line sees `RADAR_AGREE_MM` past where
+    that line crosses it, so a plain tilted wall, which it ranges there, is still a wall; and
+    the only thing "beside" is that wall running on (`_matches_ahead` with the line, within
+    `_FRONT_WALL_ON_MM`). Without that last test, 2 of 3,000 hunt scenes became new false
+    "Glass ahead": two posts on a line the boards heard alike, with a side wall or a third post
+    past them. Now every door met 15-45 deg off is found from 6 ft, and up to 20 deg off from
+    11 ft, with 15 or 30 mm of laser noise; past 25 deg the far side lies beyond the echo's
+    match at 8 ft and more, and it is found from 6 ft (Known limits). In the scene hunt
+    nothing changed against note 23 (its panes are met head-on); glass_sim, the mirror check,
+    every simulator and the recorded clip are the same; a grid of 384 glass doors with
+    someone beside them went from 101 missed to 91, none newly missed. Those 91 are a known
+    limit, not fixed here.
+
+25. **A glass door with someone standing near it (2026-11-13).** A grid of 384 simulated
+    glass doors with a person 0.5-0.8 m to the side, 0-0.4 m in front of the wall, met
+    0-20 deg off at 1.5-8 ft: 101 said "Walk straight" or "Near ... wall" (91 after note 24),
+    and walking in, 14 of 80 set-ups were not named by 4 ft. Three causes. The person is the
+    nearest echo and the laser sees them, so the rules on the nearest echo stand down; the
+    pane's own echo, farther and heard alike by both boards, reaches only the door rule
+    (`_door_in_wall_ft`). There (1) the person's returns, in front of the wall on their side,
+    outnumbered the wall's, so the median depth was the person's, and the line fit failed;
+    (2) a tilted wall failed its one-depth test; (3) close up, the person beside counted as
+    what echoed. For (1), `_facing_wall_line`, when its returns are not all one line, takes
+    the straight line through returns on both sides that most of them lie on (`_wall_among`:
+    each pair of up to 8 returns a side, then fitted to those within `_FRONT_WALL_ON_MM`): the
+    wall, with what stands in front of it left out. For (1) and (2), the door rule takes an
+    echo as the door when `_door_on_line` says so: every board hears a pane on that wall's
+    line, this echo is one of those, where the line comes nearest a board that lists it, and
+    the laser on the walking line sees `RADAR_AGREE_MM` past the line. The first version
+    asked only the first: a solid wall ahead is heard on its own line too, and a side wall's
+    echo at a beam's edge became "the door", 0.5-1.3 ft nearer than the wall (dozens of hunt
+    scenes; now a test). For (3), counting something beside only if every board hearing the
+    echo has it in view found 18 more, but made ~25 new false "Glass ahead" in the hunt and
+    broke 2 glass_sim scenes: not kept. Nor was note 24's "only the wall beside" test in the
+    door rule: it removes 2 hunt false alarms (post pairs) but loses 36 doors with someone
+    near. Now 30 of the 384 are missed, 18 of them at 1.5-2 ft, and every one of the 80
+    approaches names the glass by 4 ft (HEAD: 14 did not). The hunt finds 1 more real pane
+    and its false "Glass ahead" go 7 -> 8 and 15 -> 15 (post pairs of note 23's kind); glass_sim,
+    the mirror check, every simulator and the recorded clip are the same as before.

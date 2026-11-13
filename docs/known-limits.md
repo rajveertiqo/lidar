@@ -38,6 +38,23 @@
   tells them apart (a pane's range closes at walking pace, a wall beside stays put: design
   note 18), but that is logged as "would say" until a walk has checked it
   (`GLASS_CLOSING_SPEAK`); door frames on both walls at the same distance read as a pane to it.
+- **A glass door met 25 deg or more off is named late** (in the simulator). Up to 20 deg off
+  it is found from 11 ft; at 25-45 deg only from about 6 ft, 2 ft before the 4 ft block:
+  farther, the tilted wall's far side lies past the radar's match of the echo's range, and
+  only one side of the door is seen to judge by (design note 24).
+- **A glass door with someone standing close beside it, 1.5-2 ft off** (in the simulator).
+  Someone 0.5-0.8 m to the side of the door, in front of its wall: walking in, every one of
+  80 such approaches names the glass by 4 ft (design note 25), but at 1.5-2 ft about 1 in 6
+  single scans do not (the person, in one board's view, is taken for what echoed); the
+  glass already named keeps it said. Where the person stands within ~0.2 m of the wall's
+  line, the glass is put at their range, up to ~0.6 ft early.
+- **Posts or pillars either side of an open way, at the same range, can read as a glass
+  door** ("Glass ahead"). When both front boards hear them alike (within
+  `GLASS_SAME_ECHO_MM`), the radar's range cannot tell a pane in that doorway from its
+  sides; an open doorway whose frames echo reads the same. Two posts heard each at its own
+  range no longer do (design note 23). The scene hunt still finds ~8-15 false "Glass ahead"
+  in 1,500 crowded scenes: these, and posts that the one-scan hunt's LiDAR does not confirm
+  (a thin pole needs a second scan) or that lie just past its radar beams' edge.
 - **Very close to a wall, the left is not offered.** Facing a flat wall with only the left
   open, "turn left" needs the left camera's fresh picture naming nobody, the laser to see the
   wall ahead stretch out past the left board's echo, and that echo at least 2 ft off: nearer

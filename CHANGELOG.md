@@ -27,6 +27,21 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   Nothing said changes.
 
 ### Fixed
+- **A glass door with someone standing near it is found.** With a person beside the door,
+  in front of its wall, it said "Walk straight" in about 1 in 4 simulated scenes, and
+  walking in, 14 of 80 approaches were not warned by 4 ft: the person was taken for what
+  the radar heard, and mixed into the wall the door is set in. Now the wall is found with
+  them left out, and every approach is warned by 4 ft (design note 25).
+- **A glass door met at an angle is found.** Met 15-20 deg off, a glass door said "Walk
+  straight" from 3 to 6 ft away: the tilted wall around it was taken for a wall beside the
+  wearer. It is now "Glass ahead", then "Blocked by glass" at the glass, from 11 ft up to
+  20 deg off and from 6 ft up to 45 deg off (design note 24). A plain tilted wall is still a
+  wall.
+- **No "Glass ahead" between two posts.** Two posts either side of an open way read as the
+  wall a glass door is set in, and it said "Glass ahead", or "Blocked by glass, turn right",
+  with no glass there. A door's pane lies on its wall's line, where both front boards hear
+  it; two posts are heard each at its own range (design note 23). The scene hunt's false
+  glass fell from 32 to 22 in 3,000 scenes; no pane is missed that was found before.
 - **A pillar or post on the path is no longer called "the wall beside you".** "Near right wall,
   move left" was said with a pillar standing out of the wall 2.5-2.9 ft ahead on the path, and
   once with a post on the path's left half at 2.4 ft, which "move left" walked toward. A block

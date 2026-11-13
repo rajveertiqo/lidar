@@ -354,6 +354,11 @@ GLASS_LASER_BEYOND_MM = 250.0  # a laser return farther than an echo by more tha
 # passage the side walls "explained" a pane across it 1.5-3 ft ahead, and it said "Walk
 # straight": GLASS_LASER_BEYOND_MM let a wall up to 250 mm farther than the echo explain it.
 GLASS_SIDE_WALL_NEAREST_TOL_MM = 100.0
+# A pane lies on the line of the wall it is set in (walk_policy._pane_on_wall_line): each
+# front board must list an echo within this of where that line comes nearest it. The radar
+# frame and the laser scan are up to ~0.1 s apart (~125 mm at walking pace), plus a board's
+# place on the ring and range error.
+GLASS_PANE_ON_LINE_TOL_MM = 200.0
 GLASS_BOARD_VIEW_MARGIN_DEG = 10.0  # a board hears a little past the edge of its beam
 GLASS_SAME_ECHO_MM = (
     60.0  # two front boards ranging within this of each other heard the same thing

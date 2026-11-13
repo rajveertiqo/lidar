@@ -18,6 +18,7 @@ from app.config import (
     GLASS_GHOST_TOL_MM,
     GLASS_GRAZING_DEG,
     GLASS_LASER_BEYOND_MM,
+    GLASS_PANE_ON_LINE_TOL_MM,
     GLASS_SAME_ECHO_MM,
     GLASS_SIDE_WALL_NEAREST_TOL_MM,
     GUIDANCE_CONE_CENTRES,
@@ -495,8 +496,12 @@ def _echo_on_line(
     return False
 
 
-def _matches_ahead(lidar_state: Dict[str, Any], radar_ft: float) -> bool:
-    """Laser returns at the echo's range lie within GLASS_DOOR_MAX_BEARING_DEG of ahead, and none beyond it (side walls)."""
+def _matches_ahead(
+    lidar_state: Dict[str, Any],
+    radar_ft: float,
+    wall_line: Optional[Tuple[float, float, float]] = None,
+) -> bool:
+    """Laser returns at the echo's range lie within GLASS_DOOR_MAX_BEARING_DEG of ahead, and none beyond it (side walls). With `wall_line` (nx, ny, p), a return on that line is the wall itself, not beside (_door_in_tilted_wall)."""
     angles, dists = _laser_points(lidar_state)
     echo_mm = radar_ft * MM_PER_FT
     ahead = beside = False
@@ -512,6 +517,11 @@ def _matches_ahead(lidar_state: Dict[str, Any], radar_ft: float) -> bool:
             and d <= echo_mm + GLASS_LASER_BEYOND_MM
             and d * math.cos(math.radians(off)) < echo_mm - GLASS_DOOR_WALL_DEPTH_MM
         ):
+            if wall_line is not None:
+                nx, ny, p = wall_line
+                r = math.radians((float(a) + 180.0) % 360.0 - 180.0)
+                if abs(d * math.cos(r) * nx + d * math.sin(r) * ny - p) <= _FRONT_WALL_ON_MM:
+                    continue  # the tilted wall running on, nearer, not something beside
             beside = True
     return ahead and not beside
 
@@ -638,23 +648,13 @@ _FRONT_WALL_ECHO_FAR = 1.3  # an echo past this x the wall's nearest range in th
 _FRONT_WALL_PAST_ECHO_MM = 100.0  # the wall ahead seen reaching this much further out than the echo
 
 
-def _front_wall_line(
-    angles: List[float], dists: List[float]
+def _line_through(
+    pts: List[Tuple[float, float]]
 ) -> Optional[Tuple[float, float, float]]:
-    """The flat wall across the way ahead, from the laser: (nx, ny, p), its unit normal (x
-    ahead, y right) pointing away from the wearer and its distance in mm. None when the
-    returns within _FRONT_WALL_FIT_DEG of ahead are too few, not one straight line (their
-    spread off it over BLIND_SIDE_WALL_RMS_MM: a corner, a doorway, clutter), or a wall
-    alongside rather than across."""
-    pts = []
-    for a, d in zip(angles, dists):
-        if not isinstance(d, (int, float)) or not 0.0 < d < _FRONT_WALL_MAX_MM:
-            continue
-        s = (float(a) + 180.0) % 360.0 - 180.0
-        if abs(s) <= _FRONT_WALL_FIT_DEG:
-            r = math.radians(s)
-            pts.append((d * math.cos(r), d * math.sin(r)))
-    if len(pts) < _FRONT_WALL_MIN_RETURNS:
+    """The straight line (x ahead, y right, mm) through `pts`: (nx, ny, p), its unit normal
+    pointing away from the wearer and its distance. None when they spread off it by more
+    than BLIND_SIDE_WALL_RMS_MM (rms), or are fewer than two."""
+    if len(pts) < 2:
         return None
     n = float(len(pts))
     mx = sum(x for x, _ in pts) / n
@@ -676,9 +676,188 @@ def _front_wall_line(
     p = mx * nx + my * ny
     if p < 0:
         nx, ny, p = -nx, -ny, -p
-    if nx < _FRONT_WALL_FACING:
-        return None
     return nx, ny, p
+
+
+def _front_wall_line(
+    angles: List[float], dists: List[float]
+) -> Optional[Tuple[float, float, float]]:
+    """The flat wall across the way ahead, from the laser: (nx, ny, p), its unit normal (x
+    ahead, y right) pointing away from the wearer and its distance in mm. None when the
+    returns within _FRONT_WALL_FIT_DEG of ahead are too few, not one straight line (their
+    spread off it over BLIND_SIDE_WALL_RMS_MM: a corner, a doorway, clutter), or a wall
+    alongside rather than across."""
+    pts = []
+    for a, d in zip(angles, dists):
+        if not isinstance(d, (int, float)) or not 0.0 < d < _FRONT_WALL_MAX_MM:
+            continue
+        s = (float(a) + 180.0) % 360.0 - 180.0
+        if abs(s) <= _FRONT_WALL_FIT_DEG:
+            r = math.radians(s)
+            pts.append((d * math.cos(r), d * math.sin(r)))
+    if len(pts) < _FRONT_WALL_MIN_RETURNS:
+        return None
+    line = _line_through(pts)
+    if line is None or line[0] < _FRONT_WALL_FACING:
+        return None
+    return line
+
+
+def _nearest_on_line_mm(nx: float, ny: float, p: float, bearing: float, half: float) -> float:
+    """How near the line (nx, ny, p) comes to the wearer within `half` deg of `bearing`."""
+    foot = math.degrees(math.atan2(ny, nx))  # the bearing it is nearest at
+    off = abs((foot - bearing + 180.0) % 360.0 - 180.0)
+    off = max(0.0, off - half)  # the view's edge nearest the foot, or the foot itself
+    return p / math.cos(math.radians(off)) if off < 89.0 else math.inf
+
+
+def _facing_wall_line(
+    lidar_state: Dict[str, Any], echo_mm: float
+) -> Optional[Tuple[float, float, float]]:
+    """What the laser sees facing it at the echo's range within GLASS_DOOR_MAX_BEARING_DEG of
+    ahead, on BOTH sides of the walking line, as one straight wall across the way (x ahead,
+    y right: _line_through), the corridor's own walls left out. When it is not all one line
+    (someone standing in front of the wall beside a door, 2026-11-13), the straight line
+    with the most of it on it, from both sides (_wall_among). None: one side only, or no
+    such line."""
+    angles, dists = _laser_points(lidar_state)
+    side_lat = _side_walls_mm(angles, dists)
+    pts: Dict[bool, List[Tuple[float, float]]] = {False: [], True: []}
+    for i, (a, d) in enumerate(zip(angles, dists)):
+        if abs(d - echo_mm) > RADAR_AGREE_MM:
+            continue
+        s = (float(a) + 180.0) % 360.0 - 180.0
+        if not 1.0 <= abs(s) <= GLASS_DOOR_MAX_BEARING_DEG or not _facing(angles, dists, i):
+            continue
+        if _on_side_wall(a, d, side_lat):
+            continue  # the corridor's own wall, not the one across it
+        r = math.radians(s)
+        pts[s > 0].append((d * math.cos(r), d * math.sin(r)))
+    if not (pts[False] and pts[True]):
+        return None
+    line = _line_through(pts[False] + pts[True]) or _wall_among(pts[False], pts[True])
+    if line is None or line[0] < _FRONT_WALL_FACING:
+        return None
+    return line
+
+
+_WALL_TRIES_PER_SIDE = 8  # returns each side tried as an end of the wall's line
+
+
+def _wall_among(
+    left: List[Tuple[float, float]], right: List[Tuple[float, float]]
+) -> Optional[Tuple[float, float, float]]:
+    """The straight line through returns on both sides that the most returns lie on (within
+    _FRONT_WALL_ON_MM), fitted to those (_line_through): the wall, with what stands in front
+    of it left out. Tried through up to _WALL_TRIES_PER_SIDE returns a side, each pair."""
+    every = left + right
+    best: List[Tuple[float, float]] = []
+    for p in left[:: max(1, len(left) // _WALL_TRIES_PER_SIDE)]:
+        for q in right[:: max(1, len(right) // _WALL_TRIES_PER_SIDE)]:
+            dx, dy = q[0] - p[0], q[1] - p[1]
+            n = math.hypot(dx, dy)
+            if n < 1.0:
+                continue
+            nx, ny = dy / n, -dx / n
+            c = nx * p[0] + ny * p[1]
+            on = [t for t in every if abs(nx * t[0] + ny * t[1] - c) <= _FRONT_WALL_ON_MM]
+            if len(on) > len(best):
+                best = on
+    if not (any(t in best for t in left) and any(t in best for t in right)):
+        return None
+    return _line_through(best)
+
+
+def _pane_on_wall_line(
+    lidar_state: Dict[str, Any], radar_state: Dict[str, Any], echo_mm: float
+) -> Optional[bool]:
+    """The laser sees something facing it at the echo's range on BOTH sides of the walking
+    line, as the wall a glass door is set in (_facing_wall_line): is the pane where that wall
+    says it is? A pane lies on its wall's line, and each front board hears that line where
+    it comes nearest the board in its view (at any angle the wearer comes at it). Two posts
+    either side of an open way are heard each by its own board at its own range, not there
+    (scene hunt, 2026-11-13). True: every board lists an echo there; False: one does not,
+    and no range is heard alike by every board (GLASS_SAME_ECHO_MM), as a pane across the
+    way is (someone standing just in front of the wall beside a door tilts the line, but the
+    boards still hear the pane alike); None: nothing to judge by (facing returns on one side
+    only, or not on one straight line)."""
+    line = _facing_wall_line(lidar_state, echo_mm)
+    return None if line is None else _pane_heard_on(radar_state, line)
+
+
+def _pane_heard_on(
+    radar_state: Dict[str, Any], line: Tuple[float, float, float]
+) -> Optional[bool]:
+    """_pane_on_wall_line's verdict for a wall's line (nx, ny, p) the laser has found."""
+    heard: Dict[float, List[float]] = {}
+    for b, e in _board_echoes(radar_state, "front", all_peaks=True):
+        heard.setdefault(b, []).append(e)
+    if not heard:
+        return None
+    nx, ny, p = line
+    for b, echoes in heard.items():
+        # A board hears a little past its beam's edge (GLASS_BOARD_VIEW_MARGIN_DEG): the
+        # line's nearest point lies between where the two views put it.
+        near = _nearest_on_line_mm(nx, ny, p, b, RADAR_BEAM_H_DEG / 2.0 + GLASS_BOARD_VIEW_MARGIN_DEG)
+        far = _nearest_on_line_mm(nx, ny, p, b, RADAR_BEAM_H_DEG / 2.0)
+        tol = GLASS_PANE_ON_LINE_TOL_MM
+        if not any(near - tol <= e <= far + tol for e in echoes):
+            break
+    else:
+        return True
+    first, *rest = heard.values()
+    alike = any(
+        all(any(abs(x - e) <= GLASS_SAME_ECHO_MM for x in other) for other in rest)
+        for e in first
+    )
+    return None if alike else False
+
+
+def _door_in_tilted_wall(
+    lidar_state: Dict[str, Any],
+    radar_state: Dict[str, Any],
+    radar_ft: float,
+    lidar_ft: Optional[float],
+    lidar_measured: bool,
+) -> bool:
+    """A glass door met at an angle (2026-11-13). The wall it is set in, tilted, comes nearer
+    than the pane past GLASS_DOOR_MAX_BEARING_DEG on one side, and _matches_ahead took that
+    for a wall beside the wearer: at 15 deg it said "Walk straight" from 4.5 to 3 ft, at 20
+    from 6 to 4.5 ft. Here: a door in that wall (_door_on_line), and nothing beside but the
+    wall running on (_matches_ahead with the line: two posts with a side wall or a third post
+    past them still are not a door)."""
+    line = _door_on_line(lidar_state, radar_state, radar_ft * MM_PER_FT, lidar_ft, lidar_measured)
+    return line is not None and _matches_ahead(lidar_state, radar_ft, wall_line=line)
+
+
+def _door_on_line(
+    lidar_state: Dict[str, Any],
+    radar_state: Dict[str, Any],
+    echo_mm: float,
+    lidar_ft: Optional[float],
+    lidar_measured: bool,
+) -> Optional[Tuple[float, float, float]]:
+    """Is the echo a pane in the wall the laser sees on both sides of the walking line, at any
+    angle, with or without someone in front of that wall (2026-11-13)? That wall's line
+    (_facing_wall_line) when: every front board hears a pane on it (_pane_heard_on); this echo
+    is one of those, where the line comes nearest a board that lists it; and the laser on the
+    walking line looks through the line (RADAR_AGREE_MM past where it crosses it). A plain
+    wall is heard on its own line too, but the laser ranges it there, and an echo off
+    something else (a side wall at a beam's edge) is not on it. None otherwise."""
+    line = _facing_wall_line(lidar_state, echo_mm)
+    if line is None or _pane_heard_on(radar_state, line) is not True:
+        return None
+    nx, ny, p = line
+    if lidar_measured and (lidar_ft is None or lidar_ft * MM_PER_FT < p / nx + RADAR_AGREE_MM):
+        return None
+    for b, e in _board_echoes(radar_state, "front", all_peaks=True):
+        if abs(e - echo_mm) > GLASS_SAME_ECHO_MM:
+            continue
+        near = _nearest_on_line_mm(nx, ny, p, b, RADAR_BEAM_H_DEG / 2.0 + GLASS_BOARD_VIEW_MARGIN_DEG)
+        far = _nearest_on_line_mm(nx, ny, p, b, RADAR_BEAM_H_DEG / 2.0)
+        if near - GLASS_PANE_ON_LINE_TOL_MM <= echo_mm <= far + GLASS_PANE_ON_LINE_TOL_MM:
+            return line
+    return None
 
 
 def _front_wall_echo(lidar_state: Dict[str, Any], bearing: float, echo_mm: float) -> bool:
@@ -991,9 +1170,15 @@ def _door_in_wall_ft(
         in_wall = False
         if len(depth) == 2:
             zl, zr = (sorted(depth[s])[len(depth[s]) // 2] for s in (False, True))
-            in_wall = (
+            # The echo is a pane in the wall the laser sees both sides (2026-11-13): a tilted
+            # wall, or one with someone standing in front of it, which the one-depth test
+            # below does not pass.
+            in_wall = _door_on_line(lidar_state, radar_state, e, lidar_ft, lidar_measured) is not None or (
                 abs(zl - zr) <= GLASS_DOOR_WALL_DEPTH_MM
                 and abs((zl + zr) / 2.0 - e) <= GLASS_DOOR_WALL_DEPTH_MM
+                # ...and not ruled out by the boards: two posts at about one depth still
+                # read as a wall at 3-4 m.
+                and _pane_on_wall_line(lidar_state, radar_state, e) is not False
             )
         # A board's nearest echo the laser explains is the corridor's wall at the edge of its
         # beam — unless the laser sees the wall a door is set in at that very depth: then it
@@ -1060,7 +1245,15 @@ def read_direction(
         and (not lidar_measured or lidar_ft > radar_ft)
         and _centred_echo(radar_state, direction)
         and direction == "front"
-        and _matches_ahead(lidar_state, radar_ft)
+        and (
+            (
+                _matches_ahead(lidar_state, radar_ft)
+                # Not two posts either side of an open way (2026-11-13): the laser's "wall"
+                # there must be one the boards hear a pane in (_pane_on_wall_line).
+                and _pane_on_wall_line(lidar_state, radar_state, radar_ft * MM_PER_FT) is not False
+            )
+            or _door_in_tilted_wall(lidar_state, radar_state, radar_ft, lidar_ft, lidar_measured)
+        )
     ):
         arc_corroborates = False
     # Glass in the walking corridor (decided 2026-09-30, NEW-045): an echo nearer than RADAR_CONE_TRUST_MM is inside the corridor the front cone watches and that cone sees past it, so the arc's return is a wall beside the pane.

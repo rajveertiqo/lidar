@@ -1505,9 +1505,12 @@ _live_lock = threading.Lock()
 _live_cache = {}  # (view, width) -> (frame id, jpeg, picture time, simulated)
 
 
-# The front camera is detected on every picture: the live picture waits this long, at most,
-# for that picture's detections, so its boxes are its own (~50 ms after capture, measured).
-_LIVE_DETECTION_WAIT_S = 0.15
+# How long the live picture waits, at most, for the front's detections of that very picture
+# (~50 ms after capture, measured). None since 2026-11-16: held for them (up to 0.15 s), the
+# picture went out ~76 ms old, every second one was missed even on the Pi, and over a
+# laptop's Wi-Fi 5.6 a second of 15 were shown. Its boxes are now the detector's latest, a
+# picture or two behind (age_ms says by how much: the dashboard draws them as current).
+_LIVE_DETECTION_WAIT_S = 0.0
 
 
 def live_detections(view: str, fid: int, wait_s: float = _LIVE_DETECTION_WAIT_S) -> dict:
@@ -1535,22 +1538,27 @@ def live_detections(view: str, fid: int, wait_s: float = _LIVE_DETECTION_WAIT_S)
         }
 
 
-def live_jpeg(view: str, after: int = -1, wait_s: float = 1.0, width: int = STREAM_MAX_WIDTH):
+def live_jpeg(
+    view: str, after: int = -1, wait_s: float = 1.0, width: int = STREAM_MAX_WIDTH, ahead: int = 1
+):
     """The newest picture of one camera — or "grid", all four in their 2x2 — as a small
-    JPEG: (jpeg, frame id, picture time, simulated), or None when no picture newer than
-    `after` came within `wait_s`. Pulled one at a time (/camera/live), so unlike the MJPEG
-    stream nothing queues between here and the screen, and it cannot fall behind
-    (2026-11-02: the stream did, over Wi-Fi). Each picture is encoded once for every viewer."""
+    JPEG: (jpeg, frame id, picture time, simulated), or None when no picture at least `ahead`
+    newer than `after` came within `wait_s` (one numbered lower than `after` is taken at once:
+    the app restarted and counts afresh). Pulled (/camera/live), so unlike the MJPEG stream
+    nothing queues between here and the screen, and it cannot fall behind (2026-11-02: the
+    stream did, over Wi-Fi); `ahead` 2 lets the dashboard ask for the picture after the next
+    alongside the next (2026-11-16). Each picture is encoded once for every viewer."""
     if view != "grid" and view not in _VALID:
         view = "front"
     width = int(max(64, min(width, CAMERA_WIDTH)))
+    ahead = max(1, int(ahead))
     deadline = time.monotonic() + max(0.0, wait_s)
     with _new_frame:
         while True:
             with frame_lock:
                 mosaic, fid = current_frame, current_frame_id
                 shot, simulated = current_frame_t, current_frame_simulated
-            if mosaic is not None and fid != after:
+            if mosaic is not None and not after <= fid < after + ahead:
                 break
             left = deadline - time.monotonic()
             if left <= 0 or not _streams_live():

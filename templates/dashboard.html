@@ -2121,13 +2121,25 @@
           tile.style.backgroundPosition = `${k * 100}% ${r * 100}%`;
         }
       }
-      // The live picture is PULLED, one at a time (2026-11-02): the next is asked for only
-      // once this one is on screen, so nothing queues on the way and it cannot fall behind —
-      // the MJPEG stream it replaces did, over Wi-Fi, and "All 4" was a picture a second.
-      // One request at a time, too: the browser's ~6 connections to the device stay free.
-      let liveRun = 0;
+      // The live picture is PULLED (2026-11-02), so nothing queues on the way and it cannot
+      // fall behind — the MJPEG stream it replaces did, over Wi-Fi, and "All 4" was a
+      // picture a second. Each request names the picture it wants by number (`after` and
+      // `ahead`), and the server holds it until that picture is taken. Asked for one at a
+      // time, each next one only once this one was on screen, every picture cost the Wi-Fi's
+      // whole round trip: over a laptop's link (~50-100 ms) every second or third was shown,
+      // 5.6 a second of the cameras' 15. Now LIVE_AHEAD are out at once, the next three
+      // pictures (2026-11-16), so a round trip under ~3 pictures' time (~180 ms, with the
+      // server's ~20) costs none: three of the browser's ~6 connections to the device (the
+      // WebSockets have their own). Still nothing queues: a picture overtaken by a newer one
+      // already in — on a screen slower to draw than they come — is passed over, not shown late.
+      const LIVE_AHEAD = 3;
+      let liveRun = 0,
+        liveStop = null; // aborts the running loop's requests
       function startLive(view) {
         const run = ++liveRun; // a newer start (a tab, a view) ends this loop
+        if (liveStop) liveStop.abort(); // its request held at the server, too
+        liveStop = new AbortController();
+        const signal = liveStop.signal;
         if (document.hidden) return;
         const grid = view === "all";
         let after = -1,
@@ -2166,18 +2178,52 @@
           if (shown) URL.revokeObjectURL(shown);
           shown = url;
         };
+        // Picture number `want` (or the newest, if newer): {want, fid once its headers are
+        // in, p: the response and when it came — it can wait in the browser while the one
+        // before it is drawn, part of its age on screen}.
+        const ask = (want) => {
+          const q = { want, fid: null };
+          q.p = fetch(
+            `/camera/live/${grid ? "grid" : view}?after=${after}&ahead=${Math.max(1, want - after)}&width=${grid ? 720 : 480}&boxes=1`,
+            { cache: "no-store", signal },
+          ).then((r) => {
+            if (r.status === 200) q.fid = Number(r.headers.get("X-Frame-Id"));
+            return { r, at: performance.now() };
+          });
+          q.p.catch(() => {}); // a failure is met where it is awaited
+          return q;
+        };
+        const out = []; // the requests out, in the order of the pictures they want
+        const fill = () => {
+          while (out.length < LIVE_AHEAD) {
+            const top = out.length ? out[out.length - 1].want : after;
+            out.push(ask(Math.max(top, after) + 1));
+          }
+        };
         (async () => {
           while (run === liveRun) {
             try {
-              const r = await fetch(
-                `/camera/live/${grid ? "grid" : view}?after=${after}&width=${grid ? 720 : 480}&boxes=1`,
-                { cache: "no-store" },
-              );
+              fill();
+              const { want, p } = out.shift();
+              const { r, at } = await p;
               if (run !== liveRun) break;
-              if (r.status === 204) continue; // no newer picture within 1 s: ask again
+              if (r.status === 204) {
+                out.unshift(ask(want)); // not taken within 1 s: the same one, again
+                continue;
+              }
               if (!r.ok) throw new Error(String(r.status));
-              after = Number(r.headers.get("X-Frame-Id"));
-              const sentAt = performance.now(),
+              const fid = Number(r.headers.get("X-Frame-Id"));
+              if (fid === after) continue; // asked for twice at the start: on screen
+              // Lower: the device restarted and counts its pictures afresh — the requests
+              // out want numbers it will not reach for minutes.
+              if (fid < after) out.length = 0;
+              after = fid;
+              fill(); // the next asked for now, not once this one is drawn
+              if (out.length && out[0].fid > fid) {
+                r.blob().catch(() => {}); // read, so its connection is free again
+                continue; // a newer one is in: this one passed over, not shown late
+              }
+              const sentAt = at,
                 sentAge = Number(r.headers.get("X-Frame-Age-Ms"));
               let cams = {};
               try {
@@ -2191,18 +2237,20 @@
               const url = URL.createObjectURL(await r.blob());
               const img = new Image();
               img.src = url;
-              await img.decode(); // on screen at once, then the next is asked for
+              await img.decode(); // decoded first, so on screen at once
               if (run !== liveRun) {
                 URL.revokeObjectURL(url);
                 break;
               }
               show(url);
-              liveBoxes = { fid: after, cams }; // drawn with the picture they came with
+              liveBoxes = { fid, cams }; // drawn with the picture they came with
               drawCamOverlay();
-              // Its age on screen: old when sent, plus the transfer and the decode.
+              // Its age on screen: old when sent, plus the transfer, any wait behind the
+              // picture before it, and the decode.
               label(Math.round(sentAge + (performance.now() - sentAt)));
               $("cam-off").hidden = true;
             } catch (e) {
+              out.length = 0; // asked afresh after the pause
               if (run !== liveRun) break;
               if (!grid) $("cam-off").hidden = false;
               $("cam-fps").hidden = true; // no rate to show while nothing comes
@@ -2222,10 +2270,16 @@
       const BOX_NAMED = "#22d3ee",
         BOX_HAZARD = "#fbbf24",
         BOX_IGNORED = "#94a3b8";
-      // A camera's boxes on the picture on screen (liveBoxes): those found in this very
-      // picture solid; a side camera's, detected every ~1.2 s, from its last picture —
-      // dashed, faded and aged ("1.1 s ago"). `k` scales lines and labels for a small tile.
-      const boxesOld = (e) => liveBoxes && e.frame_id < liveBoxes.fid;
+      // A camera's boxes on the picture on screen (liveBoxes): the detector's latest, solid
+      // when found in this picture or in one taken under BOXES_CURRENT_MS before it — the
+      // front's come as they stand, a picture or two behind (2026-11-16: the picture is no
+      // longer held ~55 ms for its own); a side camera's, detected every ~1.2 s, from its
+      // last picture — dashed, faded and aged ("1.1 s ago"). `k` scales lines and labels.
+      const BOXES_CURRENT_MS = 200;
+      const boxesOld = (e) =>
+        liveBoxes &&
+        e.frame_id < liveBoxes.fid &&
+        !(Number(e.age_ms) < BOXES_CURRENT_MS);
       function boxesSvg(cam, W, k) {
         const e = liveBoxes && liveBoxes.cams[cam];
         if (!e) return "";

@@ -7,6 +7,11 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
 ## [Unreleased]
 
 ### Added
+- **glass_sim checks glass doors met at an angle and with someone standing by them** on every
+  run: 138 doors met 10-45 deg off must be named, and 80 walks in toward a door with someone
+  beside it must be warned by 4 ft (design notes 24, 25). On the code before those fixes it
+  reports 28 failures. What is not yet named glass (doors met 25-50 deg off from afar, single
+  close scans with someone by the door) is printed as a limit.
 - **`label_report.py --decide`**: one command after a walk says, for each feature that runs but
   is not spoken yet (stairs and kerbs, glass tracking, movers), TURN ON, KEEP OFF or MORE
   LABELS. Every label is replayed with the feature off and on: turned on it must name 70% of
@@ -27,6 +32,20 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   Nothing said changes.
 
 ### Fixed
+- **The dashboard's camera view keeps up over Wi-Fi.** On a laptop it showed 5.6 pictures a
+  second of the cameras' 15 (the device itself was at full rate: 14.9 captured, 13 detected).
+  Two things were in series on every picture: the server held it until the detector had
+  finished it (~55 ms, so it went out ~76 ms old and every second one was missed even on the
+  Pi), and the page asked for the next only once this one was drawn, adding the Wi-Fi's whole
+  round trip (45-117 ms measured). The page now keeps requests out for the next three pictures
+  by number (`/camera/live?ahead=`), passing over one a newer has overtaken, and the picture
+  carries the detector's latest boxes, a picture or two behind, drawn as current under 0.2 s
+  old. Simulated: 14.3-15 a second for round trips up to 160 ms (one at a time: 5.3 at 90 ms).
+- **The scene hunt's mirror check no longer fails on ties.** It reported 6 of 400 scenes "not
+  mirrored": all were a wall straight ahead with the sides alike to the decision (equal room,
+  the block within 3 deg of ahead), where "turn left" either way is right; one was its own
+  mirror image, which no fixed choice can pass. Those are now counted as ties. Over 4,000
+  pairs there were 107 ties and no real mismatch; a planted left/right fault is still caught.
 - **A glass door with someone standing near it is found.** With a person beside the door,
   in front of its wall, it said "Walk straight" in about 1 in 4 simulated scenes, and
   walking in, 14 of 80 approaches were not warned by 4 ft: the person was taken for what

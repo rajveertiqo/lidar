@@ -444,6 +444,20 @@ class LivePictureTests(unittest.TestCase):
         self.assertLess(time.monotonic() - t0, 0.5)  # answered as the picture came, not at 2 s
         later.join()
 
+    def test_the_picture_after_the_next_is_waited_for(self):
+        """2026-11-16: the dashboard asks for the next picture and the one after it at once
+        (`ahead` 2), so a slow Wi-Fi's round trip is not paid on every picture."""
+        fid = self.store()
+        self.assertIsNone(pc.live_jpeg("front", after=fid - 1, wait_s=0.1, ahead=2))  # fid: next
+        self.assertEqual(pc.live_jpeg("front", after=fid - 2, wait_s=0.0, ahead=2)[1], fid)
+        self.assertEqual(pc.live_jpeg("front", after=fid - 5, wait_s=0.0, ahead=2)[1], fid)  # newer
+        later = threading.Timer(0.1, self.store)
+        later.start()
+        self.assertEqual(pc.live_jpeg("front", after=fid - 1, wait_s=2.0, ahead=2)[1], fid + 1)
+        later.join()
+        # Numbered lower than the viewer's: the app restarted and counts afresh — taken at once.
+        self.assertEqual(pc.live_jpeg("front", after=fid + 500, wait_s=0.0, ahead=2)[1], fid + 1)
+
     def test_encoded_once_and_grid_is_all_four(self):
         self.store()
         with patch.object(pc, "_encode_jpeg_stream", wraps=pc._encode_jpeg_stream) as enc:
@@ -505,6 +519,20 @@ class LiveBoxesTests(unittest.TestCase):
             t0 = time.monotonic()
             pc.live_detections("front", 10, wait_s=1.0)
             self.assertLess(time.monotonic() - t0, 0.05)  # nothing would come
+
+    def test_the_live_picture_does_not_wait_for_its_boxes(self):
+        """2026-11-16: held for the front's own boxes, a picture went out ~76 ms old, and over
+        a laptop's Wi-Fi 5.6 a second of 15 were shown. The detector's latest go as they stand."""
+        from app.api import pi_camera_router as r
+
+        now = time.time()
+        self.publish("front", 9, now - 0.067)
+        t0 = time.monotonic()
+        with patch("app.perception.sensor_fusion.get_lidar_state", lambda: {}):
+            got = r._live_boxes("front", 10, now)
+        self.assertLess(time.monotonic() - t0, 0.1)  # not the 0.15 s it waited
+        self.assertEqual(got["front"]["frame_id"], 9)
+        self.assertEqual(got["front"]["age_ms"], 67)  # the dashboard draws < 200 ms as current
 
     def test_side_boxes_aged_old_ones_dropped_header_small(self):
         from app.api import pi_camera_router as r

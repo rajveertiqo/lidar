@@ -38,8 +38,9 @@ LIVE_BOXES_MAX_AGE_S = 2.5
 
 def _live_boxes(view: str, fid: int, shot: float) -> dict:
     """{camera: {"frame_id", "age_ms", "detections"}} for picture `fid`: what the detector
-    found in it — the front's, waited for — or, for a side camera detected every ~1.2 s, in
-    its last picture, `age_ms` older than this one (drawn as old)."""
+    last found in each camera's pictures, `age_ms` older than this one — the front's a
+    picture or two (not waited for since 2026-11-16: live_detections), a side camera's,
+    detected every ~1.2 s, up to that (drawn as old)."""
     from app.perception.sensor_fusion import with_distances
 
     found = with_distances(live_detections(view, fid))
@@ -136,17 +137,19 @@ async def config():
 
 
 @router.get("/live/{view}")
-def live_picture(view: str, after: int = -1, width: int = 480, boxes: int = 0):
+def live_picture(view: str, after: int = -1, width: int = 480, boxes: int = 0, ahead: int = 1):
     """The newest picture of one camera ("front", "right", "left", "back") or of all four
-    ("grid", in the camera's 2x2), as one small JPEG — waiting up to 1 s for one newer than
-    frame `after`; 204 if none came. The dashboard asks for the next one only once this one
-    is shown, so nothing queues and the picture cannot fall behind, as the MJPEG stream did
-    over Wi-Fi (2026-11-02). A def, not async: the wait runs off the event loop.
-    With `boxes=1`, X-Detections carries what the detector found in the picture's camera(s)
-    (_live_boxes) — the boxes drawn on THIS picture, not on one polled 0.7 s apart."""
+    ("grid", in the camera's 2x2), as one small JPEG — waiting up to 1 s for one at least
+    `ahead` (1-4) newer than frame `after`; 204 if none came. The dashboard asks for each
+    picture by number, the next and the one after it at once (2026-11-16), so nothing queues
+    and the picture cannot fall behind, as the MJPEG stream did over Wi-Fi (2026-11-02),
+    and a slow link's round trip is not paid on every picture. A def, not async: the wait
+    runs off the event loop.
+    With `boxes=1`, X-Detections carries what the detector last found in the picture's
+    camera(s) (_live_boxes), sent with it — not polled 0.7 s apart — but not waited for."""
     if view != "grid" and view not in VALID_SECTORS:
         view = "front"
-    got = live_jpeg(view, after=after, wait_s=1.0, width=width)
+    got = live_jpeg(view, after=after, wait_s=1.0, width=width, ahead=max(1, min(ahead, 4)))
     if got is None:
         return Response(status_code=204, headers={"Cache-Control": "no-store"})
     jpeg, fid, shot, simulated = got
@@ -167,7 +170,7 @@ def live_picture(view: str, after: int = -1, width: int = 480, boxes: int = 0):
         headers["X-Detections"] = json.dumps(
             _live_boxes(view, fid, shot), separators=(",", ":")
         )
-    # Last: the wait for the front's boxes is part of the picture's age.
+    # Last: the encoding and the boxes are part of the picture's age.
     headers["X-Frame-Age-Ms"] = str(max(0, round((time.time() - shot) * 1000)))
     return Response(content=jpeg, media_type="image/jpeg", headers=headers)
 

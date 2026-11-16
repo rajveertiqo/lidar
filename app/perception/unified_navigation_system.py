@@ -15,6 +15,7 @@ from app.config import (
     GUIDANCE_SECTORS,
     CAMERA_SECTORS,
     LIDAR_MAX_DISTANCE,
+    TRAFFIC_LIGHT_MIN_CONF,
 )
 
 # THREAT detection spans all 8 x 45° LiDAR sectors (finer hazard direction).
@@ -102,9 +103,7 @@ def detect_traffic_lights_from_detections(camera_data: Dict) -> Dict[str, Any]:
             # "traffic_light" (2026-10-30: that model would never have seen a crossing).
             is_traffic_light = class_name.replace("_", " ") == "traffic light"
 
-            if (
-                is_traffic_light and confidence >= 0.4
-            ):  # Lower threshold for traffic lights
+            if is_traffic_light and confidence >= TRAFFIC_LIGHT_MIN_CONF:
                 logging.getLogger(__name__).debug(
                     "Traffic light detected: '%s' (%.0f%%) from %s",
                     class_name,

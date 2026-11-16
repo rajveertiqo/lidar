@@ -118,8 +118,13 @@ HAILO_DETECT_RUN_TIMEOUT_MS = 2000
 HAILO_SEG_RUN_TIMEOUT_MS = 2000
 
 # ============== DETECTION CONFIGURATION ==============
+# The detector drops every detection under this itself, before anything else sees it: no
+# *_MIN_CONF below may be lower, or it never applies (tests/test_component_sync.py).
 DETECTION_CONF = 0.5
 DETECTION_IOU = 0.7
+# A traffic light is taken from this confidence: the detector's floor. Until 2026-11-16 the
+# check said 0.4 ("a lower threshold for traffic lights"), which never applied.
+TRAFFIC_LIGHT_MIN_CONF = 0.5
 
 # ============== LIDAR CONFIGURATION ==============
 LIDAR_PORT = "/dev/ttyUSB0"
@@ -1281,7 +1286,11 @@ SIMPLE_VEHICLE_WIDTH_M = {
     "cyclist": 0.6,
 }
 SIMPLE_VEHICLE_CLASSES = tuple(SIMPLE_VEHICLE_HEIGHT_M)
-SIMPLE_VEHICLE_MIN_CONF = 0.45
+# A vehicle is taken from this confidence: the detector's own floor (DETECTION_CONF). Until
+# 2026-11-16 this said 0.45, but the detector drops everything under 0.5 first, so 0.45 never
+# applied. Taking vehicles from 0.45 means lowering DETECTION_CONF while keeping people at 0.5
+# everywhere (the side camera's "nobody there" too), and a street walk to check it first.
+SIMPLE_VEHICLE_MIN_CONF = 0.5
 SIMPLE_VEHICLE_MIN_HEIGHT_FRAC = 0.06 * _PER_H  # ~32 px: a car ~30 m out
 SIMPLE_VEHICLE_WINDOW_S = 1.0
 # 0.4 s (was 0.6, 2026-10-30): the front camera is detected ~16 times a second (full view,

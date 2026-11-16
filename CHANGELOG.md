@@ -32,6 +32,15 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   Nothing said changes.
 
 ### Fixed
+- **Two confidence settings that never applied now say what runs.** Vehicles were "taken from
+  0.45" (`SIMPLE_VEHICLE_MIN_CONF`) and traffic lights from 0.4, but the detector drops every
+  detection under `DETECTION_CONF` (0.5) itself, so neither had applied since the first commit.
+  Both are now 0.5 (traffic lights' as `TRAFFIC_LIGHT_MIN_CONF`), nothing the device does
+  changes, and a test fails if any `*_MIN_CONF` is set under the detector's floor. Taking
+  vehicles from 0.45 for real waits on a street walk. Checked alongside: the weak, far
+  "person" boxes the dashboard shows (50-59 %, 20-66 ft, on chairs and a monitor) reach no
+  sentence: naming wants the front camera, the middle of the view, a box a quarter of the
+  picture tall and the laser's range; the motion tracker cannot see a still box move.
 - **The dashboard's camera view keeps up over Wi-Fi.** On a laptop it showed 5.6 pictures a
   second of the cameras' 15 (the device itself was at full rate: 14.9 captured, 13 detected).
   Two things were in series on every picture: the server held it until the detector had

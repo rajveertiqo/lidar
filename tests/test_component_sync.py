@@ -63,9 +63,18 @@ class DirectionAgreementTests(unittest.TestCase):
         for board in c.RADAR_BEARINGS.values():  # the radar first, as on the device
             gap = abs((board - bearing + 180.0) % 360.0 - 180.0)
             echo = POST_MM + 20.0 if gap <= 30.0 else None
-            ru._publish(c.radar_board_key(board), {
-                "min_dist": echo, "peaks_mm": [echo] if echo else [], "online": True,
-                "degraded": False, "lag_s": 0.0, "phase": "streaming", "error": None})
+            ru._publish(
+                c.radar_board_key(board),
+                {
+                    "min_dist": echo,
+                    "peaks_mm": [echo] if echo else [],
+                    "online": True,
+                    "degraded": False,
+                    "lag_s": 0.0,
+                    "phase": "streaming",
+                    "error": None,
+                },
+            )
         t = time.time()
         for i in range(4):
             scan = _post_scan(bearing)
@@ -78,21 +87,38 @@ class DirectionAgreementTests(unittest.TestCase):
             with self.subTest(bearing=bearing):
                 self.place_post(bearing)
                 lidar, radar = ss.get_lidar_state(), ss.get_radar_state()
-                near = [s for s, v in lidar["sectors"].items()
-                        if isinstance(v.get("min_dist"), (int, float)) and abs(v["min_dist"] - POST_MM) < 150]
+                near = [
+                    s
+                    for s, v in lidar["sectors"].items()
+                    if isinstance(v.get("min_dist"), (int, float))
+                    and abs(v["min_dist"] - POST_MM) < 150
+                ]
                 self.assertIn(lu.get_sector(bearing), near, "LiDAR sector")
-                heard = [s for s in c.RADAR_SECTORS
-                         if isinstance(radar["sectors"].get(s, {}).get("min_dist"), (int, float))]
+                heard = [
+                    s
+                    for s in c.RADAR_SECTORS
+                    if isinstance(radar["sectors"].get(s, {}).get("min_dist"), (int, float))
+                ]
                 self.assertIn(cardinal, heard, "radar side")
-                hazards = [h for h in sf.fuse_guidance().get("hazards") or []
-                           if abs((h.get("distance_ft") or 0) - POST_MM / 304.8) < 0.8]
+                hazards = [
+                    h
+                    for h in sf.fuse_guidance().get("hazards") or []
+                    if abs((h.get("distance_ft") or 0) - POST_MM / 304.8) < 0.8
+                ]
                 self.assertTrue(hazards, "hazard list")
-                self.assertEqual(hazards[0].get("clock"), sf.angle_to_clock(bearing), "hazard clock")
+                self.assertEqual(
+                    hazards[0].get("clock"), sf.angle_to_clock(bearing), "hazard clock"
+                )
                 objs = bev_grid.get_grid().snapshot().get("objects") or []
-                laser = [math.degrees(math.atan2(o["centroid_mm"][1], o["centroid_mm"][0])) % 360
-                         for o in objs if o["kind"] != "obstacle"
-                         and abs(math.hypot(*o["centroid_mm"]) - POST_MM) < 400]
-                self.assertTrue(any(abs((b - bearing + 180) % 360 - 180) < 5 for b in laser), f"BEV {laser}")
+                laser = [
+                    math.degrees(math.atan2(o["centroid_mm"][1], o["centroid_mm"][0])) % 360
+                    for o in objs
+                    if o["kind"] != "obstacle"
+                    and abs(math.hypot(*o["centroid_mm"]) - POST_MM) < 400
+                ]
+                self.assertTrue(
+                    any(abs((b - bearing + 180) % 360 - 180) < 5 for b in laser), f"BEV {laser}"
+                )
 
     def test_camera_bearing_matches_the_voice(self):
         qw = sg._QUAD_W
@@ -108,8 +134,12 @@ class DirectionAgreementTests(unittest.TestCase):
 class MotionSignTests(unittest.TestCase):
     """The scan matcher's signs are the app's: right turn +yaw, forward +speed, right +."""
 
-    WALLS = [((-2000, -1200), (4000, -1200)), ((4000, -1200), (4000, 1800)),
-             ((4000, 1800), (-2000, 1800)), ((-2000, 1800), (-2000, -1200))]
+    WALLS = [
+        ((-2000, -1200), (4000, -1200)),
+        ((4000, -1200), (4000, 1800)),
+        ((4000, 1800), (-2000, 1800)),
+        ((-2000, 1800), (-2000, -1200)),
+    ]
     POSTS = [(2500, 900, 100), (1200, -700, 80)]
 
     def cast(self, px, py, yaw):
@@ -171,22 +201,29 @@ class SettingsAgreeTests(unittest.TestCase):
 
         from pathlib import Path
 
-        unit = Path(__file__).resolve().parent.parent.joinpath("deploy", "shappe-guide.service").read_text()
+        unit = (
+            Path(__file__)
+            .resolve()
+            .parent.parent.joinpath("deploy", "shappe-guide.service")
+            .read_text()
+        )
         watchdog = float(re.search(r"^WatchdogSec=(\d+)", unit, re.M).group(1))
         scan, radar = 60.0 / c.LIDAR_RPM, 1.0 / c.RADAR_UPDATE_RATE
         # The 4-in-1 board's full-view picture: 15.7 a second, measured 2026-11-02.
         front_cam, side_cam = 1.0 / 15.7, 3 * c.DETECTION_SIDE_MIN_INTERVAL_S
         checks = {
-            "distance bands in order": c.WALK_MIN_TURN_FT < c.WALK_BLOCK_FT
-            < c.SIMPLE_OBSTACLE_AHEAD_FT < c.SIMPLE_WALL_APPROACH_FT,
-            "radar reaches the glass-ahead band":
-                c.RADAR_NO_RETURN_FT >= c.SIMPLE_WALL_APPROACH_FT + c.SIMPLE_BAND_MARGIN_FT,
+            "distance bands in order": c.WALK_MIN_TURN_FT
+            < c.WALK_BLOCK_FT
+            < c.SIMPLE_OBSTACLE_AHEAD_FT
+            < c.SIMPLE_WALL_APPROACH_FT,
+            "radar reaches the glass-ahead band": c.RADAR_NO_RETURN_FT
+            >= c.SIMPLE_WALL_APPROACH_FT + c.SIMPLE_BAND_MARGIN_FT,
             "near-wall band inside the drift band": c.SIMPLE_WALL_NEAR_FT < c.SIMPLE_DRIFT_NEAR_FT,
             "warn fast, clear slowly": c.SIMPLE_ALERT_CONFIRM_S < c.SIMPLE_CLEAR_CONFIRM_S,
-            "LiDAR confirm faster than 0.2 s":
-                c.SIMPLE_LIDAR_CONFIRM_SCANS * scan <= c.SIMPLE_ALERT_CONFIRM_S + 1e-9,
-            "camera confirm faster than 0.2 s":
-                c.SIMPLE_CAMERA_CONFIRM_FRAMES * front_cam < c.SIMPLE_ALERT_CONFIRM_S,
+            "LiDAR confirm faster than 0.2 s": c.SIMPLE_LIDAR_CONFIRM_SCANS * scan
+            <= c.SIMPLE_ALERT_CONFIRM_S + 1e-9,
+            "camera confirm faster than 0.2 s": c.SIMPLE_CAMERA_CONFIRM_FRAMES * front_cam
+            < c.SIMPLE_ALERT_CONFIRM_S,
             "LiDAR reader keeps every scan": lu.MIN_SCAN_INTERVAL <= scan,
             "LiDAR stale after >= 5 scans": c.LIDAR_STALE_S >= 5 * scan,
             "'Guidance stopped' after the stale window": c.SIMPLE_LIDAR_FRESH_S >= c.LIDAR_STALE_S,
@@ -194,21 +231,38 @@ class SettingsAgreeTests(unittest.TestCase):
             "radar lag limit >= 2 frames": c.RADAR_MAX_LAG_S >= 2 * radar,
             "heading stale with the LiDAR": c.HEADING_STATE_STALE_S == c.LIDAR_STALE_S,
             "side labels refreshed before expiry": side_cam < c.SIMPLE_CAMERA_FRESH_S,
-            "vehicle span holds its confirm frames":
-                c.SIMPLE_VEHICLE_MIN_SPAN_S / front_cam >= c.SIMPLE_VEHICLE_CONFIRM_FRAMES,
-            "vehicle window longer than its span": c.SIMPLE_VEHICLE_WINDOW_S > c.SIMPLE_VEHICLE_MIN_SPAN_S,
+            "vehicle span holds its confirm frames": c.SIMPLE_VEHICLE_MIN_SPAN_S / front_cam
+            >= c.SIMPLE_VEHICLE_CONFIRM_FRAMES,
+            "vehicle window longer than its span": c.SIMPLE_VEHICLE_WINDOW_S
+            > c.SIMPLE_VEHICLE_MIN_SPAN_S,
             "guidance floor below the scan rate": c.PI_VOICE_TICK_HZ <= 1.0 / scan,
-            "phone 'too old' = server stale": abs(ble.ALERT_MAX_AGE_MS / 1000 - c.GUIDANCE_RESULT_STALE_S) < 1e-9,
-            "phone audio report renewed >= 2x": mobile_delivery.REPORT_TTL_S >= 2 * gatt_server.HEALTH_S,
-            "hang told before the heartbeat lapses": c.GUIDANCE_STALL_SAY_S < c.SERVICE_HEARTBEAT_MAX_AGE_S,
+            "phone 'too old' = server stale": abs(
+                ble.ALERT_MAX_AGE_MS / 1000 - c.GUIDANCE_RESULT_STALE_S
+            )
+            < 1e-9,
+            "phone audio report renewed >= 2x": mobile_delivery.REPORT_TTL_S
+            >= 2 * gatt_server.HEALTH_S,
+            "hang told before the heartbeat lapses": c.GUIDANCE_STALL_SAY_S
+            < c.SERVICE_HEARTBEAT_MAX_AGE_S,
             "heartbeat inside the watchdog": c.SERVICE_HEARTBEAT_MAX_AGE_S < watchdog,
             "fault inside the hang notice": c.GUIDANCE_FAIL_S < c.GUIDANCE_STALL_SAY_S,
-            "camera HFOV window holds the measured HFOV":
-                c.DETECTION_DISTANCE_HFOV_DEG[0] <= c.SIMPLE_CAMERA_HFOV_DEG <= c.DETECTION_DISTANCE_HFOV_DEG[1],
+            "camera HFOV window holds the measured HFOV": c.DETECTION_DISTANCE_HFOV_DEG[0]
+            <= c.SIMPLE_CAMERA_HFOV_DEG
+            <= c.DETECTION_DISTANCE_HFOV_DEG[1],
         }
         for name, ok in checks.items():
             with self.subTest(name):
                 self.assertTrue(ok)
+
+    def test_no_confidence_floor_under_the_detectors(self):
+        """2026-11-16: vehicles were taken from 0.45 and traffic lights from 0.4, but the
+        detector drops everything under DETECTION_CONF (0.5) itself: neither had ever applied."""
+        floors = {n: getattr(c, n) for n in dir(c) if n.endswith("_MIN_CONF")}
+        self.assertIn("SIMPLE_VEHICLE_MIN_CONF", floors)
+        self.assertIn("TRAFFIC_LIGHT_MIN_CONF", floors)
+        for name, value in floors.items():
+            with self.subTest(name):
+                self.assertGreaterEqual(value, c.DETECTION_CONF)
 
 
 if __name__ == "__main__":

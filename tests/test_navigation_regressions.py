@@ -62,9 +62,7 @@ class NavigationTests(unittest.IsolatedAsyncioTestCase):
             "last_update": now,
             "valid_fraction": 1.0,
             "sectors": {s: {"min_dist": 6000, "count": 20} for s in LIDAR_SECTOR_ORDER},
-            "cones": {
-                s: {"min_dist": 6000} for s in ("front", "left", "right", "back")
-            },
+            "cones": {s: {"min_dist": 6000} for s in ("front", "left", "right", "back")},
         }
         self.camera = {"last_update": now, "front": {"detections": []}}
         for name, value in (
@@ -129,9 +127,7 @@ class NavigationTests(unittest.IsolatedAsyncioTestCase):
                 }
                 result = await navigation.make_navigation_decision_from_state()
                 self.assertEqual(result["crossing_mode"], crossing)
-                self.assertEqual(
-                    result["action"], "wait_for_signal" if crossing else "go_forward"
-                )
+                self.assertEqual(result["action"], "wait_for_signal" if crossing else "go_forward")
 
     async def test_websocket_rejects_invalid_scan(self):
         class Socket:

@@ -10,8 +10,12 @@ from tools.field.walk_replay import FEATURES
 def rows(spec):
     """[(label, class named), ...] -> labels_in rows, one clip each."""
     return [
-        {"file": f"clip-{i}.jsonl.gz", "t": float(i), "label": label,
-         "now": {"instruction": "", "class": named}}
+        {
+            "file": f"clip-{i}.jsonl.gz",
+            "t": float(i),
+            "label": label,
+            "now": {"instruction": "", "class": named},
+        }
         for i, (label, named) in enumerate(spec)
     ]
 

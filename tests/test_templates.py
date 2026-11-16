@@ -121,8 +121,10 @@ class TemplateTests(unittest.TestCase):
                 for offset, ch in stray_in_code(body, js=kind == "script"):
                     where = line + body.count("\n", 0, offset)
                     with self.subTest(page=os.path.basename(page), line=where):
-                        self.fail(f"{ch!r} in the {kind}'s code at line {where}: "
-                                  f"{body[max(0, offset - 30):offset + 10]!r}")
+                        self.fail(
+                            f"{ch!r} in the {kind}'s code at line {where}: "
+                            f"{body[max(0, offset - 30) : offset + 10]!r}"
+                        )
 
     def test_scripts_parse(self):
         node = _node()
@@ -141,7 +143,9 @@ class TemplateTests(unittest.TestCase):
                         ext = ".mjs" if "module" in attrs else ".js"
                         path = os.path.join(tmp, f"{k}{ext}")
                         Path(path).write_text(body, encoding="utf-8")
-                        run = subprocess.run([node, "--check", path], capture_output=True, text=True)
+                        run = subprocess.run(
+                            [node, "--check", path], capture_output=True, text=True
+                        )
                         self.assertEqual(run.returncode, 0, f"{name}: {run.stderr.strip()[-400:]}")
 
 

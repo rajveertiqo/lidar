@@ -37,10 +37,7 @@ class Clock:
 
 
 def frames_of(outs, mtu=23):
-    return [
-        (char, P.encode(t, payload, i, mtu))
-        for i, (char, t, payload) in enumerate(outs)
-    ]
+    return [(char, P.encode(t, payload, i, mtu)) for i, (char, t, payload) in enumerate(outs)]
 
 
 def decoded(outs):
@@ -119,9 +116,7 @@ class ProtocolTests(unittest.TestCase):
         self.assertAlmostEqual(a["front_ft"], 3.6)
 
     def test_unknown_values(self):
-        a = P.unpack_alert(
-            P.pack_alert(1, 1, None, P.PHRASE_UNLISTED, -1, 0, float("nan"))
-        )
+        a = P.unpack_alert(P.pack_alert(1, 1, None, P.PHRASE_UNLISTED, -1, 0, float("nan")))
         self.assertIsNone(a["age_ms"])
         self.assertIsNone(a["front_ft"])
         self.assertEqual(a["level"], -1)
@@ -219,9 +214,7 @@ class VocabTests(unittest.TestCase):
             self.assertNotIn(entry["id"], (P.PHRASE_NONE, P.PHRASE_UNLISTED))
 
     def test_ids_unique(self):
-        with open(
-            os.path.join(BRIDGE, "contract", "vocab_v1.json"), encoding="utf-8"
-        ) as fh:
+        with open(os.path.join(BRIDGE, "contract", "vocab_v1.json"), encoding="utf-8") as fh:
             reg = json.load(fh)
         ids = [p["id"] for p in reg["phrases"]]
         self.assertEqual(len(ids), len(set(ids)))
@@ -287,9 +280,7 @@ class BridgeTests(unittest.TestCase):
         self.assertAlmostEqual(a["front_ft"], 3.6)
         self.assertEqual(alerts[1]["text"], "Blocked by glass")
         clock.t += 0.1  # the same cue again: nothing new
-        again = b.on_walk(
-            make_walk(6, "Blocked by glass", "Blocked by glass", front_ft=3.6)
-        )
+        again = b.on_walk(make_walk(6, "Blocked by glass", "Blocked by glass", front_ft=3.6))
         self.assertFalse([o for o in again if o[0] == "alert"])
 
     def test_missed_admitting_tick_still_alerts(self):
@@ -308,11 +299,7 @@ class BridgeTests(unittest.TestCase):
         a = [
             d
             for c, d in decoded(
-                b.on_walk(
-                    make_walk(
-                        2, "Wall ahead", "Wall ahead", speak=True, audio_enabled=False
-                    )
-                )
+                b.on_walk(make_walk(2, "Wall ahead", "Wall ahead", speak=True, audio_enabled=False))
             )
             if d["kind"] == "alert"
         ][0]
@@ -344,9 +331,7 @@ class BridgeTests(unittest.TestCase):
         outs = decoded(b.on_walk(make_walk(2, "", "Ready.", speak=True)))
         alert = [d for c, d in outs if d["kind"] == "alert"][0]
         self.assertEqual(alert["phrase_id"], P.PHRASE_UNLISTED)
-        self.assertEqual(
-            [d for c, d in outs if d["kind"] == "alert_text"][0]["text"], "Ready."
-        )
+        self.assertEqual([d for c, d in outs if d["kind"] == "alert_text"][0]["text"], "Ready.")
 
     def test_service_restart_bumps_epoch(self):
         b, clock = make_bridge()
@@ -359,9 +344,7 @@ class BridgeTests(unittest.TestCase):
         clock.t += 0.1
         alert = [
             d
-            for c, d in decoded(
-                b.on_walk(make_walk(1, "Walk straight", "Walk straight"))
-            )
+            for c, d in decoded(b.on_walk(make_walk(1, "Walk straight", "Walk straight")))
             if d["kind"] == "alert"
         ][0]
         self.assertEqual((alert["epoch"], alert["cue_seq"]), (epoch + 1, 1))
@@ -379,13 +362,9 @@ class BridgeTests(unittest.TestCase):
         first = b.on_walk(make_walk(1, "Walk straight"))
         self.assertEqual([o[0] for o in first if o[0] == "state"], ["state"])
         clock.t += 0.05
-        self.assertFalse(
-            [o for o in b.tick() if o[0] == "state"]
-        )  # unchanged, too soon
+        self.assertFalse([o for o in b.tick() if o[0] == "state"])  # unchanged, too soon
         clock.t += 0.1
-        self.assertFalse(
-            [o for o in b.on_walk(make_walk(1, "Wall ahead")) if o[0] == "state"]
-        )
+        self.assertFalse([o for o in b.on_walk(make_walk(1, "Wall ahead")) if o[0] == "state"])
         clock.t += 0.1  # changed, >= 0.2 s
         st = [d for c, d in decoded(b.tick()) if c == "state"]
         self.assertEqual(st[0]["phrase_id"], b.vocab["by_text"]["Wall ahead"]["id"])
@@ -438,18 +417,14 @@ class BridgeTests(unittest.TestCase):
             if c == "state"
         ][-1]
         self.assertEqual(state["status"], "degraded")
-        self.assertTrue(
-            state["health"]["thermal_warn"] and state["health"]["undervoltage"]
-        )
+        self.assertTrue(state["health"]["thermal_warn"] and state["health"]["undervoltage"])
 
     def test_one_slow_reply_is_not_an_outage(self):
         b, clock = make_bridge()
         b.on_walk(make_walk(1))
         b.on_health(make_health())
         clock.t += 0.5
-        events = lambda outs: [
-            d["event"] for c, d in decoded(outs) if d["kind"] == "event"
-        ]
+        events = lambda outs: [d["event"] for c, d in decoded(outs) if d["kind"] == "event"]
         self.assertEqual(events(b.on_unreachable("timed out")), [])
         self.assertEqual(P.unpack_state(b.state_value())["status"], "ok")
         clock.t += UNREACHABLE_AFTER_S  # still no answer: now it is one
@@ -459,9 +434,7 @@ class BridgeTests(unittest.TestCase):
         b, clock = make_bridge()
         b.on_walk(make_walk(1))
         b.on_health(make_health())
-        events = lambda outs: [
-            d["event"] for c, d in decoded(outs) if d["kind"] == "event"
-        ]
+        events = lambda outs: [d["event"] for c, d in decoded(outs) if d["kind"] == "event"]
         seen = []
         for _ in range(int(HEALTH_STALE_S) + 2):  # /guidance/walk answers, /health not
             clock.t += 1
@@ -487,9 +460,7 @@ class BridgeTests(unittest.TestCase):
         ]
         clock.t += 1
         second = [
-            d
-            for c, d in decoded(b.on_unreachable("connection refused"))
-            if d["kind"] == "event"
+            d for c, d in decoded(b.on_unreachable("connection refused")) if d["kind"] == "event"
         ]
         self.assertEqual(first, ["service_unreachable"])
         self.assertEqual(second, [])
@@ -498,11 +469,7 @@ class BridgeTests(unittest.TestCase):
         self.assertFalse(any(st["health"].values()))
         clock.t += 1
         b.on_walk(make_walk(1))
-        evs = [
-            d["event"]
-            for c, d in decoded(b.on_health(make_health()))
-            if d["kind"] == "event"
-        ]
+        evs = [d["event"] for c, d in decoded(b.on_health(make_health())) if d["kind"] == "event"]
         self.assertIn("device_ready", evs)
 
     def test_mock_identity_is_always_marked_simulated(self):
@@ -523,12 +490,8 @@ class BridgeTests(unittest.TestCase):
         frame = P.encode(P.T_PROTOCOL_INFO, P.json_bytes(b.protocol_info()), 0, 517)
         self.assertEqual(len(frame), 1)
         self.assertLessEqual(len(frame[0]), 480)  # margin for future fields
-        hello = P.parse_json(
-            b.on_command(P.json_bytes({"v": 1, "id": 1, "cmd": "hello"}))[0][2]
-        )
-        self.assertEqual(
-            hello["result"]["model"], long_identity["model"]
-        )  # strings live here
+        hello = P.parse_json(b.on_command(P.json_bytes({"v": 1, "id": 1, "cmd": "hello"}))[0][2])
+        self.assertEqual(hello["result"]["model"], long_identity["model"])  # strings live here
 
     def test_new_subscriber_gets_state_at_once(self):
         b, clock = make_bridge()
@@ -608,9 +571,7 @@ class CommandTests(unittest.TestCase):
     def test_rate_limit(self):
         b, clock = make_bridge()
         codes = [
-            self.cmd(b, {"v": 1, "id": i, "cmd": "ping"})[0]
-            .get("error", {})
-            .get("code")
+            self.cmd(b, {"v": 1, "id": i, "cmd": "ping"})[0].get("error", {}).get("code")
             for i in range(12)
         ]
         self.assertEqual(codes[:10], [None] * 10)
@@ -624,9 +585,7 @@ class CommandTests(unittest.TestCase):
         sid = out[0]["result"]["id"]
         self.assertEqual(out[1]["event"], "session_started")
         again = self.cmd(b, {"v": 1, "id": 2, "cmd": "session_start"})
-        self.assertEqual(
-            again[0]["result"]["id"], sid
-        )  # idempotent: resumes, never forks
+        self.assertEqual(again[0]["result"]["id"], sid)  # idempotent: resumes, never forks
         self.assertEqual(len(again), 1)  # ... and announces nothing new
         clock.t += 61
         stop = self.cmd(b, {"v": 1, "id": 3, "cmd": "session_stop"})
@@ -665,13 +624,9 @@ class CommandTests(unittest.TestCase):
         st = self.cmd(b, {"v": 1, "id": 3, "cmd": "get_status"})[0]["result"]
         self.assertEqual(st["status"], "ok")
         self.assertIsNone(st["battery"])
-        log = self.cmd(
-            b, {"v": 1, "id": 4, "cmd": "get_speech_log", "args": {"limit": 5}}
-        )[0]
+        log = self.cmd(b, {"v": 1, "id": 4, "cmd": "get_speech_log", "args": {"limit": 5}})[0]
         self.assertEqual(log["result"]["entries"][0]["text"], "Blocked by glass")
-        mark = self.cmd(
-            b, {"v": 1, "id": 5, "cmd": "mark", "args": {"kind": "missed"}}
-        )[0]
+        mark = self.cmd(b, {"v": 1, "id": 5, "cmd": "mark", "args": {"kind": "missed"}})[0]
         self.assertTrue(mark["ok"])
         self.assertEqual(b.service.marks, [("missed", "")])
         ack = self.cmd(
@@ -696,9 +651,7 @@ class CommandTests(unittest.TestCase):
             "get_surroundings",
             "get_diagnostics",
         ):
-            for _c, t, payload in b.on_command(
-                P.json_bytes({"v": 1, "id": 1, "cmd": name})
-            ):
+            for _c, t, payload in b.on_command(P.json_bytes({"v": 1, "id": 1, "cmd": name})):
                 self.assertLessEqual(len(payload), P.MAX_MESSAGE_BYTES)
                 P.encode(t, payload, 0, 23)  # must not raise at the smallest MTU
 
@@ -718,9 +671,7 @@ class RobustnessTests(unittest.TestCase):
         (in memory) and alerts go on. One log line, not one per failed save."""
         with tempfile.TemporaryDirectory() as d:
             blocker = os.path.join(d, "a_file")
-            open(
-                blocker, "w"
-            ).close()  # its "directory" is a file: unwritable, even as root
+            open(blocker, "w").close()  # its "directory" is a file: unwritable, even as root
             clock = Clock()
             with contextlib.redirect_stdout(io.StringIO()) as log:
                 b = Bridge(
@@ -737,9 +688,7 @@ class RobustnessTests(unittest.TestCase):
                 clock.t += 0.1
                 alerts = [
                     d
-                    for c, d in decoded(
-                        b.on_walk(make_walk(3, "Wall ahead", "Wall ahead"))
-                    )
+                    for c, d in decoded(b.on_walk(make_walk(3, "Wall ahead", "Wall ahead")))
                     if d["kind"] == "alert"
                 ]
         self.assertIn("service_restarted", [d.get("event") for c, d in restarted])
@@ -776,9 +725,7 @@ class RobustnessTests(unittest.TestCase):
                 self.assertEqual(b.epoch, 1, content)
                 self.assertRegex(b.device_id, "^[0-9a-f]{16}$")
                 self.assertIn("ignored", log.getvalue())
-                info = P.encode(
-                    P.T_PROTOCOL_INFO, P.json_bytes(b.protocol_info()), 0, 517
-                )
+                info = P.encode(P.T_PROTOCOL_INFO, P.json_bytes(b.protocol_info()), 0, 517)
                 self.assertEqual(len(info), 1)  # _read_info serves frame 0 only
             with open(path, "w") as fh:  # ... and a good one is still kept
                 json.dump({"device_id": "0123456789abcdef", "epoch": 41}, fh)
@@ -856,17 +803,13 @@ class RobustnessTests(unittest.TestCase):
             b, clock = make_bridge()
             b.on_walk(make_walk(5))
             clock.t += 1.5
-            snap = make_walk(
-                6, "Walk straight", "Walk straight", speak=True, front_ft=10.0
-            )
+            snap = make_walk(6, "Walk straight", "Walk straight", speak=True, front_ft=10.0)
             (snap if where is None else snap[where])[key] = value
             outs = b.on_walk(snap)
             clock.t += 1.5
             outs += b.tick() + b.on_unreachable("refused")
             assert_sendable(outs)
-            alerts = [
-                d for c, d in decoded(outs) if d["kind"] in ("alert", "alert_text")
-            ]
+            alerts = [d for c, d in decoded(outs) if d["kind"] in ("alert", "alert_text")]
             if key != "notify":  # without notify there is no cue step
                 self.assertEqual(alerts[0]["cue_seq"], 6, (where, key))
             for text in (d["text"] for d in alerts if d["kind"] == "alert_text"):
@@ -899,16 +842,10 @@ class RobustnessTests(unittest.TestCase):
             assert_sendable(b.on_health(h, sh, sy) + b.tick(force=True))
             clock.t += 1
             assert_sendable(b.on_health(*good) + b.tick(force=True))
-            st = P.unpack_state(
-                b.state_value()
-            )  # the next good snapshot is whole again
+            st = P.unpack_state(b.state_value())  # the next good snapshot is whole again
             self.assertEqual(st["status"], "ok", h)
-            self.assertTrue(
-                st["health"]["lidar_ok"] and st["health"]["front_glass_ok"], h
-            )
-            self.assertFalse(
-                st["health"]["thermal_warn"] or st["health"]["undervoltage"], h
-            )
+            self.assertTrue(st["health"]["lidar_ok"] and st["health"]["front_glass_ok"], h)
+            self.assertFalse(st["health"]["thermal_warn"] or st["health"]["undervoltage"], h)
 
     def test_long_strings_are_capped(self):
         b, clock = make_bridge()
@@ -923,9 +860,7 @@ class RobustnessTests(unittest.TestCase):
         assert_sendable(outs)
         self.assertIn("guidance_stalled", [d.get("event") for c, d in decoded(outs)])
         st = self.cmd(b, {"v": 1, "id": 1, "cmd": "get_status"})[0]["result"]
-        self.assertLessEqual(
-            max(len(st["loop"]["error"]), len(st["voice"]["error"])), 200
-        )
+        self.assertLessEqual(max(len(st["loop"]["error"]), len(st["voice"]["error"])), 200)
         for warning in (
             "—" * 400,
             "\U0001f6b6" * 400,
@@ -942,9 +877,9 @@ class RobustnessTests(unittest.TestCase):
         ):
             self.assertEqual(self.cmd(b, raw)[0]["error"]["code"], "BAD_ARGS")
         self.assertEqual(
-            self.cmd(b, {"v": 1, "id": 3, "cmd": "ping", "args": {"t": 1791504000123}})[
-                0
-            ]["result"]["t"],
+            self.cmd(b, {"v": 1, "id": 3, "cmd": "ping", "args": {"t": 1791504000123}})[0][
+                "result"
+            ]["t"],
             1791504000123,
         )
         for args in (
@@ -989,11 +924,7 @@ class RobustnessTests(unittest.TestCase):
 
         class LongLog(FakeService):
             def speech_log(self, limit):
-                return {
-                    "lines": [dict(line, cue_seq=100000 + i) for i in range(50)][
-                        -limit:
-                    ]
-                }
+                return {"lines": [dict(line, cue_seq=100000 + i) for i in range(50)][-limit:]}
 
         b, _ = make_bridge()
         b.service = LongLog()
@@ -1002,9 +933,7 @@ class RobustnessTests(unittest.TestCase):
             entries = self.cmd(
                 b, {"v": 1, "id": 1, "cmd": "get_speech_log", "args": {"limit": 20}}
             )[0]["result"]["entries"]
-            self.assertEqual(
-                entries[-1]["cue_seq"], 100049
-            )  # the newest is kept, the oldest go
+            self.assertEqual(entries[-1]["cue_seq"], 100049)  # the newest is kept, the oldest go
             self.assertEqual(len(entries) == 20, all_fit, mtu)
 
     def test_a_reply_too_large_for_the_link_is_answered_too_large(self):
@@ -1015,13 +944,9 @@ class RobustnessTests(unittest.TestCase):
         b, _ = make_bridge()
         b.service = Chatty()
         r = self.cmd(b, {"v": 1, "id": 77, "cmd": "mark", "args": {"kind": "note"}})[0]
-        self.assertEqual(
-            (r["id"], r["ok"], r["error"]["code"]), (77, False, "TOO_LARGE")
-        )
+        self.assertEqual((r["id"], r["ok"], r["error"]["code"]), (77, False, "TOO_LARGE"))
         body = P.json_bytes({"v": 1, "id": 78, "ok": True, "result": {"x": "y" * 4000}})
-        r = strict_json(
-            b.too_large(body, "the MTU fell")
-        )  # what Server.send falls back to
+        r = strict_json(b.too_large(body, "the MTU fell"))  # what Server.send falls back to
         self.assertEqual((r["id"], r["error"]["code"]), (78, "TOO_LARGE"))
 
     def test_mtu_is_the_smaller_of_the_link_and_the_apps_claim(self):
@@ -1045,9 +970,7 @@ class RobustnessTests(unittest.TestCase):
         """The error RESPONSE itself raised UnicodeEncodeError and killed the command thread."""
         b, _ = make_bridge()
         r = self.cmd(b, b'{"v":"\\ud800","id":7,"cmd":"ping"}')
-        self.assertEqual(
-            [(x["id"], x["error"]["code"]) for x in r], [(7, "PROTOCOL_MISMATCH")]
-        )
+        self.assertEqual([(x["id"], x["error"]["code"]) for x in r], [(7, "PROTOCOL_MISMATCH")])
         w = make_walk(1, "Walk straight")
         w["path"]["front_ft"] = float("nan")  # NaN in a reply: an error, never bad JSON
         b.on_walk(w)
@@ -1086,9 +1009,7 @@ class ScenarioTests(unittest.TestCase):
         for name in SCENARIOS:
             said, events = self.run_scenario(name)
             self.assertIn("device_ready", events, name)
-            expected = [s["say"] for s in SCENARIOS[name] if "say" in s][
-                1:
-            ]  # first one is learned
+            expected = [s["say"] for s in SCENARIOS[name] if "say" in s][1:]  # first one is learned
             self.assertEqual(said[: len(expected)], expected, name)
 
     def test_lidar_loss_is_down_not_stalled(self):
@@ -1115,9 +1036,7 @@ class SchemaTests(unittest.TestCase):
     def test_messages_match_the_schema(self):
         import jsonschema
 
-        with open(
-            os.path.join(BRIDGE, "contract", "schema_v1.json"), encoding="utf-8"
-        ) as fh:
+        with open(os.path.join(BRIDGE, "contract", "schema_v1.json"), encoding="utf-8") as fh:
             schema = json.load(fh)
 
         def check(kind, obj):
@@ -1158,17 +1077,11 @@ class SchemaTests(unittest.TestCase):
             if cmd != "launch":
                 check("command", msg)
             for _c, t, payload in b.on_command(P.json_bytes(msg)):
-                check(
-                    "response" if t == P.T_RESPONSE else "event", P.parse_json(payload)
-                )
-        self.assertTrue(
-            {"device_ready", "sensor_degraded", "service_unreachable"} <= seen
-        )
+                check("response" if t == P.T_RESPONSE else "event", P.parse_json(payload))
+        self.assertTrue({"device_ready", "sensor_degraded", "service_unreachable"} <= seen)
 
 
-@unittest.skipUnless(
-    __import__("importlib").util.find_spec("dbus"), "dbus-python not installed"
-)
+@unittest.skipUnless(__import__("importlib").util.find_spec("dbus"), "dbus-python not installed")
 class GattImportTest(unittest.TestCase):
     def test_imports(self):
         from ble_bridge import gatt_server
@@ -1176,9 +1089,7 @@ class GattImportTest(unittest.TestCase):
         for level in gatt_server.SECURITY.values():
             # EVENTS has no read callback: it must not advertise a read.
             self.assertFalse(any("read" in f for f in level["notify_only"]))
-        self.assertEqual(
-            gatt_server.SECURITY["encrypt"]["notify_only"], ["encrypt-notify"]
-        )
+        self.assertEqual(gatt_server.SECURITY["encrypt"]["notify_only"], ["encrypt-notify"])
         self.assertLessEqual(len("Shappe-M".encode()), gatt_server.MAX_NAME_BYTES)
 
     def test_connection_tracking(self):
@@ -1208,9 +1119,7 @@ class GattImportTest(unittest.TestCase):
         dev, iface = "/org/bluez/hci0/dev_58_E1_DD_9F_94_B8", gatt_server.DEVICE_IFACE
         with contextlib.redirect_stdout(io.StringIO()) as out:
             s.on_interfaces_added(dev, {iface: {"Connected": True}})
-            s.on_device_props(
-                iface, {"Connected": True}, [], path=dev
-            )  # repeat: ignored
+            s.on_device_props(iface, {"Connected": True}, [], path=dev)  # repeat: ignored
             s.on_device_props(iface, {"Connected": False}, [], path=dev)
             s.on_interfaces_removed(dev, [iface])  # already counted
         self.assertEqual((s.bridge.connects, s.bridge.disconnects), (1, 1))
@@ -1235,12 +1144,8 @@ class GattImportTest(unittest.TestCase):
         s = gatt_server.Server.__new__(gatt_server.Server)
         s.bridge, s.seq = b, {"alert": 0, "state": 0, "events": 0}
         s.chars = {name: Char() for name in s.seq}
-        reply = P.json_bytes(
-            {"v": 1, "id": 9, "ok": True, "result": {"x": "y" * 3600}}
-        )  # > 3570 B
-        event = P.json_bytes(
-            {"v": 1, "event": "health_changed", "data": {"x": "z" * 5000}}
-        )
+        reply = P.json_bytes({"v": 1, "id": 9, "ok": True, "result": {"x": "y" * 3600}})  # > 3570 B
+        event = P.json_bytes({"v": 1, "event": "health_changed", "data": {"x": "z" * 5000}})
         with contextlib.redirect_stdout(io.StringIO()):
             s.send(
                 [
@@ -1253,10 +1158,7 @@ class GattImportTest(unittest.TestCase):
         r = P.Reassembler()
         msgs = [m for m in (r.feed(f, 0.0) for f in s.chars["events"].frames) if m]
         self.assertEqual(
-            [
-                (m["id"], m["error"]["code"])
-                for m in (P.parse_json(p) for _t, _s, p in msgs)
-            ],
+            [(m["id"], m["error"]["code"]) for m in (P.parse_json(p) for _t, _s, p in msgs)],
             [(9, "TOO_LARGE")],
         )  # the app still gets an answer
 
@@ -1270,8 +1172,7 @@ class GattImportTest(unittest.TestCase):
         bad = make_walk(6, "Walk straight", "Walk straight", speak=True)
         bad["loop"]["age_s"] = 1e306
         walks = iter(
-            [make_walk(5), bad]
-            + [make_walk(7 + i, "Wall ahead", "Wall ahead") for i in range(500)]
+            [make_walk(5), bad] + [make_walk(7 + i, "Wall ahead", "Wall ahead") for i in range(500)]
         )
 
         class Source:
@@ -1303,10 +1204,7 @@ class GattImportTest(unittest.TestCase):
         th = threading.Thread(target=s.poll_loop, name="ble-poll-test", daemon=True)
         th.start()
         deadline = time.monotonic() + 5.0
-        while (
-            time.monotonic() < deadline
-            and sum(t == P.T_ALERT for _c, t, _p in sent) < 3
-        ):
+        while time.monotonic() < deadline and sum(t == P.T_ALERT for _c, t, _p in sent) < 3:
             time.sleep(0.05)
         alive = th.is_alive()
         s.stop.set()

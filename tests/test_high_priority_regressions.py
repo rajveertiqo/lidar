@@ -18,21 +18,32 @@ class MotionPredictionTests(unittest.TestCase):
         for speed, lateral, angle in ((-0.7, 0, 180), (0, 0.4, 90)):
             with self.subTest(angle=angle):
                 heading = {
-                    "speed_mps": speed, "right_mps": lateral,
-                    "velocity_trusted": True, "moving": True,
+                    "speed_mps": speed,
+                    "right_mps": lateral,
+                    "velocity_trusted": True,
+                    "moving": True,
                 }
                 result = drift.analyze(
                     {"points": {"angles": [angle], "distances": [1200]}},
-                    {}, {}, heading=heading, now=1000,
+                    {},
+                    {},
+                    heading=heading,
+                    now=1000,
                 )
                 self.assertIsNotNone(result["lidar_ttc_s"])
                 self.assertIsNone(result["correction"])
 
     def test_motion_tracker_retains_signed_and_lateral_ego_velocity(self):
-        fwd, right, *_ = MotionTracker._own_step({
-            "speed_trusted": True, "velocity_trusted": True,
-            "speed_mps": -0.7, "right_mps": 0.4,
-        }, None, 0.1)
+        fwd, right, *_ = MotionTracker._own_step(
+            {
+                "speed_trusted": True,
+                "velocity_trusted": True,
+                "speed_mps": -0.7,
+                "right_mps": 0.4,
+            },
+            None,
+            0.1,
+        )
         self.assertAlmostEqual(fwd, -0.07)
         self.assertAlmostEqual(right, 0.04)
 
@@ -53,7 +64,10 @@ class MobileReadinessTests(unittest.TestCase):
             self.assertFalse(mobile_delivery.status()["connected"])
 
     def test_voice_status_requires_an_available_delivery_route(self):
-        with patch.object(pi_voice, "_running", False), patch.object(pi_voice, "AUDIO_ENABLED", True):
+        with (
+            patch.object(pi_voice, "_running", False),
+            patch.object(pi_voice, "AUDIO_ENABLED", True),
+        ):
             mobile_delivery.report(False, False)
             self.assertFalse(pi_voice.status()["delivery_available"])
             mobile_delivery.report(True, True)
@@ -65,7 +79,9 @@ class MobileReadinessTests(unittest.TestCase):
             patch.object(pi_voice, "_running", True),
             patch.object(pi_voice, "AUDIO_ENABLED", True),
             patch.object(pi_voice._voice, "failing", False),
-            patch.object(pi_voice, "audio_output", return_value={"name": "Speaker", "usable": True}),
+            patch.object(
+                pi_voice, "audio_output", return_value={"name": "Speaker", "usable": True}
+            ),
         ):
             self.assertTrue(pi_voice.status()["delivery_available"])
 
@@ -74,32 +90,51 @@ class MobileReadinessTests(unittest.TestCase):
         from app.core import pi_health
         from app.perception import sensor_fusion
         from app.guidance import startup_gate
+
         with (
-            patch.object(sensor_fusion, "get_system_health", return_value={"lidar_ok": True, "all_ok": True}),
+            patch.object(
+                sensor_fusion, "get_system_health", return_value={"lidar_ok": True, "all_ok": True}
+            ),
             patch.object(pi_voice, "loop_status", return_value={"last_ok_age_s": 0.1}),
             patch.object(startup_gate, "state", return_value={"ready": True}),
             patch.object(pi_health, "read", return_value={}),
-            patch.object(pi_voice, "status", return_value={
-                "audio_enabled": True, "usable": False, "delivery_available": False,
-            }),
+            patch.object(
+                pi_voice,
+                "status",
+                return_value={
+                    "audio_enabled": True,
+                    "usable": False,
+                    "delivery_available": False,
+                },
+            ),
         ):
             self.assertEqual(main.health_check().status_code, 503)
         with (
-            patch.object(sensor_fusion, "get_system_health", return_value={"lidar_ok": True, "all_ok": True}),
+            patch.object(
+                sensor_fusion, "get_system_health", return_value={"lidar_ok": True, "all_ok": True}
+            ),
             patch.object(pi_voice, "loop_status", return_value={"last_ok_age_s": 0.1}),
             patch.object(startup_gate, "state", return_value={"ready": True}),
             patch.object(pi_health, "read", return_value={}),
-            patch.object(pi_voice, "status", return_value={
-                "audio_enabled": True, "usable": False,
-                "phone_usable": True, "delivery_available": True,
-            }),
+            patch.object(
+                pi_voice,
+                "status",
+                return_value={
+                    "audio_enabled": True,
+                    "usable": False,
+                    "phone_usable": True,
+                    "delivery_available": True,
+                },
+            ),
         ):
             self.assertEqual(main.health_check().status_code, 200)
 
     def test_only_local_bridge_can_report_phone_readiness(self):
         payload = MobileDeliveryReport(connected=True, audio_ready=True)
+
         def request(host):
             return Request({"type": "http", "client": (host, 1234), "headers": []})
+
         with self.assertRaises(HTTPException) as exc:
             mobile_delivery_report(payload, request("192.168.1.5"))
         self.assertEqual(exc.exception.status_code, 403)
@@ -107,6 +142,7 @@ class MobileReadinessTests(unittest.TestCase):
 
     def test_bridge_reports_only_subscribed_single_phone_with_ready_audio(self):
         from ble_bridge.gatt_server import Server
+
         server = Server.__new__(Server)
         server.source = Mock()
         server.bridge = Mock()

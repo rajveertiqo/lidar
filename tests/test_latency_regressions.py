@@ -35,17 +35,13 @@ class SentenceOrderTests(unittest.TestCase):
 
     def test_named_object_ahead_beats_a_near_side_wall(self):
         word = next(iter(sg.OBJECT_AHEAD))
-        self.assertEqual(
-            self.say(near=True, obj=word, close="left"), sg.OBJECT_AHEAD[word]
-        )
+        self.assertEqual(self.say(near=True, obj=word, close="left"), sg.OBJECT_AHEAD[word])
 
     def test_side_wall_still_said_with_a_clear_path(self):
         self.assertEqual(self.say(close="left"), sg.NEAR_LEFT)
 
     def test_glass_ahead_still_first(self):
-        self.assertEqual(
-            self.say(near=True, glass=True, wall=True, close="left"), sg.GLASS_AHEAD
-        )
+        self.assertEqual(self.say(near=True, glass=True, wall=True, close="left"), sg.GLASS_AHEAD)
 
 
 class FusionTests(unittest.TestCase):
@@ -83,7 +79,8 @@ class GuidanceFaultTimeTests(unittest.TestCase):
         for _ in range(20):  # many ticks, at once: not yet a fault
             self.assertEqual(unified_guidance._note_guidance(boom), "")
         with patch.object(
-            unified_guidance.time, "monotonic",
+            unified_guidance.time,
+            "monotonic",
             return_value=time.monotonic() + config.GUIDANCE_FAIL_S + 0.01,
         ):
             self.assertIn("boom", unified_guidance._note_guidance(boom))
@@ -103,10 +100,15 @@ class ScanDrivenTickTests(unittest.TestCase):
             ticks.append(time.monotonic())
             return {}
 
-        with patch.object(pi_voice, "PI_VOICE_ENABLED", False), patch.object(
-            pi_voice, "PI_VOICE_TICK_HZ", 2.0  # a 0.5 s timer: only a scan wakes it sooner
-        ), patch.object(unified_guidance, "get_unified_guidance", tick), patch.object(
-            unified_guidance, "guidance_fault", lambda: ""
+        with (
+            patch.object(pi_voice, "PI_VOICE_ENABLED", False),
+            patch.object(
+                pi_voice,
+                "PI_VOICE_TICK_HZ",
+                2.0,  # a 0.5 s timer: only a scan wakes it sooner
+            ),
+            patch.object(unified_guidance, "get_unified_guidance", tick),
+            patch.object(unified_guidance, "guidance_fault", lambda: ""),
         ):
             pi_voice.start()
             time.sleep(0.6)
@@ -129,8 +131,13 @@ class LidarConfirmTests(unittest.TestCase):
 
     def raw(self, scan, lidar_block=True, wall=True):
         return {
-            "blocked": True, "near": True, "glass": False, "wall": wall,
-            "front_ft": 3.0, "lidar_block": lidar_block, "scan_index": scan,
+            "blocked": True,
+            "near": True,
+            "glass": False,
+            "wall": wall,
+            "front_ft": 3.0,
+            "lidar_block": lidar_block,
+            "scan_index": scan,
         }
 
     def test_second_different_scan_confirms(self):
@@ -216,8 +223,12 @@ class StallWatchTests(unittest.TestCase):
         from ble_bridge import protocol as P
         from ble_bridge.core import Bridge, load_vocab
 
-        bridge = Bridge(load_vocab(), {"model": "t", "software": "t", "mock": True},
-                        clock=lambda: 1000.0, wall=lambda: 1791504000.0)
+        bridge = Bridge(
+            load_vocab(),
+            {"model": "t", "software": "t", "mock": True},
+            clock=lambda: 1000.0,
+            wall=lambda: 1791504000.0,
+        )
         with patch.object(unified_guidance, "_latest", None), patch("builtins.print"):
             bridge.on_walk(unified_guidance.latest_guidance())  # learns the cue counter
             before = sg.cue_seq()
@@ -252,12 +263,26 @@ class CameraConfirmTests(unittest.TestCase):
 
     def raw(self, scan, frame, steer=True):
         return {
-            "blocked": True, "near": True, "glass": False, "wall": False,
-            "front_ft": 3.0, "lidar_block": True, "scan_index": scan,
-            "object": "Person", "camera_frame": frame, "side": "left",
+            "blocked": True,
+            "near": True,
+            "glass": False,
+            "wall": False,
+            "front_ft": 3.0,
+            "lidar_block": True,
+            "scan_index": scan,
+            "object": "Person",
+            "camera_frame": frame,
+            "side": "left",
             "side_room": {"left": 10.0, "right": 10.0},
-            "steer": {"turn": "left", "word": "Person", "where": "in front",
-                      "range_m": 0.9, "cut": True} if steer else None,
+            "steer": {
+                "turn": "left",
+                "word": "Person",
+                "where": "in front",
+                "range_m": 0.9,
+                "cut": True,
+            }
+            if steer
+            else None,
         }
 
     def test_name_and_way_confirm_on_the_second_frame(self):
@@ -293,10 +318,18 @@ class VehicleSpanTests(unittest.TestCase):
             t = t0 + i * 0.05
             r = 20.0 - 5.0 * (t - t0)  # 20 m ahead-left, closing at 5 m/s
             h, w, cx = focal * 1.5 / r, focal * 1.8 / r, qw / 2 - focal * 1.0 / r
-            cam = {"front": {"frame_time": t, "detections": [{
-                "class_name": "car", "confidence": 0.9,
-                "bbox": [cx - w / 2, qh * 0.55 - h / 2, cx + w / 2, qh * 0.55 + h / 2],
-            }]}}
+            cam = {
+                "front": {
+                    "frame_time": t,
+                    "detections": [
+                        {
+                            "class_name": "car",
+                            "confidence": 0.9,
+                            "bbox": [cx - w / 2, qh * 0.55 - h / 2, cx + w / 2, qh * 0.55 + h / 2],
+                        }
+                    ],
+                }
+            }
             if vehicles.update(cam, t, 0.0)["approaching"] and first is None:
                 first = t - t0
         self.assertIsNotNone(first)
@@ -380,10 +413,22 @@ class FrontFirstDetectionTests(unittest.TestCase):
                     pc.current_frame_simulated = False
                 pictures[0] += 1
 
-        with patch.object(pc, "_sector_slice", slice_), patch.object(pc, "_view_check", lambda s, q, m=None: {
-            "brightness": 100, "sharpness": 100, "lux": None, "dark": False, "blurred": False,
-            "dim": False,
-        }), patch.object(pc, "update_camera_state", lambda d: None):
+        with (
+            patch.object(pc, "_sector_slice", slice_),
+            patch.object(
+                pc,
+                "_view_check",
+                lambda s, q, m=None: {
+                    "brightness": 100,
+                    "sharpness": 100,
+                    "lux": None,
+                    "dark": False,
+                    "blurred": False,
+                    "dim": False,
+                },
+            ),
+            patch.object(pc, "update_camera_state", lambda d: None),
+        ):
             cam = threading.Thread(target=camera, daemon=True)
             cam.start()
             gen = pc._generation
@@ -492,7 +537,8 @@ class LiveBoxesTests(unittest.TestCase):
     @staticmethod
     def publish(cam, fid, t, dets=None):
         pc.detection_stats[cam] = {
-            "detections": dets or [{"class_name": "person", "confidence": 0.9, "bbox": [1, 2, 3, 4]}],
+            "detections": dets
+            or [{"class_name": "person", "confidence": 0.9, "bbox": [1, 2, 3, 4]}],
             "num_objects": 1,
             "frame_time": t,
             "frame_id": fid,
@@ -648,8 +694,10 @@ class TofPortClashTests(unittest.TestCase):
     dtoverlay=arducam-pivariety (CAM1) beside imx519,cam1 took the CamArray's port and lens
     address, and the old advice was to drop imx519,cam1 (2026-11-05)."""
 
-    BOOT = ("[all]\ndtoverlay=imx519,cam1\ndtoverlay=imx519,cam0\n"
-            "dtoverlay=arducam-pivariety\ndtoverlay=arducam-pivariety,cam0\n")
+    BOOT = (
+        "[all]\ndtoverlay=imx519,cam1\ndtoverlay=imx519,cam0\n"
+        "dtoverlay=arducam-pivariety\ndtoverlay=arducam-pivariety,cam0\n"
+    )
 
     def advice(self, kernel):
         import contextlib, io, tempfile
@@ -659,9 +707,11 @@ class TofPortClashTests(unittest.TestCase):
             cfg.write(self.BOOT)
             cfg.flush()
             out = io.StringIO()
-            with patch.object(tof_check, "CONFIG_PATHS", (cfg.name,)), \
-                 patch.object(tof_check, "answered_on", lambda port: kernel.get(port, set())), \
-                 contextlib.redirect_stdout(out):
+            with (
+                patch.object(tof_check, "CONFIG_PATHS", (cfg.name,)),
+                patch.object(tof_check, "answered_on", lambda port: kernel.get(port, set())),
+                contextlib.redirect_stdout(out),
+            ):
                 tof_check.check_config("Raspberry Pi 5 Model B Rev 1.0")
         return out.getvalue()
 
@@ -692,10 +742,13 @@ class VoiceHangTimeoutTests(unittest.TestCase):
         events = []
         hang = ["python3", "-c", "import time; time.sleep(30)"]
         voice = pi_voice._Voice()
-        with patch.object(pi_voice, "PI_VOICE_CMD", hang), patch.object(
-            pi_voice, "_report", lambda seq, event, text, detail="": events.append(
-                (event, time.monotonic())
-            )
+        with (
+            patch.object(pi_voice, "PI_VOICE_CMD", hang),
+            patch.object(
+                pi_voice,
+                "_report",
+                lambda seq, event, text, detail="": events.append((event, time.monotonic())),
+            ),
         ):
             voice.start()
             t0 = time.monotonic()
@@ -723,15 +776,24 @@ class UrgentToneTests(unittest.TestCase):
         log = Path(tempfile.mkdtemp()) / "voice.log"  # the stand-in commands append here
         self.addCleanup(lambda: (log.unlink(missing_ok=True), log.parent.rmdir()))
         stamp = f"open({str(log)!r}, 'a').write"
-        tone = [sys.executable, "-c", "import sys, time; sys.stdin.buffer.read(); "
-                f"{stamp}(f'tone {{time.monotonic()}}\\n'); time.sleep(0.15)"]
-        say = [sys.executable, "-c", f"import sys, time; {stamp}("
-               "f'say {sys.argv[1]} {time.monotonic()}\\n')"]
+        tone = [
+            sys.executable,
+            "-c",
+            "import sys, time; sys.stdin.buffer.read(); "
+            f"{stamp}(f'tone {{time.monotonic()}}\\n'); time.sleep(0.15)",
+        ]
+        say = [
+            sys.executable,
+            "-c",
+            f"import sys, time; {stamp}(f'say {{sys.argv[1]}} {{time.monotonic()}}\\n')",
+        ]
         voice = pi_voice._Voice()
         voice.tone = True
-        with patch.object(pi_voice, "PI_VOICE_TONE_CMD", tone), patch.object(
-            pi_voice, "PI_VOICE_CMD", say
-        ), patch.object(pi_voice, "_report", lambda *a, **k: None):
+        with (
+            patch.object(pi_voice, "PI_VOICE_TONE_CMD", tone),
+            patch.object(pi_voice, "PI_VOICE_CMD", say),
+            patch.object(pi_voice, "_report", lambda *a, **k: None),
+        ):
             voice.start()
             for i, (text, urgent) in enumerate(sentences):
                 voice.say(text, urgent=urgent, seq=100 + i)
@@ -768,7 +830,8 @@ class SentenceTimingTests(unittest.TestCase):
     def test_timing_from_the_tick(self):
         now = 2_000_000.0
         out = unified_guidance._timing(
-            time.perf_counter() - 0.004, now,
+            time.perf_counter() - 0.004,
+            now,
             {"last_update": now - 0.045},
             {"front": {"frame_time": now - 0.06}},
             {"obstacle": "person", "raw": {"front_ft": 3.62}},
@@ -785,8 +848,14 @@ class SentenceTimingTests(unittest.TestCase):
 
         t = time.time()
         seq = 9_000_001
-        speech_log.say("test", "Blocked by wall", level="urgent", now=t, cue_seq=seq,
-                       timing={"scan_age_ms": 45, "decide_ms": 4.0, "front_ft": 3.6})
+        speech_log.say(
+            "test",
+            "Blocked by wall",
+            level="urgent",
+            now=t,
+            cue_seq=seq,
+            timing={"scan_age_ms": 45, "decide_ms": 4.0, "front_ft": 3.6},
+        )
         speech_log.delivery(seq, "started", text="Blocked by wall", now=t + 0.08)
         line = speech_log.recent(1)["lines"][-1]
         self.assertEqual(line["timing"]["voice_start_ms"], 80)

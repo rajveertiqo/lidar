@@ -39,9 +39,12 @@
   note 18), but that is logged as "would say" until a walk has checked it
   (`GLASS_CLOSING_SPEAK`); door frames on both walls at the same distance read as a pane to it.
 - **A glass door met 25 deg or more off is named late** (in the simulator). Up to 20 deg off
-  it is found from 11 ft; at 25-45 deg only from about 6 ft, 2 ft before the 4 ft block:
+  it is found from 11 ft; at 25-45 deg only from about 5 ft, 1 ft before the 4 ft block:
   farther, the tilted wall's far side lies past the radar's match of the echo's range, and
-  only one side of the door is seen to judge by (design note 24).
+  only one side of the door is seen to judge by (design note 24). Met 50 deg off or more, a
+  0.9 m door leaves less than the walking corridor across the way: its frame is on the path,
+  and within 5 ft it is a block ("Obstacle in front, turn left"), often not named glass.
+  `glass_sim.py` reports both on every run.
 - **A glass door with someone standing close beside it, 1.5-2 ft off** (in the simulator).
   Someone 0.5-0.8 m to the side of the door, in front of its wall: walking in, every one of
   80 such approaches names the glass by 4 ft (design note 25), but at 1.5-2 ft about 1 in 6

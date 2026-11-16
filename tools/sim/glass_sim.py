@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Glass scenes without leaving the desk: is the pane named, and only the pane?"""
+"""Glass scenes without leaving the desk: is the pane named, and only the pane?
+
+    venv/bin/python tools/sim/glass_sim.py             # every scene, then the door grids
+    venv/bin/python tools/sim/glass_sim.py --no-grids  # the scenes only
+
+The door grids (2026-11-13, design notes 24 and 25): glass doors met 10-50 deg off, which
+must be named up to 20 deg off from 11 ft and up to 45 deg off from 5 ft (50 deg off, a block
+within 4 ft, glass or not: the frame is on the path); and with someone
+standing by the door (0.65-0.85 m along its wall, up to 0.4 m in front of it, 0-20 deg off),
+which walking in from 8 ft must be named by 4 ft. What lies past those is printed as a limit,
+not failed (docs/known-limits.md)."""
 
 import argparse
 import math
@@ -173,6 +183,44 @@ def radar_state(echoes):
             "last_update": now,
         }
     return {"sectors": secs, "boards": [], "missing": [], "last_update": now}
+
+
+def heard(segments, bearing, half=65.0 / 2.0):
+    """The nearest range (mm) of `segments` inside a board's beam, `half` deg either side of
+    its `bearing`, by 1 deg rays: what that board hears off them first. None: nothing there."""
+    best = None
+    for k in range(-int(half), int(half) + 1):
+        r = math.radians(bearing + k)
+        dx, dy = math.cos(r), math.sin(r)
+        for x1, y1, x2, y2 in segments:
+            ex, ey = x2 - x1, y2 - y1
+            den = dx * ey - dy * ex
+            if abs(den) < 1e-9:
+                continue
+            t, u = (x1 * ey - y1 * ex) / den, (x1 * dy - y1 * dx) / den
+            if t > 0 and 0.0 <= u <= 1.0:
+                best = t if best is None else min(best, t)
+    return best
+
+
+def door_scene(ft, angle=0.0, person=None):
+    """A glass door in a wall `ft` ahead, met `angle` deg off (+: its right side nearer), and
+    maybe someone standing by it, person = (mm along the wall from the door's centre, +:
+    right; mm in front of the wall): (segments, echoes). Each front board hears, by ray, the
+    pane, the wall and the person, as many echoes; the laser looks through the pane."""
+    d, t = ft * FT, math.radians(angle)
+    wall = wall_across(d, DOOR_HALF_MM, angle_deg=angle)
+    pane = wall_across(d, None, reach=DOOR_HALF_MM, angle_deg=angle)
+    someone = []
+    if person:
+        along, in_front = person
+        someone = post(d - along * math.sin(t) - in_front * math.cos(t),
+                       along * math.cos(t) - in_front * math.sin(t), half=170.0)
+    echoes = {}
+    for key, bearing in (("deg030", 30.0), ("deg330", -30.0)):
+        hits = (heard(s, bearing) for s in (pane, wall, someone) if s)
+        echoes[key] = sorted(h for h in hits if h)
+    return wall + someone + back_wall(), echoes
 
 
 # ---------------------------------------------------------------- walking (radar tracking)
@@ -377,6 +425,73 @@ def scenes():
     return out
 
 
+GLASS_SAID = sg.BLOCKED_GLASS_ANY + (sg.GLASS_AHEAD,) + sg._GLASS_BESIDE
+
+
+def _says(segments, echoes):
+    walk_policy._last_measured.clear()
+    walk_policy._near_frames.clear()
+    walk_policy._remember_turn(None, 0.0)
+    lidar, radar = lidar_state(segments), radar_state(echoes)
+    return sg.decide(walk_policy.decide(lidar, radar), lidar, now=time.time(), radar_state=radar)["instruction"]
+
+
+def door_grids():
+    """Glass doors met at an angle, and with someone standing by them (design notes 24, 25):
+    a line per grid, and one per miss that counts. Returns the failures."""
+    failures = 0
+    # Met at an angle, nobody near: found from 11 ft up to 20 deg off, and from 5 ft up to 45
+    # (farther, the tilted wall's far side lies past the echo's match). 50 deg off, the door
+    # leaves 0.58 m across the way, less than the walking corridor: its frame is on the path,
+    # and within the block distance it must be a block, glass or not.
+    must = 0
+    late = {False: [0, 0], True: [0, 0]}  # steep (50 deg)? -> [named glass, scenes]
+    for angle in (-50.0, -45.0, -40.0, -30.0, -25.0, -20.0, -15.0, -10.0,
+                  10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0, 50.0):
+        for ft in (1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.5, 5.0, 6.0, 8.0, 11.0):
+            said = _says(*door_scene(ft, angle))
+            if abs(angle) <= 20.0 or (abs(angle) <= 45.0 and ft <= 5.0):
+                must += 1
+                if said not in GLASS_SAID:
+                    failures += 1
+                    print(f"{'MISSED':<12} {f'glass door {ft} ft, met {angle:+.0f} deg off':<62} -> {said!r}")
+            else:
+                row = late[abs(angle) > 45.0]
+                row[0] += said in GLASS_SAID
+                row[1] += 1
+                warned = said in GLASS_SAID or sg._LEVEL.get(said, -1) >= sg._BLOCKED
+                if abs(angle) > 45.0 and ft <= 4.0 and not warned:
+                    failures += 1
+                    print(f"{'MISSED':<12} {f'glass door {ft} ft, met {angle:+.0f} deg off: no block':<62} -> {said!r}")
+    print(f"{'ok' if not failures else 'MISSED':<12} {f'glass doors met 10-45 deg off: {must} must be named':<62} "
+          f"-> {must - failures} named")
+    print(f"{'limit':<12} {'  25-45 deg off, 6-11 ft (named from 5 ft)':<62} -> {late[False][0]} of {late[False][1]} named")
+    print(f"{'limit':<12} {'  50 deg off, 1-11 ft, named glass (else a block within 4 ft)':<62} "
+          f"-> {late[True][0]} of {late[True][1]} named")
+    # Someone standing by the door, 0.5-0.8 m along the wall, up to 0.4 m in front of it.
+    # Walking in, it must be named by WALK_BLOCK_FT (4 ft); single scans nearer can miss.
+    before, single, single_missed = failures, 0, 0
+    for angle in (0.0, 10.0, -10.0, 20.0, -20.0):
+        for along in (650.0, 850.0, -650.0, -850.0):
+            for in_front in (0.0, 100.0, 250.0, 400.0):
+                named = {}
+                for ft in (8.0, 6.0, 4.5, 4.0, 3.5, 3.0, 2.5, 2.0, 1.5):
+                    named[ft] = _says(*door_scene(ft, angle, (along, in_front))) in GLASS_SAID
+                single += len(named)
+                single_missed += sum(not n for n in named.values())
+                if not any(named[ft] for ft in (8.0, 6.0, 4.5, 4.0)):
+                    failures += 1
+                    who = f"{along / 1000:+.2f} m along, {in_front / 1000:.2f} m in front"
+                    print(f"{'MISSED':<12} {f'door, someone {who}, {angle:+.0f} deg: not by 4 ft':<62} "
+                          f"-> named at {[ft for ft, n in named.items() if n]}")
+    approaches = 5 * 4 * 4
+    print(f"{'ok' if failures == before else 'MISSED':<12} "
+          f"{f'glass door, someone by it: {approaches} walks in, named by 4 ft':<62} "
+          f"-> {approaches - (failures - before)} named")
+    print(f"{'limit':<12} {'  single scans 1.5-8 ft':<62} -> {single - single_missed} of {single} named")
+    return failures
+
+
 def run(verbose=False):
     failures = 0
     for kind, name, segments, echoes in scenes():
@@ -408,12 +523,16 @@ def run(verbose=False):
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__)
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument(
         "-v", "--verbose", action="store_true", help="show the fused front reading"
     )
+    p.add_argument("--no-grids", action="store_true", help="skip the door grids (design notes 24, 25)")
     args = p.parse_args()
     failures = run(args.verbose)
+    if not args.no_grids:
+        print()
+        failures += door_grids()
     print(f"\n{failures} failure(s)" if failures else "\nall scenes as expected")
     sys.exit(1 if failures else 0)
 

@@ -13,7 +13,9 @@ lists its peaks), nearest first. Decisions: walk_policy.decide() and simple_guid
 — one poll, no smoothing.
 
 mirror: the scene mirrored left <-> right must get the mirrored sentence ("Turn left" <->
-"Turn right"). The LiDAR's blind arc is one-sided by design, so it is switched off here.
+"Turn right"). The LiDAR's blind arc is one-sided by design, so it is switched off here. A
+tie is not a fault: the same turn both ways where the decision saw no difference between the
+sides (equal room, the block straight ahead), counted apart (_tie).
 rules: with the rig's blind arc, against the scene's TRUE geometry: a solid within 4 ft on
 the walking line gets a block warning; within 8 ft, never "Walk straight"; glass within 4 ft,
 never "Walk straight"; "Turn left/right" only with 2 ft of room that way; no glass sentence
@@ -173,17 +175,39 @@ def _describe(scene):
             f"glass {r(scene['glass'])} posts {[(round(x), round(y), round(q)) for x, y, q in scene['posts']]}")
 
 
+def _tie(walk):
+    """Did the decision see no difference between the sides: equal room left and right, and
+    the block straight ahead (within WALK_TURN_AWAY_MIN_DEG) or not measured by the laser?
+    Then a turn either way is right, and WALK_TURN_ORDER picks one."""
+    views = walk.get("directions") or {}
+    if not all(s in views for s in ("left", "right", "front")):
+        return False
+    obstacle = wp._front_obstacle_deg(get_lidar_state(), views["front"])
+    return (abs(wp._room_ft(views["left"]) - wp._room_ft(views["right"])) < 0.05
+            and (obstacle is None or abs(obstacle) < c.WALK_TURN_AWAY_MIN_DEG))
+
+
 def run_mirror(n, seed):
     for mod in (lu, wp, rp):
         mod.LIDAR_BLIND_ARCS_DEG = ()  # one-sided by design: off, so scenes can mirror
-    rnd, bad = random.Random(seed), []
+    rnd, bad, ties = random.Random(seed), [], 0
     for i in range(n):
         scene = random_scene(rnd)
-        a = decide(scene, blind=False)[1]["instruction"]
-        b = decide(mirror(scene), blind=False)[1]["instruction"]
-        if _flip(a) != b:
-            bad.append((i, a, b, scene))
-    print(f"{n} scenes, {len(bad)} not mirrored")
+        walk_a, said_a = decide(scene, blind=False)
+        tie_a = _tie(walk_a)
+        walk_b, said_b = decide(mirror(scene), blind=False)
+        a, b = said_a["instruction"], said_b["instruction"]
+        if _flip(a) == b:
+            continue
+        # The same turn both ways, with the sides alike to the decision both times (a wall
+        # straight ahead and open floor either side): a tie, not a left/right fault. A scene
+        # that is its own mirror can never pass otherwise (2026-11-16: all 6 in 400 were).
+        if a == b and tie_a and _tie(walk_b):
+            ties += 1
+            continue
+        bad.append((i, a, b, scene))
+    print(f"{n} scenes, {len(bad)} not mirrored"
+          + (f" ({ties} ties: the sides alike, the same turn either way)" if ties else ""))
     for i, a, b, scene in bad[:20]:
         print(f"  #{i:4d} {a!r:40s} | mirror: {b!r}\n         {_describe(scene)}")
     return len(bad)

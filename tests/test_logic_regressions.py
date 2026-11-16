@@ -1125,46 +1125,19 @@ class WallBesideAndSomethingOnThePathTests(unittest.TestCase):
 
 
 class _GlassDoorScenes:
-    """A glass door in a wall, met at an angle, maybe someone beside it, as the boards hear it."""
-
-    def _heard(self, segments, bearing, half=32.5):
-        """The nearest range of `segments` inside a board's beam."""
-        best = None
-        for k in range(-int(half), int(half) + 1):
-            r = math.radians(bearing + k)
-            dx, dy = math.cos(r), math.sin(r)
-            for x1, y1, x2, y2 in segments:
-                ex, ey = x2 - x1, y2 - y1
-                den = dx * ey - dy * ex
-                if abs(den) < 1e-9:
-                    continue
-                t, u = (x1 * ey - y1 * ex) / den, (x1 * dy - y1 * dx) / den
-                if t > 0 and 0.0 <= u <= 1.0:
-                    best = t if best is None else min(best, t)
-        return best
+    """A glass door in a wall, met at an angle, maybe someone beside it, as the boards hear it
+    (glass_sim.door_scene)."""
 
     def _door(self, ft, angle=0.0, person=None):
-        """A glass door in a wall `ft` ahead, met at `angle` deg, maybe a person (lat mm along
-        the wall from the door's centre, dz mm in front of it): (lidar, radar) states."""
+        """(lidar, radar) states; person = (lat mm along the wall from the door's centre, dz mm:
+        negative, in front of it)."""
         from tools.sim import glass_sim as gs
 
-        d, t = ft * gs.FT, math.radians(angle)
-        wall = gs.wall_across(d, gs.DOOR_HALF_MM, angle_deg=angle)
-        pane = gs.wall_across(d, None, reach=gs.DOOR_HALF_MM, angle_deg=angle)
-        extra = []
-        if person:
-            lat, dz = person
-            extra = gs.post(
-                d - lat * math.sin(t) + dz * math.cos(t),
-                lat * math.cos(t) + dz * math.sin(t),
-                half=170.0,
-            )
-        echoes = {}
-        for key, bearing in (("deg030", 30.0), ("deg330", -30.0)):
-            heard = (self._heard(s, bearing) for s in (pane, wall, extra) if s)
-            echoes[key] = sorted(h for h in heard if h)
+        segments, echoes = gs.door_scene(
+            ft, angle, None if person is None else (person[0], -person[1])
+        )
         walk_policy._near_frames.clear()
-        return gs.lidar_state(wall + extra + gs.back_wall()), gs.radar_state(echoes)
+        return gs.lidar_state(segments), gs.radar_state(echoes)
 
 
 class TwoPostsAnOpenWayTests(_GlassDoorScenes, unittest.TestCase):
@@ -1581,6 +1554,7 @@ class StatusNoticeCutTests(unittest.TestCase):
 
     def test_walking_into_a_post_during_power_low(self):
         from tools.sim import scene_hunt as sh
+
         from app.core.shared_state import get_lidar_state, get_radar_state
 
         sg.reset()

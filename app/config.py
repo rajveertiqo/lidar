@@ -19,14 +19,24 @@ HEF_PATH = os.path.join(_APP_DIR, "model", "yolo26m.hef")  # compiled YOLO detec
 # 30 fps; the board's 4-in-1 picture comes at half that: 15.7 a second, measured (the
 # cropped 1920 x 1080 mode gave 30.7, at 56 deg and 960 x 540 — full view was chosen).
 # Until then 1920 x 1080, cycled one camera at a time.
-CAMERA_WIDTH = 2328
-CAMERA_HEIGHT = 1748
+# Full resolution, to try (2026-11-17): the sensor's whole 4656 x 3496, unbinned, so each
+# camera gives the same 66 deg view at 2328 x 1748, 4x the pixels. Arducam gives that mode
+# ~9 pictures a second and the 4-in-1 board halves it: expect ~4-5 a second against 15.7,
+# each 4x the work, and the detector shrinks every picture to 640 wide all the same. Off
+# until measured on the device: SHAPPE_CAMERA_FULL_RES=1 in the environment turns it on for a
+# run (in ~/.config/shappe-guide.env for the service), with nothing else changed.
+CAMERA_FULL_RES = os.environ.get("SHAPPE_CAMERA_FULL_RES", "") == "1"
+CAMERA_WIDTH, CAMERA_HEIGHT = (4656, 3496) if CAMERA_FULL_RES else (2328, 1748)
+# Camera pixels per pixel of the 1164 x 874 picture the *_PX settings were set on: they
+# scale with it, to keep the same angle on a bigger picture.
+CAMERA_PX_SCALE = 2 if CAMERA_FULL_RES else 1
 JPEG_QUALITY = 80
 TARGET_FPS = 30  # desired pipeline / display FPS
 FRAME_INTERVAL = 1.0 / TARGET_FPS
 
 CAMERA_CAPTURE_FPS = (
-    TARGET_FPS  # the sensor's, the 2328 x 1748 mode's most (60 was for cycling)
+    10 if CAMERA_FULL_RES  # the 4656 x 3496 mode's most (~9): the sensor's limit decides
+    else TARGET_FPS  # the sensor's, the 2328 x 1748 mode's most (60 was for cycling)
 )
 
 STREAM_MAX_WIDTH = 480  # px per sector feed
@@ -834,7 +844,7 @@ TOF_BOX_MIN_SHARE = 0.20
 # /tof/aligned.npy): one distance per block of this many x this many camera pixels. A ToF
 # pixel spans ~4.3 camera pixels (1164 px over 66 deg against 240 px over 58.5 deg), so 4
 # keeps all its detail; a block between ones that got a reading takes the nearest of theirs.
-TOF_ALIGNED_CELL_PX = 4
+TOF_ALIGNED_CELL_PX = 4 * CAMERA_PX_SCALE
 TOF_RANGE_SD_M = 0.05  # how far off a ToF distance is (1 sigma), plus...
 TOF_RANGE_SD_FRAC = (
     0.02  # ...this much of it (the motion tracker's camera error ellipse)
@@ -917,7 +927,7 @@ TOF_FALL_ALONE_M = 0.15
 # The camera's confirmation: its picture within MAX_AGE_S of the ToF frame, searched this
 # far around where the hazard lands on it (the design calibration is ~26 px off).
 TOF_CAMERA_MAX_AGE_S = 0.3
-TOF_CAMERA_MARGIN_PX = 40
+TOF_CAMERA_MARGIN_PX = 40 * CAMERA_PX_SCALE
 TOF_CAMERA_EDGE_DENSITY = (
     0.04  # edge pixels, as a share of the area: an outline is there
 )

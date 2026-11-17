@@ -1266,6 +1266,18 @@
             </svg>
             <span>Depth</span>
           </a>
+          <a
+            class="btn"
+            href="/radar/view"
+            title="The radar map: each board's beam and range, and the four directions the guidance uses"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="1.6" />
+              <path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7" />
+              <path d="M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8" />
+            </svg>
+            <span>Radar</span>
+          </a>
           <button class="btn" id="theme" type="button" title="Switch theme">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <circle cx="12" cy="12" r="8" />
@@ -2428,6 +2440,7 @@
       }
 
       // ------------------------------------------------------------ laser view
+      const SCANS_AHEAD = 3;
       let scan = null,
         scanTimes = [],
         lastScanAt = 0;
@@ -2435,7 +2448,14 @@
         const ws = new WebSocket(
           `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/lidar/ws`,
         );
+        // Asks for each scan, SCANS_AHEAD at a time (as the camera's pictures): no more are
+        // ever on the way, so a slow link skips scans instead of queueing them (2026-11-17).
+        // At 23 scans a second, 3 keep the full rate up to a ~130 ms round trip.
+        ws.onopen = () => {
+          for (let i = 0; i < SCANS_AHEAD; i++) ws.send("next");
+        };
         ws.onmessage = (ev) => {
+          if (ws.readyState === WebSocket.OPEN) ws.send("next");
           try {
             const m = JSON.parse(ev.data);
             if (m.points) {
@@ -2444,11 +2464,23 @@
               lastScanAt = t;
               scanTimes.push(t);
               scanTimes = scanTimes.filter((x) => t - x < 2000);
+              drawScanSoon();
             }
           } catch (e) {}
         };
         ws.onclose = () => setTimeout(connectScan, 1500);
         ws.onerror = () => ws.close();
+      }
+      // Each scan is drawn as it arrives, at the screen's next frame (2026-11-17): a 200 ms
+      // timer drew 5 of the LiDAR's ~23 scans a second, each up to 0.2 s late. Scans arriving
+      // within one frame draw once, the newest; a hidden tab draws none until it is shown.
+      let scanFrame = 0;
+      function drawScanSoon() {
+        if (!scanFrame)
+          scanFrame = requestAnimationFrame(() => {
+            scanFrame = 0;
+            drawScan();
+          });
       }
       const canvas = $("scan"),
         ctx = canvas.getContext("2d");
@@ -2467,16 +2499,19 @@
           cy = H * 0.64;
         const viewMm = (geom.approach_ft + 2) * MM_PER_FT,
           k = (H * 0.6) / viewMm;
-        const fg = css("--fg"),
-          red = css("--red"),
-          cyan = css("--cyan"),
-          amber = css("--amber"),
-          violet = css("--violet"),
-          accent = css("--accent"),
-          line = css("--line"),
-          panel = css("--panel"),
-          faint = css("--faint"),
-          muted = css("--muted");
+        // The theme's colours, read once a frame (css() asks the browser for each).
+        const palette = getComputedStyle(document.documentElement),
+          tok = (name) => palette.getPropertyValue(name).trim();
+        const fg = tok("--fg"),
+          red = tok("--red"),
+          cyan = tok("--cyan"),
+          amber = tok("--amber"),
+          violet = tok("--violet"),
+          accent = tok("--accent"),
+          line = tok("--line"),
+          panel = tok("--panel"),
+          faint = tok("--faint"),
+          muted = tok("--muted");
         ctx.clearRect(0, 0, W, H);
 
         // Axes through the wearer, then a soft ring every 3 ft with its distance.
@@ -2604,6 +2639,10 @@
           const a = scan.points.angles || [],
             d = scan.points.distances || [],
             blockMm = geom.block_ft * MM_PER_FT;
+          // Every dot in one of two paths, filled once each (~500 fills a scan, 23 scans a
+          // second, was too much for a phone); those on the path drawn last, on top.
+          const plain = new Path2D(),
+            onPathDots = new Path2D();
           for (let i = 0; i < a.length; i++) {
             const dist = d[i];
             if (!dist || dist <= 0 || dist > viewMm * 1.25) continue;
@@ -2616,17 +2655,17 @@
               ((Math.abs(x) <= geom.corridor_half_mm &&
                 dist <= geom.corridor_max_mm) ||
                 Math.abs(Math.atan2(x, fwd)) <= cone);
-            ctx.fillStyle = onPath ? red : fg;
-            ctx.beginPath();
-            ctx.arc(
-              cx + x * k,
-              cy - fwd * k,
-              onPath ? 4.2 : 2.3,
-              0,
-              Math.PI * 2,
-            );
-            ctx.fill();
+            const dots = onPath ? onPathDots : plain,
+              r = onPath ? 4.2 : 2.3,
+              px = cx + x * k,
+              py = cy - fwd * k;
+            dots.moveTo(px + r, py); // a new dot, not a line from the last
+            dots.arc(px, py, r, 0, Math.PI * 2);
           }
+          ctx.fillStyle = fg;
+          ctx.fill(plain);
+          ctx.fillStyle = red;
+          ctx.fill(onPathDots);
         } else {
           ctx.fillStyle = muted;
           ctx.font = `15px ${FONT}`;
@@ -2842,7 +2881,9 @@
       setInterval(tickMotion, 1000);
       setInterval(tickHealth, 1000);
       setInterval(pollCam, 700);
-      setInterval(drawScan, 200);
+      // Scans draw as they come (drawScanSoon); this, twice a second, is for when none come
+      // (the "STALE" warning) and for the radar and movers between scans.
+      setInterval(drawScanSoon, 500);
     </script>
   </body>
 </html>

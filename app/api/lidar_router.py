@@ -13,7 +13,7 @@ from app.config import (
     LIDAR_MAX_DISTANCE,
     BEV_ENABLED,
 )
-from app.sensors.lidar_utils import add_client, reader_health, remove_client
+from app.sensors.lidar_utils import add_client, reader_health, remove_client, want_next
 from app.core.shared_state import get_lidar_state
 
 _log = logging.getLogger(__name__)
@@ -23,13 +23,16 @@ router = APIRouter(prefix="/lidar", tags=["LiDAR"])
 
 @router.websocket("/ws")
 async def lidar_websocket(websocket: WebSocket):
-    """WebSocket endpoint for LiDAR data streaming"""
+    """The LiDAR's scans as they come. Send "next" for each scan received (and a few at the
+    start): at most that many are then on the way, so a slow link skips scans and never
+    falls behind (the dashboard, 2026-11-17). A viewer that never asks is sent the newest
+    scan whenever its last has gone (lidar_utils.broadcast)."""
     await websocket.accept()
     add_client(websocket)
     try:
         while True:
-            # Keep connection alive, data is broadcast from scanner thread
-            await websocket.receive_text()
+            if await websocket.receive_text() == "next":
+                want_next(websocket)
     except WebSocketDisconnect:
         pass
     except Exception as e:

@@ -145,7 +145,11 @@ def ramp(z0=1.6, deg=5.0, up=True):
 
 def corridor():
     """Walls either side 0.9 m away: nothing on the way."""
-    return [floor(), slab(-4.0, -0.9, 3.0, -1.0, 14.0, bottom=0.0), slab(0.9, 4.0, 3.0, -1.0, 14.0, bottom=0.0)]
+    return [
+        floor(),
+        slab(-4.0, -0.9, 3.0, -1.0, 14.0, bottom=0.0),
+        slab(0.9, 4.0, 3.0, -1.0, 14.0, bottom=0.0),
+    ]
 
 
 def slanted(zc, facing_deg, x0, x1, top=3.0, step=0.02, apex=False):
@@ -176,7 +180,11 @@ def corridor_end(z=2.5):
 
 
 def corridor_walls():
-    return [floor(), slab(-4.0, -0.9, 3.0, -1.0, 14.0, bottom=0.0), slab(0.9, 4.0, 3.0, -1.0, 14.0, bottom=0.0)]
+    return [
+        floor(),
+        slab(-4.0, -0.9, 3.0, -1.0, 14.0, bottom=0.0),
+        slab(0.9, 4.0, 3.0, -1.0, 14.0, bottom=0.0),
+    ]
 
 
 def blind(z=2.0, sill=0.9, back=0.12):
@@ -226,7 +234,11 @@ def pillar(z=2.0):
 
 
 def two_people(z=1.8):
-    return [floor(), slab(-0.5, -0.06, 1.75, z, z + 0.25, bottom=0.0), slab(0.06, 0.5, 1.7, z + 0.15, z + 0.4, bottom=0.0)]
+    return [
+        floor(),
+        slab(-0.5, -0.06, 1.75, z, z + 0.25, bottom=0.0),
+        slab(0.06, 0.5, 1.7, z + 0.15, z + 0.4, bottom=0.0),
+    ]
 
 
 # name -> (scene, is the tall thing on the path a wall?)
@@ -350,10 +362,18 @@ def render_picture(boxes, pitch=0.0, roll=0.0, calib=CAL, rng=None) -> np.ndarra
 
 
 def camera_inputs(picture, t, view=None, detections=()):
-    return {"picture": picture, "t": t, "view": view or {}, "detections": list(detections), "simulated": False}
+    return {
+        "picture": picture,
+        "t": t,
+        "view": view or {},
+        "detections": list(detections),
+        "simulated": False,
+    }
 
 
-def run_scene(name, frames=6, pitch=0.0, roll=0.0, seed=0, with_camera=True, picture=None, scenes=None):
+def run_scene(
+    name, frames=6, pitch=0.0, roll=0.0, seed=0, with_camera=True, picture=None, scenes=None
+):
     """The snapshot after `frames` frames of the scene (the same scene, fresh noise each)."""
     make, _ = (scenes or SCENES)[name]
     boxes = make()
@@ -380,8 +400,17 @@ def main(argv=None) -> int:
         ms = (time.perf_counter() - t0) * 1000.0
         want = SCENES[name][1]
         top = snap.get("top")
-        found = [(h["kind"], h["ahead_m"], h["camera"].get("status"), h["speak"]) for h in snap["hazards"]]
-        ok = (top is None) if want is None else (top is not None and top["kind"] == want[0] and abs(top["ahead_m"] - want[1]) <= 0.25)
+        found = [
+            (h["kind"], h["ahead_m"], h["camera"].get("status"), h["speak"])
+            for h in snap["hazards"]
+        ]
+        ok = (
+            (top is None)
+            if want is None
+            else (
+                top is not None and top["kind"] == want[0] and abs(top["ahead_m"] - want[1]) <= 0.25
+            )
+        )
         bad += not ok
         plane = snap.get("plane") or {}
         print(
@@ -390,13 +419,17 @@ def main(argv=None) -> int:
             f"ground {plane.get('height_m')} m  ({ms / 6:.0f} ms a frame incl. render)"
         )
     print(f"\n{len(names) - bad}/{len(names)} as expected")
-    bad_walls = walls(None if argv is None and len(sys.argv) <= 1 else [n for n in names if n in WALL_SCENES])
+    bad_walls = walls(
+        None if argv is None and len(sys.argv) <= 1 else [n for n in names if n in WALL_SCENES]
+    )
     return 1 if bad or bad_walls else 0
 
 
 def wall_result(name, pitch=0.0, roll=0.0, seed=0):
     """(confirmed wall or None, why, the newest front_surface) for a WALL_SCENES scene."""
-    snap = run_scene(name, frames=4, pitch=pitch, roll=roll, seed=seed, with_camera=False, scenes=WALL_SCENES)
+    snap = run_scene(
+        name, frames=4, pitch=pitch, roll=roll, seed=seed, with_camera=False, scenes=WALL_SCENES
+    )
     found, why = gh.confirmed_wall(snap, snap["t"])
     surfaces = snap.get("front_surfaces") or []
     return found, why, (surfaces[-1] if surfaces else None), snap.get("ms")

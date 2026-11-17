@@ -194,6 +194,35 @@ class MotionSignTests(unittest.TestCase):
         self.assertEqual(sg.user_motion(state), (True, 0.0))
 
 
+class FullResolutionSwitchTests(unittest.TestCase):
+    """2026-11-17: SHAPPE_CAMERA_FULL_RES=1 takes the sensor's whole 4656 x 3496, each camera
+    2328 x 1748. Read at import, so judged in a fresh interpreter each way."""
+
+    def _settings(self, on):
+        import json
+        import os
+        import subprocess
+        import sys
+
+        env = {**os.environ, "SHAPPE_CAMERA_FULL_RES": "1" if on else ""}
+        code = (
+            "import json; from app import config as c; print(json.dumps([c.CAMERA_WIDTH, "
+            "c.CAMERA_HEIGHT, c.CAMERA_PX_SCALE, c.TOF_ALIGNED_CELL_PX, c.TOF_CAMERA_MARGIN_PX, "
+            "c._PER_W, c._PER_H, c.SIMPLE_CAMERA_HFOV_DEG]))"
+        )
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        out = subprocess.run([sys.executable, "-c", code], env=env, cwd=root,
+                             capture_output=True, text=True, check=True).stdout
+        return json.loads(out.strip().splitlines()[-1])
+
+    def test_off_by_default_and_the_same_angles_on(self):
+        off, on = self._settings(False), self._settings(True)
+        self.assertEqual(off[:5], [2328, 1748, 1, 4, 40])
+        self.assertEqual(on[:5], [4656, 3496, 2, 8, 80])  # pixel settings scale with it
+        for a, b in zip(off[5:], on[5:]):  # picture shares and the lens: the same angles
+            self.assertAlmostEqual(a, b, places=6)
+
+
 class SettingsAgreeTests(unittest.TestCase):
     def test_relations(self):
         from ble_bridge import core as ble, gatt_server

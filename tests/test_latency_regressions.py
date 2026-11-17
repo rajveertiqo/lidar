@@ -1,10 +1,12 @@
 """Hardware-free checks for the guidance-delay fixes of 2026-10-30; run with
 venv/bin/python -m unittest tests.test_latency_regressions."""
 
+import asyncio
 import math
 import threading
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
@@ -518,6 +520,75 @@ class LivePictureTests(unittest.TestCase):
         self.assertAlmostEqual(w / h, config.CAMERA_WIDTH / config.CAMERA_HEIGHT, places=2)
 
 
+class CameraPipelineTimingTests(unittest.TestCase):
+    """2026-11-17: the camera view still lagged, and the age it showed began when the app had
+    the picture: the camera's own delay before that was not counted, nor seen anywhere. Each
+    picture's own sensor timestamp now says how old it was when the app had it."""
+
+    def setUp(self):
+        for v in pc._pipeline.values():
+            v.clear()
+        pc._frame_lags.clear()
+
+    tearDown = setUp
+
+    def test_the_lag_is_by_the_sensors_own_clock(self):
+        now = 50_000_000_000
+        self.assertAlmostEqual(pc._sensor_lag_ms({"SensorTimestamp": now - 85_000_000}, now), 85.0)
+        for bad in ({}, None, {"SensorTimestamp": 0}, {"SensorTimestamp": "x"},
+                    {"SensorTimestamp": now + 5_000_000}):  # from the future: another clock
+            self.assertIsNone(pc._sensor_lag_ms(bad, now))
+
+    def test_the_timings_say_where_the_delay_goes(self):
+        now = 90_000_000_000
+        for fid, lag_ms, waited_s in ((1, 80, 0.030), (2, 120, 0.0), (3, 90, 0.033)):
+            meta = {"SensorTimestamp": now - lag_ms * 1_000_000, "FrameDuration": 33333}
+            pc._note_pipeline(fid, meta, waited_s, now)
+        t = pc.pipeline_timing()
+        self.assertEqual(t["sensor_fps"], 30.0)
+        self.assertEqual(t["lag_ms"], 90.0)
+        self.assertEqual(t["lag_ms_worst"], 120.0)
+        self.assertAlmostEqual(t["held"], 0.33)  # one of three handed over without a wait
+        self.assertEqual(pc.capture_lag_ms(2), 120.0)
+        self.assertEqual(pc.capture_lag_ms(99), 0.0)  # not known: nothing added
+        pc._note_pipeline(4, {"SensorTimestamp": "?"}, 0.01, now)  # never raises
+
+    def test_the_capture_loop_takes_each_picture_with_its_metadata(self):
+        class Cam:  # answers as Picamera2's capture_arrays(["main"]): ([array], metadata)
+            def capture_arrays(self, names, wait=None):
+                assert names == ["main"] and wait is False
+                return object()
+
+            def wait(self, job, timeout=None):
+                time.sleep(0.01)
+                stamp = time.monotonic_ns() - 70_000_000
+                return [np.zeros((4, 4, 3), np.uint8)], {"SensorTimestamp": stamp, "FrameDuration": 33333}
+
+        before = pc.current_frame_id
+        with patch.object(pc, "picam2", Cam()), patch.object(pc, "running", True):
+            worker = threading.Thread(target=pc._capture_thread, daemon=True)
+            worker.start()
+            time.sleep(0.15)
+            pc.running = False
+            worker.join(1.0)
+        self.assertFalse(worker.is_alive())
+        self.assertGreater(pc.current_frame_id, before + 3)
+        t = pc.pipeline_timing()
+        self.assertEqual(t["sensor_fps"], 30.0)
+        self.assertAlmostEqual(t["lag_ms"], 80.0, delta=15)  # 70 before, ~10 in the wait
+        pc.current_frame = None
+
+    def test_the_pictures_age_counts_the_cameras_delay(self):
+        from app.api import pi_camera_router as router
+
+        shot = time.time()
+        pc._note_pipeline(7, {"SensorTimestamp": time.monotonic_ns() - 100_000_000}, 0.02)
+        with patch.object(router, "live_jpeg", return_value=(b"\xff\xd8", 7, shot, False)):
+            r = router.live_picture("front")
+        self.assertAlmostEqual(int(r.headers["x-capture-lag-ms"]), 100, delta=5)
+        self.assertGreaterEqual(int(r.headers["x-frame-age-ms"]), 100)
+
+
 class LiveBoxesTests(unittest.TestCase):
     """/camera/live?boxes=1: the boxes drawn on a picture are the ones found in it — the
     front's waited for, a side camera's aged, and old ones dropped."""
@@ -922,6 +993,94 @@ class BleHealthOffCueLoopTests(unittest.TestCase):
         poller.join(2.0)
         alerts = sum(t == P.T_ALERT for _c, t, _p in sent)
         self.assertGreaterEqual(alerts, 11)  # ~10 a second; inline it was ~2 a second
+
+
+class _Viewer:
+    """A dashboard's WebSocket: records what it is sent; `hold` keeps a send going."""
+
+    def __init__(self, hold=None, fail=False):
+        self.got, self.hold, self.fail, self.closed = [], hold, fail, False
+
+    async def send_text(self, msg):
+        if self.fail:
+            raise ConnectionResetError("gone")
+        if self.hold is not None:
+            await self.hold.wait()
+        self.got.append(msg)
+
+    async def close(self, code=1000):
+        self.closed = True
+
+
+class LaserViewNewestScanTests(unittest.IsolatedAsyncioTestCase):
+    """2026-11-17: the dashboard's laser view was behind the room. Every scan (~23 a second)
+    went to every viewer as it came, so on a slow link they queued; and the page drew on a
+    200 ms timer, 5 of them a second. Now a viewer is sent the newest scan once its last has
+    gone (lidar_utils.broadcast), and the page draws each as it arrives."""
+
+    def setUp(self):
+        lidar_utils.clients.clear()
+        lidar_utils._unsent.clear()
+        lidar_utils._sending.clear()
+        lidar_utils._asked.clear()
+
+    tearDown = setUp
+
+    async def _settle(self):
+        for _ in range(5):
+            await asyncio.sleep(0)
+
+    async def test_a_slow_viewer_gets_the_newest_scan_not_a_queue(self):
+        hold = asyncio.Event()
+        slow, fast = _Viewer(hold), _Viewer()
+        lidar_utils.add_client(slow)
+        lidar_utils.add_client(fast)
+        for k in range(6):
+            await lidar_utils.broadcast(f"scan {k}")
+            await self._settle()
+        self.assertEqual(fast.got, [f"scan {k}" for k in range(6)])  # a fast link: every one
+        hold.set()
+        await self._settle()
+        # The slow one: the scan it was being sent when it stalled, then only the newest.
+        self.assertEqual(slow.got, ["scan 0", "scan 5"])
+        self.assertIn(slow, lidar_utils.clients)
+
+    async def test_a_viewer_that_fails_is_dropped_and_the_rest_still_served(self):
+        gone, ok = _Viewer(fail=True), _Viewer()
+        lidar_utils.add_client(gone)
+        lidar_utils.add_client(ok)
+        await lidar_utils.broadcast("scan 0")
+        await self._settle()
+        self.assertNotIn(gone, lidar_utils.clients)
+        self.assertTrue(gone.closed)
+        self.assertNotIn(gone, lidar_utils._unsent)
+        self.assertEqual(ok.got, ["scan 0"])
+
+    async def test_a_viewer_that_asks_gets_what_it_asked_for_and_the_newest(self):
+        page = _Viewer()
+        lidar_utils.add_client(page)
+        lidar_utils.want_next(page)  # one asked for
+        await lidar_utils.broadcast("scan 0")
+        await self._settle()
+        for k in (1, 2, 3):  # none asked for: nothing more goes out, nothing queues
+            await lidar_utils.broadcast(f"scan {k}")
+            await self._settle()
+        self.assertEqual(page.got, ["scan 0"])
+        lidar_utils.want_next(page)  # asked again: the newest, at once
+        await self._settle()
+        self.assertEqual(page.got, ["scan 0", "scan 3"])
+        for _ in range(20):  # asks are not saved up past _MAX_ASKED
+            lidar_utils.want_next(page)
+        self.assertEqual(lidar_utils._asked[page], lidar_utils._MAX_ASKED)
+        lidar_utils.remove_client(page)
+        self.assertNotIn(page, lidar_utils._asked)
+
+    def test_the_page_draws_each_scan_as_it_arrives(self):
+        page = (Path(__file__).resolve().parent.parent / "templates" / "dashboard.html").read_text()
+        self.assertFalse("setInterval(drawScan," in page, "drawn on a timer again")  # 5 scans a second
+        handler = page[page.index("function connectScan"):page.index("function drawScanSoon")]
+        self.assertIn("drawScanSoon()", handler)
+        self.assertIn('ws.send("next")', handler)  # asks for each, so none queue
 
 
 if __name__ == "__main__":

@@ -2,12 +2,9 @@
 
 import unittest
 from unittest.mock import patch, Mock
-
 from fastapi import HTTPException
 from starlette.requests import Request
-
 from app.perception import drift_guidance as drift
-
 from app.guidance import mobile_delivery, pi_voice
 from app.perception.motion_tracker import MotionTracker
 from app.api.guidance_router import MobileDeliveryReport, mobile_delivery_report

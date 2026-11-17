@@ -33,6 +33,7 @@ except Exception:
 from app.config import (
     CAMERA_WIDTH,
     CAMERA_HEIGHT,
+    CAMERA_PX_SCALE,
     JPEG_QUALITY,
     TARGET_FPS,
     FRAME_INTERVAL,
@@ -99,6 +100,11 @@ current_frame_simulated = False  # current_frame was FABRICATED (_simulate_threa
 # written with the frame, under frame_lock
 capture_stalled = False  # no frame for CAMERA_FRAME_TIMEOUT_S (see _capture_thread)
 _stall_reopens = 0  # times a stuck stream was closed and reopened
+# Where a picture's delay goes before the app has it (2026-11-17), from each picture's own
+# metadata: how long ago the sensor read it out (lag), the sensor's own frame time, and how
+# long the capture waited for it (~0: one Picamera2 held, finished earlier). Recent pictures.
+_pipeline = {"lag_ms": deque(maxlen=45), "frame_ms": deque(maxlen=45), "waited_ms": deque(maxlen=45)}
+_frame_lags = deque(maxlen=8)  # (frame id, lag ms) of the newest pictures, for their age
 _camera_source = "not started"  # "hardware", "simulated" or "unavailable: <why>"
 frame_lock = threading.Lock()
 # Notified each time a new picture is stored: /camera/live waits on it (live_jpeg).
@@ -366,6 +372,59 @@ def _note_light(request):
         pass
 
 
+def _sensor_lag_ms(meta, now_ns=None):
+    """How long ago the sensor read this picture out, in ms: its SensorTimestamp, on the
+    monotonic clock Picamera2 compares it with. None without a usable one."""
+    try:
+        ts = int((meta or {}).get("SensorTimestamp") or 0)
+    except (TypeError, ValueError):
+        return None
+    if ts <= 0:
+        return None
+    lag = ((time.monotonic_ns() if now_ns is None else now_ns) - ts) / 1e6
+    return lag if 0.0 <= lag < 10000.0 else None
+
+
+def _note_pipeline(fid, meta, waited_s, now_ns=None):
+    """Keep one picture's timings (_pipeline). Never raises: timings are not worth a picture."""
+    try:
+        lag = _sensor_lag_ms(meta, now_ns)
+        if lag is not None:
+            _pipeline["lag_ms"].append(lag)
+            _frame_lags.append((fid, lag))
+        frame_us = (meta or {}).get("FrameDuration")
+        if frame_us:
+            _pipeline["frame_ms"].append(float(frame_us) / 1000.0)
+        _pipeline["waited_ms"].append(max(0.0, waited_s) * 1000.0)
+    except Exception:
+        pass
+
+
+def capture_lag_ms(fid) -> float:
+    """How old picture `fid` already was when the app had it (0 when not known)."""
+    for f, lag in reversed(_frame_lags):
+        if f == fid:
+            return lag
+    return 0.0
+
+
+def pipeline_timing() -> dict:
+    """The camera side of a picture's delay, over recent pictures: the sensor's frame rate,
+    how long after the sensor read a picture out the app had it (median, worst), and how many
+    were handed over without a wait (Picamera2 holding a finished one: older by up to a frame)."""
+    lag, frame, waited = (list(_pipeline[k]) for k in ("lag_ms", "frame_ms", "waited_ms"))
+
+    def med(v):
+        return round(sorted(v)[len(v) // 2], 1) if v else None
+
+    return {
+        "sensor_fps": round(1000.0 / med(frame), 1) if frame and med(frame) else None,
+        "lag_ms": med(lag),
+        "lag_ms_worst": round(max(lag), 1) if lag else None,
+        "held": round(sum(1 for w in waited if w < 2.0) / len(waited), 2) if waited else None,
+    }
+
+
 def light_reading() -> dict:
     """The sensor's latest light reading, or Nones when there is none (simulated, stalled)."""
     light = _light
@@ -397,7 +456,8 @@ def _view_check(sector, quad, mosaic=None) -> dict:
         v = _views.get(sector)
         if v is not None and 0.0 <= now - v["mono"] < CAMERA_VIEW_CHECK_S:
             return dict(v)
-    s = quad[::4, ::4].astype(np.float32)
+    step = 4 * CAMERA_PX_SCALE  # the same sample at full resolution: CAMERA_BLUR_VAR is set on it
+    s = quad[::step, ::step].astype(np.float32)
     level = float(s.mean())
     g = s.mean(axis=2) if s.ndim == 3 else s
     lap = 4.0 * g[1:-1, 1:-1] - g[:-2, 1:-1] - g[2:, 1:-1] - g[1:-1, :-2] - g[1:-1, 2:]
@@ -692,9 +752,12 @@ def _capture_thread():
             continue
         try:
             if job is None:
-                job = picam2.capture_array("main", wait=False)
+                # The same picture capture_array gave, with its own metadata: the sensor's
+                # timestamp of this very picture (_note_pipeline).
+                job = picam2.capture_arrays(["main"], wait=False)
                 asked_at = time.monotonic()
-            arr = picam2.wait(job, timeout=0.25)
+            (arr,), meta = picam2.wait(job, timeout=0.25)
+            got_ns = time.monotonic_ns()
         except TimeoutError:
             waited = time.monotonic() - asked_at
             if not capture_stalled and waited > CAMERA_FRAME_TIMEOUT_S:
@@ -736,8 +799,10 @@ def _capture_thread():
         with frame_lock:
             current_frame = arr
             current_frame_id += 1
+            fid = current_frame_id
             current_frame_t = time.time()
             current_frame_simulated = False  # a real frame, in the same write
+        _note_pipeline(fid, meta, got_ns / 1e9 - asked_at, got_ns)
         with _new_frame:
             _new_frame.notify_all()
 
@@ -1707,6 +1772,7 @@ def get_camera_stats():
         "detection_coverage": detection_coverage(),
         "views": camera_views(),
         "light": light_reading(),  # the sensor's, for the whole 2x2 picture
+        "pipeline": pipeline_timing(),  # the camera side of a picture's delay
         "stall_reopens": _stall_reopens,
         "camera_px": list(_QUAD),  # one camera's picture, width x height
         "focus_code": _focus_code,  # lens position set at start (None: not set)

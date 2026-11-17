@@ -561,3 +561,36 @@ Kept because each one explains why the code is the way it is.
     approaches names the glass by 4 ft (HEAD: 14 did not). The hunt finds 1 more real pane
     and its false "Glass ahead" go 7 -> 8 and 15 -> 15 (post pairs of note 23's kind); glass_sim,
     the mirror check, every simulator and the recorded clip are the same as before.
+
+26. **What the laser sees, not glass (2026-11-17).** The scene hunt's 8 false "Glass ahead" in
+    1,500 scenes (15 with seed 7) had three causes. (1) `_arc_corroborates` asks whether the
+    laser's NEAREST return across the front arc is at the radar's range. The arc is made of
+    the LiDAR's 45 deg sectors that the beams mostly cover (`RADAR_CARDINAL_ARC_SECTORS`), so
+    it reaches 67.5 deg each side, ~5 deg past the boards' beams. A post there, which no board
+    heard, nearer than the walls or posts they did hear, left their echo "unexplained", and the
+    laser looking past it straight ahead made it glass: a 5 m hall's side walls, heard at the
+    beams' edges, with a post 1.4 m off at 66 deg, said "Glass ahead". Now
+    `_each_board_explained` also corroborates: every front board live, and the nearest echo of
+    each seen by the laser in that board's own view (`_laser_explains`, as the single-board and
+    door rules already ask). (2) `_pane_heard_on` stands down when some range is heard alike by
+    both boards, as a pane across the way is (note 23). A post straight ahead is too, in both
+    views at once: with a post either side nearer, at one depth, they read as a glass door's
+    frame. A range heard alike at what the laser ranges on the walking line, or past it
+    (`RADAR_AGREE_MM`), is that solid thing, not a pane the laser looks through: no longer
+    counted. (3) Not changed: two posts at about one depth, heard where a pane between them
+    would be (note 23's limit; 4 of the 5 left, 10 of seed 7's 11; the other of those is a post
+    standing 27 mm out of a wall), and one post almost hidden behind a nearer one,
+    its last sliver a single laser return that `_grazing` takes for an edge-on surface (0.58 m
+    in front of the wall behind it at 3 m, under the 87 deg depth-jump cut at 0.69 deg a step):
+    `_grazing` judges every glass rule, so it is left. Against the code before it, 11 of 6,000
+    hunt scenes (seeds 1 and 7) changed, each a false glass to the right sentence ("Walk
+    straight", "Wall ahead": one was "Blocked by glass, turn right" at a wall 8 ft off), and no
+    scene with a pane. A pane put in each of the four rooms (1-3.75 m) is named as before up to
+    8.2-10.7 ft. Farther, in the two rooms of (1), the hall's walls or the posts echo from the
+    pane's range too, and it is not named until nearer, as in the same rooms without the post
+    past the beam (the narrow passage limit, Known limits); in the two of (2), the post or wall
+    ahead is under `WALK_GLASS_GAP_FT` behind the pane, or the pane behind the wall: not glass by
+    its own definition. Before, those far panes were named only through (1) or (2), the same
+    mistakes as the false alarms. glass_sim (every scene, both door grids and their
+    limits), the route, drift, movers, ground hazard and ToF simulators and the mirror check
+    give the same results; the recorded clip is no longer on the Pi and was not replayed.

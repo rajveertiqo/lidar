@@ -16,6 +16,7 @@ from app.config import (
 )
 from app.sensors import hailo_stats
 from app.sensors.pi_camera_utils import (
+    capture_lag_ms,
     gen_seg_frames,
     get_camera_stats,
     fps_stats,
@@ -170,8 +171,11 @@ def live_picture(view: str, after: int = -1, width: int = 480, boxes: int = 0, a
         headers["X-Detections"] = json.dumps(
             _live_boxes(view, fid, shot), separators=(",", ":")
         )
-    # Last: the encoding and the boxes are part of the picture's age.
-    headers["X-Frame-Age-Ms"] = str(max(0, round((time.time() - shot) * 1000)))
+    # Last: the encoding and the boxes are part of the picture's age. So is the camera's own
+    # delay before the app had it (X-Capture-Lag-Ms, by the sensor's clock; 2026-11-17).
+    lag = capture_lag_ms(fid)
+    headers["X-Capture-Lag-Ms"] = str(round(lag))
+    headers["X-Frame-Age-Ms"] = str(max(0, round((time.time() - shot) * 1000 + lag)))
     return Response(content=jpeg, media_type="image/jpeg", headers=headers)
 
 

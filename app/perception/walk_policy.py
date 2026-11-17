@@ -140,6 +140,23 @@ def _arc_corroborates(
     return arc is not None and abs(arc - radar_ft) <= _AGREE_FT
 
 
+def _each_board_explained(
+    lidar_state: Dict[str, Any], radar_state: Dict[str, Any], direction: str
+) -> bool:
+    """Does the laser see, in each board's own view, what that board heard nearest
+    (_laser_explains)? Every board of the cardinal live and hearing. _arc_corroborates asks
+    only whether the arc's NEAREST return is at the echo's range, and the arc's outer sectors
+    reach ~5 deg past the boards' beams (RADAR_CARDINAL_ARC_SECTORS): a post there, which no
+    board heard, nearer than the walls or posts they did hear, left their echo "unexplained"
+    and named it glass (scene hunt, 2026-11-17: a 5 m hall's side walls, heard at the beams'
+    edges, "Glass ahead")."""
+    sources = ((radar_state.get("sectors") or {}).get(direction) or {}).get("sources") or ()
+    nearest = _board_echoes(radar_state, direction)
+    if len(sources) < 2 or len(nearest) != len(sources):
+        return False
+    return all(_laser_explains(lidar_state, b, e) for b, e in nearest)
+
+
 def _straddled(radar_state: Dict[str, Any], direction: str) -> bool:
     """True when this cardinal is fed by more than one board."""
     sec = (radar_state.get("sectors") or {}).get(direction) or {}
@@ -782,13 +799,23 @@ def _pane_on_wall_line(
     boards still hear the pane alike); None: nothing to judge by (facing returns on one side
     only, or not on one straight line)."""
     line = _facing_wall_line(lidar_state, echo_mm)
-    return None if line is None else _pane_heard_on(radar_state, line)
+    if line is None:
+        return None
+    front_ft, front_measured = _lidar_reading(lidar_state, "front")
+    solid_mm = front_ft * MM_PER_FT if front_measured and front_ft is not None else None
+    return _pane_heard_on(radar_state, line, solid_mm)
 
 
 def _pane_heard_on(
-    radar_state: Dict[str, Any], line: Tuple[float, float, float]
+    radar_state: Dict[str, Any],
+    line: Tuple[float, float, float],
+    solid_mm: Optional[float] = None,
 ) -> Optional[bool]:
-    """_pane_on_wall_line's verdict for a wall's line (nx, ny, p) the laser has found."""
+    """_pane_on_wall_line's verdict for a wall's line (nx, ny, p) the laser has found.
+    `solid_mm`: what the laser ranges on the walking line. A range every board hears alike
+    there, or past it (RADAR_AGREE_MM), is that solid thing, not a pane the laser looks
+    through: a post straight ahead, in both boards' views, kept two posts nearer either side
+    "a wall with a pane in it" ("Glass ahead", scene hunt 2026-11-17)."""
     heard: Dict[float, List[float]] = {}
     for b, e in _board_echoes(radar_state, "front", all_peaks=True):
         heard.setdefault(b, []).append(e)
@@ -809,6 +836,7 @@ def _pane_heard_on(
     alike = any(
         all(any(abs(x - e) <= GLASS_SAME_ECHO_MM for x in other) for other in rest)
         for e in first
+        if solid_mm is None or e < solid_mm - RADAR_AGREE_MM
     )
     return None if alike else False
 
@@ -1233,6 +1261,13 @@ def read_direction(
         radar_measured = False
     lidar_arc_ft = _lidar_arc_ft(lidar_state, direction)
     arc_corroborates = _arc_corroborates(lidar_state, direction, radar_ft)
+    if (
+        not arc_corroborates
+        and direction == "front"
+        and radar_measured
+        and _each_board_explained(lidar_state, radar_state, direction)
+    ):
+        arc_corroborates = True
     # Glass door in a wall (decided 2026-09-29): both boards agree and the laser ahead sees past it, so the arc's returns are the wall beside the pane.
     # Past it by ANY amount, not only WALK_GLASS_GAP_FT (2026-11-09): a person standing just
     # behind a glass door "explained" its echo, the echo was dropped as off-axis, and the

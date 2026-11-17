@@ -291,7 +291,9 @@ class AfternoonFixTests(unittest.TestCase):
             self.assertAlmostEqual(f["distance_ft"], 3.0, delta=0.15, msg=behind_ft)
 
     def test_no_way_past_a_vehicle_not_judged_standing(self):
-        det = {"class_name": "car", "confidence": 0.9, "bbox": [500.0, 300.0, 800.0, 600.0]}
+        from app.config import CAMERA_PX_SCALE as k  # the same car on a full-resolution picture
+
+        det = {"class_name": "car", "confidence": 0.9, "bbox": [500.0 * k, 300.0 * k, 800.0 * k, 600.0 * k]}
         cam = {"front": {"frame_time": 100.0, "detections": [det]}}
         with unittest.mock.patch.object(sg, "_camera_sees", lambda *a: True):
             self.assertIsNone(sg.camera_path(cam, 100.0, None, []))  # moving / not yet judged
@@ -1199,6 +1201,65 @@ class TwoPostsAnOpenWayTests(_GlassDoorScenes, unittest.TestCase):
         self.assertIs(
             walk_policy._pane_on_wall_line(get_lidar_state(), get_radar_state(), 1899.0), False
         )
+
+
+class EchoTheLaserSeesTests(unittest.TestCase):
+    """2026-11-17, the scene hunt: what the front boards heard was named glass though the
+    laser sees it. (1) The front arc's outer sectors reach ~5 deg past the boards' beams: a
+    post there, nearer than what they heard, hid that the laser sees that too
+    (_each_board_explained). (2) A range both boards hear alike at what the laser ranges
+    straight ahead kept two posts "a wall with a pane in it" (_pane_heard_on, `solid_mm`)."""
+
+    ROOMS = {  # scene hunt seed 1: numbers 312 and 1203 are (1), 964 and 2435 are (2)
+        "5 m hall, walls heard at the beams' edges, a post past the right one": dict(
+            left=2764, right=2456, ahead=None, posts=[(587, 1310, 82)]
+        ),
+        "a post just past the left beam's edge": dict(
+            left=None, right=None, ahead=None,
+            posts=[(2052, -1052, 92), (321, -1172, 223), (3115, 816, 98)],
+        ),
+        "a post straight ahead, one nearer either side": dict(
+            left=None, right=None, ahead=None,
+            posts=[(3965, -166, 131), (3016, -823, 273), (3039, 851, 48)],
+        ),
+        "a wall ahead, posts either side": dict(
+            left=None, right=None, ahead=3179,
+            posts=[(1812, -581, 247), (1918, 1186, 241), (3214, 569, 226)],
+        ),
+    }
+
+    def test_what_the_laser_sees_is_not_glass(self):
+        from tools.sim import scene_hunt as sh
+
+        for name, room in self.ROOMS.items():
+            with self.subTest(name):
+                sg.reset()
+                walk, raw = sh.decide({**room, "glass": None})
+                self.assertFalse(walk["directions"]["front"]["glass"])
+                self.assertNotIn(raw["instruction"], sh.GLASS_WORDS)
+
+    def test_heard_alike_at_the_lasers_own_range_is_no_pane(self):
+        from tools.sim import scene_hunt as sh
+        from app.core.shared_state import get_lidar_state, get_radar_state
+
+        sh.publish({**self.ROOMS["a post straight ahead, one nearer either side"], "glass": None}, True)
+        # Both boards hear the post ahead at 3.84 m, where the laser ranges it: was None
+        # ("heard alike, nothing to judge by"), and the posts either side a door's frame.
+        self.assertIs(
+            walk_policy._pane_on_wall_line(get_lidar_state(), get_radar_state(), 2856.0), False
+        )
+
+    def test_a_pane_in_those_rooms_is_still_glass(self):
+        # Nearer than the hall's walls are to the side: farther, a wall at a beam's edge
+        # echoes from the pane's range too (docs/known-limits.md), as it did before.
+        from tools.sim import scene_hunt as sh
+
+        for name, room in self.ROOMS.items():
+            for pane in (1000.0, 1750.0, 2250.0):
+                with self.subTest(name, pane=pane):
+                    sg.reset()
+                    walk, _raw = sh.decide({**room, "glass": pane})
+                    self.assertTrue(walk["directions"]["front"]["glass"])
 
 
 class GlassDoorAtAnAngleTests(_GlassDoorScenes, unittest.TestCase):

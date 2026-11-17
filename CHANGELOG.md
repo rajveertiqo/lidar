@@ -7,6 +7,22 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
 ## [Unreleased]
 
 ### Added
+- **A full-resolution camera switch, off** (`SHAPPE_CAMERA_FULL_RES=1`, `CAMERA_FULL_RES`): the
+  sensor's whole 4656 x 3496 unbinned, so each camera gives its same 66 deg view at 2328 x 1748,
+  4x the pixels. Expected: ~4-5 pictures a second against 15.7 (Arducam gives that mode ~9,
+  the 4-in-1 board halves it), detection that much slower, and each picture 2-3x the work
+  here (a frame's copy 14 ms, the detector's resize 10 ms, the all-four picture 28 ms; ~4 ms
+  each now). The settings in camera pixels scale with it (the ToF's aligned cell and camera
+  margin, the blur check's sample), the picture shares already do, and the ToF calibration
+  rescales itself: every test passes both ways. Off until measured on the device.
+- **Where the camera view's delay goes, measured** (`/camera/stats` `pipeline`). The camera
+  view still lagged, and nothing said by how much before the app had a picture: its age
+  began when the app received it. Each picture is now taken with its own metadata, and its
+  sensor timestamp says how long after the sensor read it out the app had it; with the
+  sensor's own frame rate (30 a second; the 4-in-1 board gives the app every second one, 15)
+  and the share of pictures Picamera2 handed over already finished (up to a frame older). The camera tile's
+  age and `X-Frame-Age-Ms` now count that delay too (`X-Capture-Lag-Ms`). Nothing else
+  changes: the measurement is for choosing the fix.
 - **glass_sim checks glass doors met at an angle and with someone standing by them** on every
   run: 138 doors met 10-45 deg off must be named, and 80 walks in toward a door with someone
   beside it must be warned by 4 ft (design notes 24, 25). On the code before those fixes it
@@ -32,6 +48,27 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   Nothing said changes.
 
 ### Fixed
+- **The dashboard's laser view keeps up.** It drew on a 200 ms timer, 5 of the LiDAR's ~23
+  scans a second, each up to 0.2 s late; and every scan was pushed to every viewer as it
+  came, so on a slow link they queued in the network buffers: a viewer reading one every
+  150 ms saw the room 1.4 s late after a few seconds and 7 s late after 12 (the code before,
+  with the real scan pipeline). Now the page draws each scan as it arrives, at the screen's
+  next frame (~0.7 ms a draw, the dots in two paths), and asks for each (`next` on
+  `/lidar/ws`, 3 ahead, as the camera's pictures): that same slow viewer stays ~0.47 s
+  behind, never more, and a fast one gets all 23 a second, 5 ms after the scan (was 15: a
+  scan now goes out before the odometry, movers and top-down grid run). A client that never
+  asks (`tools/device/anchor_diversity.py`) is sent the newest whenever its last has gone.
+- **Fewer false "Glass ahead" among posts and in wide halls.** Two ways what the laser sees was
+  still named glass (design note 26). The front boards' echo counted as unexplained when the
+  laser's nearest return across the whole front arc was not at its range, and that arc reaches
+  ~5 deg past the boards' beams: a post just past a beam's edge, which no board heard, made the
+  walls or posts they did hear "glass" (a 5 m hall's side walls, heard at the beams' edges:
+  "Glass ahead"). Now each board's nearest echo, seen by the laser in that board's own view,
+  is explained. And a range both boards hear alike at what the laser ranges straight ahead
+  (a post there) no longer makes two posts nearer either side read as a glass door's frame.
+  The scene hunt's false glass: 8 -> 5 in 1,500 scenes, 15 -> 11 with seed 7; in 6,000 scenes
+  11 sentences changed, every one a false glass, and none with a pane in it. glass_sim and
+  every other simulator give the same results as before.
 - **Two confidence settings that never applied now say what runs.** Vehicles were "taken from
   0.45" (`SIMPLE_VEHICLE_MIN_CONF`) and traffic lights from 0.4, but the detector drops every
   detection under `DETECTION_CONF` (0.5) itself, so neither had applied since the first commit.
@@ -104,6 +141,14 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   (the LiDAR's blind side) is unchanged.
 
 ### Changed
+- **The depth and radar pages look like the dashboard** (`/tof/live`, `/radar/view`,
+  `/radar/test`). They were the October pages, dark only: now the dashboard's colours, cards
+  and header, light or dark in the theme the dashboard saved, and one row of buttons across
+  all four pages (Dashboard, Depth, Radar, Boards; the dashboard gained Radar). Their scripts
+  are as they were but for the colours they draw with, which now follow the theme, and two
+  fixes where the eye lands: the radar map's "270°" was cut off at the left edge, and at 90
+  and 270 deg a distance label ran along the radius into its own arc or dot ("1.9 ft" read
+  ".9 ft"), so it now sits beside it. Laid out for a phone too: one column, icons only.
 - **The dashboard redrawn** (`templates/dashboard.html`): a new look in dark and light, the
   last sentence said as the headline, coloured by its rule. On a phone the Right / Wrong /
   Missed / Note buttons are pinned to the bottom of the screen, and what a press saved shows

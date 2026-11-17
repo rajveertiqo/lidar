@@ -55,9 +55,11 @@
   door** ("Glass ahead"). When both front boards hear them alike (within
   `GLASS_SAME_ECHO_MM`), the radar's range cannot tell a pane in that doorway from its
   sides; an open doorway whose frames echo reads the same. Two posts heard each at its own
-  range no longer do (design note 23). The scene hunt still finds ~8-15 false "Glass ahead"
-  in 1,500 crowded scenes: these, and posts that the one-scan hunt's LiDAR does not confirm
-  (a thin pole needs a second scan) or that lie just past its radar beams' edge.
+  range no longer do (design note 23), nor do posts the laser sees just past a radar beam's
+  edge, or a post straight ahead that both boards hear (note 26). The scene hunt still finds
+  5-11 false "Glass ahead" in 1,500 crowded scenes: almost all these, and a post almost hidden
+  behind a nearer one or standing inside a wall, whose last sliver the laser sees only
+  edge-on (a hunt artefact as much as a limit: its radar lists every post apart).
 - **Very close to a wall, the left is not offered.** Facing a flat wall with only the left
   open, "turn left" needs the left camera's fresh picture naming nobody, the laser to see the
   wall ahead stretch out past the left board's echo, and that echo at least 2 ft off: nearer

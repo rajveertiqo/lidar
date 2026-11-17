@@ -81,6 +81,15 @@ def correct_angle(raw_angle: float) -> float:
 
 # ============== GLOBAL STATE ==============
 clients = set()
+# The newest scan not yet sent to each viewer, the viewers a send is under way to, and those
+# sends' tasks (kept, so none is collected mid-send). Touched only on the event loop.
+_unsent = {}
+_sending = set()
+_send_tasks = set()
+# For a viewer that asks for its scans (want_next), how many it has asked for and not yet
+# been sent. A viewer not in it never asks, and is sent the newest whenever its last has gone.
+_asked = {}
+_MAX_ASKED = 4  # asks beyond this are not saved up: no more than this are ever on the way
 stop_scanner = threading.Event()
 lidar_instance = None
 lidar_lock = threading.Lock()
@@ -329,20 +338,64 @@ def analyze_cones(points, previous=None):
     return out
 
 
+# A send this slow means a viewer that is gone, not one that is slow: newest-wins keeps a
+# slow one from falling behind, so it need not be dropped for a short Wi-Fi stall.
+_SEND_TIMEOUT_S = 2.0
+
+
 async def broadcast(msg: str):
-    """Broadcast message to all connected WebSocket clients"""
-    if not clients:
+    """Hand this scan to every connected viewer, newest wins (2026-11-17).
+
+    Every scan used to be sent to every viewer as it came, ~23 a second: over a slow Wi-Fi
+    link they queued behind each other (in the network buffers, too, out of reach), the
+    dashboard's laser view showed the room as it had been, and a send over 0.5 s dropped the
+    viewer, freezing the view ~2 s while it reconnected. Now a viewer is sent only the newest
+    scan, and only once its last has gone; the dashboard asks for each (want_next), so no
+    more than it asked for are ever on the way, however slow its link. A slow link skips
+    scans; a fast one gets every scan."""
+    for ws in list(clients):
+        _unsent[ws] = msg
+        _send_when_wanted(ws)
+
+
+def want_next(ws):
+    """The viewer has a scan and asks for one more ("next" on /lidar/ws): it is sent the
+    newest, now if one is waiting, else when the next comes."""
+    if ws not in clients:
         return
-    targets = list(clients)
-    results = await asyncio.gather(
-        *[asyncio.wait_for(ws.send_text(msg), timeout=0.5) for ws in targets],
-        return_exceptions=True,
-    )
-    dead = [ws for ws, r in zip(targets, results) if isinstance(r, Exception)]
-    for ws in dead:
-        clients.discard(ws)
-    if dead:
-        await asyncio.gather(*[_close_quietly(ws) for ws in dead])
+    _asked[ws] = min(_asked.get(ws, 0) + 1, _MAX_ASKED)
+    _send_when_wanted(ws)
+
+
+def _send_when_wanted(ws):
+    """Start sending to `ws` if a scan waits, none is under way, and it wants one."""
+    if ws in _sending or ws not in _unsent or _asked.get(ws, 1) <= 0:
+        return
+    _sending.add(ws)
+    task = asyncio.ensure_future(_send_newest(ws))
+    _send_tasks.add(task)
+    task.add_done_callback(_send_tasks.discard)
+
+
+async def _send_newest(ws):
+    """Send `ws` its newest unsent scan while one waits and it wants one. A viewer whose
+    send fails or takes over _SEND_TIMEOUT_S is dropped (the page reconnects)."""
+    try:
+        while ws in clients and ws in _unsent and _asked.get(ws, 1) > 0:
+            msg = _unsent.pop(ws)
+            if ws in _asked:
+                _asked[ws] -= 1
+            try:
+                await asyncio.wait_for(ws.send_text(msg), timeout=_SEND_TIMEOUT_S)
+            except Exception:
+                clients.discard(ws)
+                await _close_quietly(ws)
+                return
+    finally:
+        _sending.discard(ws)
+        if ws not in clients:
+            _unsent.pop(ws, None)
+            _asked.pop(ws, None)
 
 
 async def _close_quietly(ws):
@@ -362,6 +415,8 @@ def add_client(websocket):
 def remove_client(websocket):
     """Remove a WebSocket client"""
     clients.discard(websocket)
+    _unsent.pop(websocket, None)
+    _asked.pop(websocket, None)
     _log.info(f"Client disconnected. Total: {len(clients)}")
 
 
@@ -710,11 +765,8 @@ def _publish_scan(loop, scan, scan_index, hz, health, captured_at=None, swept=No
         valid_fraction=valid_fraction,
     )
 
-    heading = _step_heading(points, captured_at)
-    _update_movers(points, heading, captured_at)
-    _update_drift(heading)
-    _update_bev(points, heading, captured_at)
-
+    # To the viewers first: nothing below changes what they are sent, and it took ~8 ms a
+    # scan (odometry, movers, the top-down grid) before they got it (2026-11-17).
     if clients:
         msg_data = {
             "scan_index": scan_index,
@@ -726,6 +778,11 @@ def _publish_scan(loop, scan, scan_index, hz, health, captured_at=None, swept=No
             "reader": health,
         }
         asyncio.run_coroutine_threadsafe(broadcast(json.dumps(msg_data)), loop)
+
+    heading = _step_heading(points, captured_at)
+    _update_movers(points, heading, captured_at)
+    _update_drift(heading)
+    _update_bev(points, heading, captured_at)
 
 
 _last_drift_analysis = float("-inf")  # monotonic

@@ -48,6 +48,21 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   Nothing said changes.
 
 ### Fixed
+- **No turn into a wall or post under 2 ft off** (design note 27). Found by a sweep of
+  passages 0.4-2.4 m wide and the scene hunt. (1) A wall brushing the path on one side with
+  the other side near too said "Turn" away from it whatever the room that way: in a passage
+  0.65-0.8 m wide, "Turn right" at a wall 1.1-1.6 ft off. That turn now needs
+  `WALK_MIN_TURN_FT`, as every other turn does; without it the walk policy's way out is said
+  ("Turn around", "Stop, no clear way"). (2) The left, which the laser cannot see down, had only
+  the radar, and it measures nothing nearer than 250 mm (`RADAR_START_MM`): a wall 200 mm
+  off read as "nothing within 13 ft" and "Blocked by wall, turn left" went into it, as did a
+  post at the front-left with its edge that near in the left board's beam. What the laser sees
+  of it in that beam, where it comes out of the blind arc, is now the left's room
+  (`under_radar_ft` in each direction's view). The sweep: 32 such turns, now none. Over
+  7,500 hunt scenes (five seeds, ghosts and clear side cameras among them) against the code
+  before, 3 changed, each such a turn to "Turn around" or "Stop, no clear way"; the glass,
+  route, drift, movers, ground-hazard and ToF simulators and the mirror check give the same
+  results.
 - **The dashboard's laser view keeps up.** It drew on a 200 ms timer, 5 of the LiDAR's ~23
   scans a second, each up to 0.2 s late; and every scan was pushed to every viewer as it
   came, so on a slow link they queued in the network buffers: a viewer reading one every
@@ -141,6 +156,11 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   (the LiDAR's blind side) is unchanged.
 
 ### Changed
+- **A block's console line shows the room each way** ("room L 13.1 R 1.4 ft (needs 2.0)"): the
+  walk policy's own, which the way out was chosen by. On the desk, "Blocked by wall, turn
+  left" was said with the laser's left wall 1.5 ft off, and nothing showed why the left had
+  the room (the left's is the radar's alone: the laser's blind arc). The start banner names
+  `logs/speech_*.log` only when it is written (`SPEECH_LOG_TO_FILE`).
 - **The depth and radar pages look like the dashboard** (`/tof/live`, `/radar/view`,
   `/radar/test`). They were the October pages, dark only: now the dashboard's colours, cards
   and header, light or dark in the theme the dashboard saved, and one row of buttons across

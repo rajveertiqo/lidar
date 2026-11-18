@@ -211,8 +211,14 @@ class FullResolutionSwitchTests(unittest.TestCase):
             "c._PER_W, c._PER_H, c.SIMPLE_CAMERA_HFOV_DEG]))"
         )
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        out = subprocess.run([sys.executable, "-c", code], env=env, cwd=root,
-                             capture_output=True, text=True, check=True).stdout
+        out = subprocess.run(
+            [sys.executable, "-c", code],
+            env=env,
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
         return json.loads(out.strip().splitlines()[-1])
 
     def test_off_by_default_and_the_same_angles_on(self):

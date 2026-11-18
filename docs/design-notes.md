@@ -594,3 +594,36 @@ Kept because each one explains why the code is the way it is.
     mistakes as the false alarms. glass_sim (every scene, both door grids and their
     limits), the route, drift, movers, ground hazard and ToF simulators and the mirror check
     give the same results; the recorded clip is no longer on the Pi and was not replayed.
+
+27. **No turn into a wall or post under 2 ft off (2026-11-18).** The scene hunt's rules allow a
+    turn only with 2 ft of room that way. With radar ghosts it found one turn under that
+    ("Blocked by wall, turn left" in a passage 0.49 m wide), and a sweep of passages 0.4-2.4 m
+    wide (left and right walls 200-1200 mm, open or a wall ahead, 1,323 scenes) found 32, for
+    two reasons. (1) `simple_guidance`'s tight turn: a wall brushing the path on one side,
+    with the other side near (`SIMPLE_WALL_NEAR_FT`) or under `SIMPLE_MOVE_ROOM_FT`, said
+    "Turn" away from it, the only turn not held to `WALK_MIN_TURN_FT`: with the left wall 300
+    mm off and the right 350-500 mm, "Turn right" into the right wall. It now needs that room
+    (`_clearance`, as the no-room check below it); without, the walk policy's way out is said:
+    "Turn around" where the back is open, else "Stop, no clear way". (2) The left lies in the
+    LiDAR's blind arc (170-290 deg), so its room is the radar's, and the radar measures
+    nothing nearer than `RADAR_START_MM` (250 mm): a wall 200 mm off read as "13.1 ft (nothing
+    detected)", the most room of any side. The laser sees that wall where it comes out of the
+    blind arc, 290-302.5 deg, inside the left board's beam. `_under_radar_start_mm`: at least 3
+    laser returns inside that side's board's beam (+-32.5 deg) nearer than `RADAR_START_MM`
+    along the side's direction make the side's room the nearest of them (`under_radar_ft`), not
+    open. Only inside the beam, where the radar would hear a thing but for its range: a first
+    try took every return on the side's walking line (300 mm wide), and the near edge of a post
+    ahead on the right, just over the middle, made the left look shut and the turn go right,
+    into the post. Only the sides: at the back the blind arc's other edge is the wearer's body,
+    and the arm filter (`LIDAR_SELF_RANGE_MM`) keeps what stays put. If the body shows past
+    290 deg too, the left would read shut and left turns not be offered; nothing on the rig was
+    recorded to check. The sweep: none of the 32 left. The hunt, scene by scene against the
+    code before, seeds 1, 11, 13 (side cameras clear), 12 and 7 (ghosts 0.5), 7,500 scenes: 3
+    changed. Two had a post at the front-left with its edge in the left beam within 250 mm,
+    where "turn left" walked into it (its edge 89-101 mm from the turn's line): now "Turn
+    around"; the third, the 0.49 m passage, "Stop, no clear way". The glass, route, drift,
+    movers, ground hazard and ToF simulators and the mirror check give the same results. Not
+    changed: the hunt's room test looks 5 deg either side of the turn; a post at the front-left
+    outside the left beam, in the turn's lane, is not counted, and a check of the turn's whole
+    lane counts the obstacle being faced, beside the shoulder after any turn in place, as well
+    (6 and 10 such turns in seeds 1 and 11 before, 6 and 9 now, left and right alike).

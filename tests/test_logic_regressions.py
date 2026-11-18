@@ -293,7 +293,11 @@ class AfternoonFixTests(unittest.TestCase):
     def test_no_way_past_a_vehicle_not_judged_standing(self):
         from app.config import CAMERA_PX_SCALE as k  # the same car on a full-resolution picture
 
-        det = {"class_name": "car", "confidence": 0.9, "bbox": [500.0 * k, 300.0 * k, 800.0 * k, 600.0 * k]}
+        det = {
+            "class_name": "car",
+            "confidence": 0.9,
+            "bbox": [500.0 * k, 300.0 * k, 800.0 * k, 600.0 * k],
+        }
         cam = {"front": {"frame_time": 100.0, "detections": [det]}}
         with unittest.mock.patch.object(sg, "_camera_sees", lambda *a: True):
             self.assertIsNone(sg.camera_path(cam, 100.0, None, []))  # moving / not yet judged
@@ -1215,15 +1219,21 @@ class EchoTheLaserSeesTests(unittest.TestCase):
             left=2764, right=2456, ahead=None, posts=[(587, 1310, 82)]
         ),
         "a post just past the left beam's edge": dict(
-            left=None, right=None, ahead=None,
+            left=None,
+            right=None,
+            ahead=None,
             posts=[(2052, -1052, 92), (321, -1172, 223), (3115, 816, 98)],
         ),
         "a post straight ahead, one nearer either side": dict(
-            left=None, right=None, ahead=None,
+            left=None,
+            right=None,
+            ahead=None,
             posts=[(3965, -166, 131), (3016, -823, 273), (3039, 851, 48)],
         ),
         "a wall ahead, posts either side": dict(
-            left=None, right=None, ahead=3179,
+            left=None,
+            right=None,
+            ahead=3179,
             posts=[(1812, -581, 247), (1918, 1186, 241), (3214, 569, 226)],
         ),
     }
@@ -1242,7 +1252,9 @@ class EchoTheLaserSeesTests(unittest.TestCase):
         from tools.sim import scene_hunt as sh
         from app.core.shared_state import get_lidar_state, get_radar_state
 
-        sh.publish({**self.ROOMS["a post straight ahead, one nearer either side"], "glass": None}, True)
+        sh.publish(
+            {**self.ROOMS["a post straight ahead, one nearer either side"], "glass": None}, True
+        )
         # Both boards hear the post ahead at 3.84 m, where the laser ranges it: was None
         # ("heard alike, nothing to judge by"), and the posts either side a door's frame.
         self.assertIs(
@@ -1260,6 +1272,85 @@ class EchoTheLaserSeesTests(unittest.TestCase):
                     sg.reset()
                     walk, _raw = sh.decide({**room, "glass": pane})
                     self.assertTrue(walk["directions"]["front"]["glass"])
+
+
+class NoTurnIntoAWallTests(unittest.TestCase):
+    """2026-11-18, the scene hunt and a sweep of passages 0.4-2.4 m wide: turns toward
+    something under 2 ft off. (1) A wall brushing the path on one side, the other side near
+    too, said "Turn" away from it whatever the room that way: in a 0.65-0.8 m passage "Turn
+    right", at a wall 1.1-1.6 ft off (simple_guidance, tight_turn). (2) On the left, which the
+    laser cannot see down, a wall nearer than the radar starts measuring (RADAR_START_MM) read
+    as nothing within 13 ft, and "Blocked by wall, turn left" went into it; so did a post at
+    the front-left, its edge in the left board's beam (walk_policy._under_radar_start_mm)."""
+
+    @staticmethod
+    def _say(**scene):
+        from tools.sim import scene_hunt as sh
+
+        sg.reset()
+        room = {"left": None, "right": None, "ahead": None, "glass": None, "posts": []}
+        walk, raw = sh.decide({**room, **scene})
+        return walk, raw["instruction"]
+
+    def _not_toward(self, side, said):
+        self.assertNotEqual(said, sg.TURN_LEFT if side == "left" else sg.TURN_RIGHT)
+        self.assertNotEqual(sg._WAY_OUT.get(said), side)
+
+    def test_no_turn_away_from_a_wall_into_another(self):
+        for right in (350, 400, 450, 500):
+            with self.subTest(right=right):
+                self._not_toward("right", self._say(left=300, right=right)[1])
+        # Room enough that way: still the turn away from the wall.
+        self.assertEqual(self._say(left=300, right=900)[1], sg.TURN_RIGHT)
+
+    def test_a_wall_nearer_than_the_radar_measures(self):
+        for right in (250, 350, 900, 1500):
+            with self.subTest(right=right):
+                walk, said = self._say(left=200, right=right)
+                left = walk["directions"]["left"]
+                self.assertFalse(left["open"])  # was "13.1 ft (nothing detected)"
+                self.assertAlmostEqual(left["under_radar_ft"], 200 / 304.8, delta=0.05)
+                self.assertEqual(left["distance_ft"], left["under_radar_ft"])
+                self._not_toward("left", said)
+
+    def test_a_post_at_the_front_left_in_the_left_beam(self):
+        rooms = (  # scene hunt seed 11 #957 and seed 12 #234 (ghosts 0.5)
+            dict(right=374, posts=[(3718, -912, 45), (334, -86, 245)]),
+            dict(right=560, posts=[(348, -173, 247)]),
+        )
+        for room in rooms:
+            with self.subTest(**room):
+                walk, said = self._say(**room)
+                self.assertIsNotNone(walk["directions"]["left"]["under_radar_ft"])
+                self._not_toward("left", said)
+
+    def test_only_what_is_in_the_left_beam(self):
+        # A post ahead on the right, its edge just over the middle: not the left's wall. A
+        # first try took it for one, and turned the wearer right, into the post.
+        walk, said = self._say(ahead=3333, posts=[(320, 173, 212)])  # seed 1 #1393
+        self.assertIsNone(walk["directions"]["left"]["under_radar_ft"])
+        self.assertEqual(sg._WAY_OUT.get(said), "left")
+
+
+class ConsoleRoomTests(unittest.TestCase):
+    """2026-11-18, on the desk: "Blocked by wall, turn left" with the laser's left wall 1.5 ft
+    off, and nothing in the console line said what room the left was judged to have. A block's
+    line now shows the walk policy's room each way and what a turn needs."""
+
+    def test_a_block_shows_the_room_each_way(self):
+        from app.guidance import test_console as tc
+
+        raw = {"blocked": True, "front_ft": 1.0, "turn_room": {"left": 13.1, "right": 1.4},
+               "turn_floor": 2.0}
+        self.assertIn("room L 13.1 R 1.4 ft (needs 2.0)", tc._evidence(raw))
+        raw["turn_room"] = {"left": float("-inf"), "right": 1.4}  # no data that way
+        self.assertIn("room L ? R 1.4 ft", tc._evidence(raw))
+
+    def test_not_on_the_way_ahead(self):
+        from app.guidance import test_console as tc
+
+        raw = {"blocked": False, "front_ft": 9.0, "turn_room": {"left": 13.1, "right": 1.4}}
+        self.assertNotIn("room", tc._evidence(raw))
 
 
 class GlassDoorAtAnAngleTests(_GlassDoorScenes, unittest.TestCase):

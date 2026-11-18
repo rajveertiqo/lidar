@@ -24,6 +24,7 @@ from app.config import (
     SERVER_HOST,
     SERVER_MAX_BODY_BYTES,
     SERVER_PORT,
+    SPEECH_LOG_TO_FILE,
 )
 from app.sensors.pi_camera_utils import start_camera, stop_camera
 from app.sensors.lidar_utils import start_scanner, stop_scanner_thread, setup_signal_handlers
@@ -88,8 +89,10 @@ async def lifespan(app: FastAPI):
         lan_ip = SERVER_HOST
     print("🚀 Application started")
     print(f"🔌 Dashboard:  http://{lan_ip}:{SERVER_PORT}   (open this on the phone)")
+    # The file only with SPEECH_LOG_TO_FILE (2026-11-18: named here always, and never there).
     print(
-        f"📝 Speech log: http://{lan_ip}:{SERVER_PORT}/guidance/log/text   (and logs/speech_*.log)"
+        f"📝 Speech log: http://{lan_ip}:{SERVER_PORT}/guidance/log/text"
+        + ("   (and logs/speech_*.log)" if SPEECH_LOG_TO_FILE else "")
     )
     print("⏹  Ctrl+C to stop")
     if not ADMIN_TOKEN:

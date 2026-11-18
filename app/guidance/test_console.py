@@ -86,6 +86,22 @@ def _evidence(raw: Dict[str, Any]) -> str:
                 else ""
             )
             bits.append(f"{side[0].upper()}-wall {ft:.1f}ft{move}")
+    # On a block, the room each way the walk policy judged its way out by (2026-11-18: "Blocked
+    # by wall, turn left" with the laser's left wall 1.5 ft off, on the desk, and nothing in
+    # the line said why the left had the room): the left's is the radar's (the laser's blind arc).
+    room = raw.get("turn_room") or {}
+    if raw.get("blocked") and room:
+        parts = [
+            f"{s[0].upper()} {room[s]:.1f}" if room[s] > -1e9 else f"{s[0].upper()} ?"
+            for s in ("left", "right")
+            if isinstance(room.get(s), (int, float))
+        ]
+        floor = raw.get("turn_floor")
+        if parts:
+            bits.append(
+                "room " + " ".join(parts) + " ft"
+                + (f" (needs {floor:.1f})" if isinstance(floor, (int, float)) else "")
+            )
     return "  ".join(bits)
 
 

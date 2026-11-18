@@ -33,6 +33,7 @@ from app.config import (
     RADAR_CONE_TRUST_MM,
     RADAR_NO_RETURN_FT,
     RADAR_SECTORS,
+    RADAR_START_MM,
     WALK_BLOCK_FT,
     WALK_FUSION_GLASS_OVERRIDE,
     WALK_GLASS_ALL_ECHOES,
@@ -576,6 +577,36 @@ def _board_echoes(
             echoes |= {e for e in map(_echo_mm, row.get("peaks_mm") or ()) if e is not None}
         out.extend((float(m.group(1)), e) for e in sorted(echoes))
     return out
+
+
+_UNDER_RADAR_MIN_RETURNS = 3  # one stray return is not a wall
+_UNDER_RADAR_HALF_DEG = RADAR_BEAM_H_DEG / 2.0  # the side board's beam
+_UNDER_RADAR_REACH_MM = RADAR_START_MM / math.cos(math.radians(_UNDER_RADAR_HALF_DEG))
+
+
+def _under_radar_start_mm(lidar_state: Dict[str, Any], direction: str) -> Optional[float]:
+    """How far to the side (along `direction`, "left" or "right") the laser sees something
+    inside that side's radar beam nearer than the radar starts measuring (RADAR_START_MM),
+    or None. On a side the laser cannot see down (LIDAR_BLIND_ARCS_DEG: the left) the radar
+    is all there is, and it hears nothing that near: a wall 200 mm off read as nothing within
+    13 ft, and "Blocked by wall, turn left" turned the wearer into it (scene hunt,
+    2026-11-18). The laser still sees that wall where it comes out of the blind arc, inside
+    the beam. Only inside it: a post ahead, its edge near the side's line, was taken for the
+    side's wall, and the turn went the other way, into the post (a first try)."""
+    if direction not in ("left", "right") or lidar_state.get("simulated"):
+        return None
+    centre = GUIDANCE_CONE_CENTRES.get(direction)
+    if centre is None:
+        return None
+    found = []
+    for a, d in zip(*_laser_points(lidar_state)):
+        if not 0.0 < d <= _UNDER_RADAR_REACH_MM:
+            continue
+        off = (a - centre + 180.0) % 360.0 - 180.0
+        along = d * math.cos(math.radians(off))
+        if abs(off) <= _UNDER_RADAR_HALF_DEG and along < RADAR_START_MM:
+            found.append(along)
+    return min(found) if len(found) >= _UNDER_RADAR_MIN_RETURNS else None
 
 
 _GRAZING_TAN = math.tan(math.radians(GLASS_GRAZING_DEG))
@@ -1430,6 +1461,17 @@ def read_direction(
         )
     if door_glass:
         how += " (both front boards hear a pane set in the wall ahead, behind the corridor's walls)"
+    # Nearer than the radar measures, on a side the laser cannot see down (2026-11-18): what
+    # the laser sees of it where it comes out of the blind arc bounds the room that way.
+    under_radar = None
+    if lidar_blind(direction) and isinstance(distance_ft, (int, float)):
+        mm = _under_radar_start_mm(lidar_state, direction)
+        if mm is not None and mm / MM_PER_FT < distance_ft:
+            under_radar = distance_ft = round(mm / MM_PER_FT, 2)
+            how += (
+                f" (the laser sees something {under_radar:.1f} ft off this side, nearer"
+                " than the radar measures)"
+            )
     glass = (
         not lidar_blind(direction)
         and not laser_hidden
@@ -1541,7 +1583,8 @@ def read_direction(
         "open": (lidar_ft is not None or radar_ft is not None)
         and not lidar_measured
         and not radar_measured
-        and tof_ft is None,
+        and tof_ft is None
+        and under_radar is None,
         "unknown": distance_ft is None,
         # Glass is the radar hearing what the laser looks through, so none where the laser
         # cannot look (LIDAR_BLIND_ARCS_DEG, the wearer's body): there every echo read as
@@ -1551,6 +1594,8 @@ def read_direction(
         "laser_hidden": laser_hidden,
         "rest_echo": rest_echo,
         "tof_ft": None if tof_ft is None else round(tof_ft, 2),
+        # Something the laser sees this near on the side, under RADAR_START_MM (feet).
+        "under_radar_ft": under_radar,
         "lidar_arc_ft": lidar_arc_ft,
         "arc_corroborates": arc_corroborates,
         "radar_off_axis": radar_off_axis,

@@ -35,7 +35,8 @@ TARGET_FPS = 30  # desired pipeline / display FPS
 FRAME_INTERVAL = 1.0 / TARGET_FPS
 
 CAMERA_CAPTURE_FPS = (
-    10 if CAMERA_FULL_RES  # the 4656 x 3496 mode's most (~9): the sensor's limit decides
+    10
+    if CAMERA_FULL_RES  # the 4656 x 3496 mode's most (~9): the sensor's limit decides
     else TARGET_FPS  # the sensor's, the 2328 x 1748 mode's most (60 was for cycling)
 )
 
@@ -162,9 +163,7 @@ LIDAR_RPM = LIDAR_MAX_RPM
 
 LIDAR_ANGLE_OFFSET = 0  # degrees to add to raw angles
 
-LIDAR_MIRROR = (
-    False  # verified on this rig; do not flip without a physical left/right check
-)
+LIDAR_MIRROR = False  # verified on this rig; do not flip without a physical left/right check
 
 LIDAR_CLUSTER_MIN_POINTS = 3
 LIDAR_CLUSTER_WINDOW_MM = 150
@@ -303,9 +302,7 @@ RADAR_PORT_EXCLUDE = LIDAR_PORT_CANDIDATES  # resolved with realpath (F13)
 
 RADAR_BAUDRATE = 115200
 
-RADAR_START_MM = (
-    250  # where each board's measured range starts: nearer is not measured. The
-)
+RADAR_START_MM = 250  # where each board's measured range starts: nearer is not measured. The
 # LiDAR covers that, except in its blind arc (LIDAR_BLIND_ARCS_DEG, behind-left)
 RADAR_END_MM = 4000  # radar reach: 13 ft, so "Glass ahead" can start at SIMPLE_WALL_APPROACH_FT (was 3000, 2026-10-01)
 RADAR_UPDATE_RATE = 6.0
@@ -375,9 +372,7 @@ GLASS_SIDE_WALL_NEAREST_TOL_MM = 100.0
 # place on the ring and range error.
 GLASS_PANE_ON_LINE_TOL_MM = 200.0
 GLASS_BOARD_VIEW_MARGIN_DEG = 10.0  # a board hears a little past the edge of its beam
-GLASS_SAME_ECHO_MM = (
-    60.0  # two front boards ranging within this of each other heard the same thing
-)
+GLASS_SAME_ECHO_MM = 60.0  # two front boards ranging within this of each other heard the same thing
 GLASS_GRAZING_DEG = 75.0  # a surface the laser sees more edge-on than this sends the radar next to nothing back, so it cannot explain an echo
 # A glass door at the end of a corridor (walk_policy._door_in_wall_ft, 2026-11-06): an echo
 # both front boards hear is explained only by a surface the laser sees within this of
@@ -401,10 +396,7 @@ RADAR_CARDINAL_CENTRES = {"front": 0.0, "right": 90.0, "back": 180.0, "left": 27
 
 def _radar_cardinal_arc_sectors():
     step, half_beam = RADAR_BEARING_STEP_DEG, RADAR_BEAM_H_DEG / 2.0
-    mount = [
-        (RADAR_BEARING_OFFSET_DEG + i * step) % 360.0
-        for i in range(int(round(360.0 / step)))
-    ]
+    mount = [(RADAR_BEARING_OFFSET_DEG + i * step) % 360.0 for i in range(int(round(360.0 / step)))]
     out = {}
     for name, centre in RADAR_CARDINAL_CENTRES.items():
         boards = [b for b in mount if _radar_ang_diff(b, centre) < half_beam + 22.5]
@@ -415,10 +407,7 @@ def _radar_cardinal_arc_sectors():
             covered = sum(
                 1
                 for k in range(steps)
-                if any(
-                    _radar_ang_diff((lo + k / 4.0) % 360.0, b) <= half_beam
-                    for b in boards
-                )
+                if any(_radar_ang_diff((lo + k / 4.0) % 360.0, b) <= half_beam for b in boards)
             )
             if covered / 4.0 >= width / 2.0:
                 names.append(sec)
@@ -429,9 +418,7 @@ def _radar_cardinal_arc_sectors():
 RADAR_CARDINAL_ARC_SECTORS = _radar_cardinal_arc_sectors()
 
 
-WALK_BLOCK_FT = (
-    4.0  # front nearer than this = blocked (~1.2 m; was 6.5, decided 2026-10-01)
-)
+WALK_BLOCK_FT = 4.0  # front nearer than this = blocked (~1.2 m; was 6.5, decided 2026-10-01)
 WALK_MIN_TURN_FT = 2.0  # a turn target must have at least this much room;
 # below it there is nowhere to go and the answer is stop
 WALK_FUSION_GLASS_OVERRIDE = True
@@ -478,13 +465,9 @@ WALK_GLASS_GAP_FT = 2.0  # LiDAR farther than radar by this much = glass (~0.6 m
 
 HEADING_ENABLED = True
 HEADING_BIN_DEG = 1.0  # range profile resolution used for scan matching
-HEADING_INTERP_MAX_GAP_DEG = (
-    3.0  # never interpolate a bin across a wider gap in the scan
-)
+HEADING_INTERP_MAX_GAP_DEG = 3.0  # never interpolate a bin across a wider gap in the scan
 HEADING_INTERP_MAX_JUMP_MM = 300.0  # ...nor across a range step this big (two objects)
-HEADING_FIT_MAX_RESEEDS = (
-    4  # times the yaw + translation fit may restart from its own answer
-)
+HEADING_FIT_MAX_RESEEDS = 4  # times the yaw + translation fit may restart from its own answer
 HEADING_MAX_YAW_STEP_DEG = 25.0  # widest rotation searched between two scans
 # (25 deg at 15 Hz = 375 deg/s — far beyond a walk)
 HEADING_MATCH_MIN_BINS = 40  # too few overlapping bins = no honest estimate
@@ -661,7 +644,9 @@ BEV_EXTRACT_HZ = 5.0
 LIDAR_MOVERS_ENABLED = True
 LIDAR_MOVERS_SPEAK = False  # False: shown and logged as "would say", not spoken
 LIDAR_MOVERS_MIN_RANGE_MM = 300  # nearer is the wearer's own arm or cane
-LIDAR_MOVERS_MAX_RANGE_MM = 8000  # Neighbouring returns farther apart than BREAK_MM + BREAK_PER_M x range are two things.
+LIDAR_MOVERS_MAX_RANGE_MM = (
+    8000  # Neighbouring returns farther apart than BREAK_MM + BREAK_PER_M x range are two things.
+)
 LIDAR_MOVERS_BREAK_MM = 200.0
 LIDAR_MOVERS_BREAK_PER_M = 0.06
 LIDAR_MOVERS_MAX_GAP_DEG = 3.0  # an angular gap wider than this also splits
@@ -687,9 +672,7 @@ LIDAR_MOVERS_WALK_MAX_MPS = 1.8
 # Warn when it will pass within MISS_M (vehicles: SIMPLE_VEHICLE_MISS_M) inside HORIZON_S.
 LIDAR_MOVERS_HORIZON_S = 5.0
 LIDAR_MOVERS_MISS_M = 1.0
-LIDAR_MOVERS_HEAD_ON_DEG = (
-    30.0  # ahead and heading this straight at the user: "coming toward you"
-)
+LIDAR_MOVERS_HEAD_ON_DEG = 30.0  # ahead and heading this straight at the user: "coming toward you"
 LIDAR_MOVERS_CAMERA_MATCH_DEG = 10.0  # front camera box this close in bearing names it
 LIDAR_MOVERS_REPEAT_S = 6.0  # the same "would say" is not logged again inside this
 
@@ -700,9 +683,7 @@ RADAR_MOVERS_ENABLED = True
 RADAR_MOVERS_GATE_M = 0.3  # an echo this far from where a track was heading is another
 RADAR_MOVERS_WINDOW_S = 1.5  # closing speed is fitted over this
 RADAR_MOVERS_MIN_SAMPLES = 5
-RADAR_MOVERS_MIN_SPAN_S = (
-    0.6  # with CONFIRM_FRAMES: ~1.1 s to a warning, inside a 4 m reach
-)
+RADAR_MOVERS_MIN_SPAN_S = 0.6  # with CONFIRM_FRAMES: ~1.1 s to a warning, inside a 4 m reach
 RADAR_MOVERS_LOST_S = 0.7  # an echo unheard this long is dropped
 RADAR_MOVERS_MIN_CLOSING_MPS = 0.4  # its own closing speed, the user's walk taken off
 RADAR_MOVERS_CONFIRM_FRAMES = 2
@@ -719,21 +700,15 @@ MOTION_TRACKER_WARN = True  # its closest-approach warning stands in for lidar_m
 MOTION_GATE_CHI2 = 9.21  # 99 % for two degrees of freedom
 MOTION_GATE_M = 1.0  # and no farther than this from where a track should be...
 MOTION_GATE_VEHICLE_M = 2.0  # ...or this for a vehicle (a camera's range is rough)
-MOTION_GATE_NEW_EXTRA_M = (
-    1.0  # a track with under CONFIRM_HITS sightings: this much more
-)
+MOTION_GATE_NEW_EXTRA_M = 1.0  # a track with under CONFIRM_HITS sightings: this much more
 MOTION_LOST_S = 0.8  # a track unseen this long is dropped
 MOTION_ACCEL_PERSON = 1.2  # m/s^2 of random acceleration a person's model allows
 MOTION_ACCEL_ALONG = 1.5  # a moving vehicle's, along its heading...
 MOTION_ACCEL_ACROSS = 0.4  # ...and across it: a car brakes, it does not slide sideways
 MOTION_CONFIRM_HITS = 6
 MOTION_CONFIRM_S = 0.6
-MOTION_SIGNIFICANCE = (
-    3.0  # moving: speed at least this many sigma, in its own direction
-)
-MOTION_VEHICLE_STEADY_S = (
-    0.8  # a vehicle's heading must hold within STEADY_DEG this long
-)
+MOTION_SIGNIFICANCE = 3.0  # moving: speed at least this many sigma, in its own direction
+MOTION_VEHICLE_STEADY_S = 0.8  # a vehicle's heading must hold within STEADY_DEG this long
 MOTION_VEHICLE_STEADY_DEG = 20.0  # (a track that swapped between two cars swings)
 MOTION_VEHICLE_MIN_TRAVEL_M = 1.0  # and it must have gone this far in the last second
 MOTION_CAMERA_SECTORS = ("front",)  # the cameras whose people and vehicles are followed
@@ -752,15 +727,11 @@ MOTION_PREDICT_MAX_SD_M = 0.8  # past this a prediction says too little to act o
 # that gives ROUTE_NEED_M — at walking pace, at half pace, or not at all (wait, or step
 # aside from something coming at the user).
 ROUTE_PLANNER_ENABLED = True
-ROUTE_PLANNER_SPEAK = (
-    False  # False: its turn side and steering are shown and logged as "would say"
-)
+ROUTE_PLANNER_SPEAK = False  # False: its turn side and steering are shown and logged as "would say"
 ROUTE_LANE_HALF_M = 0.30  # half the lane: the user's half-width and a margin
 ROUTE_LANE_TIGHT_M = 0.22  # the user's half-width alone, when nothing wider fits
 ROUTE_REACH_M = 4.5
-ROUTE_NEED_M = (
-    2.4  # clear walking wanted at walking pace (half pace: half, at least 1.2)
-)
+ROUTE_NEED_M = 2.4  # clear walking wanted at walking pace (half pace: half, at least 1.2)
 ROUTE_STEP_DEG = 5
 ROUTE_MAX_TURN_DEG = 90
 ROUTE_STEER_MAX_DEG = 35  # a way this far off straight is "turn slightly"
@@ -789,28 +760,20 @@ LIDAR_BLIND_ARCS_DEG = ((170.0, 290.0),)
 # its own process; live view at /tof/live. Nothing the user hears changes until
 # TOF_USE_DISTANCE, which waits for the bench calibration (tools/device/tof_calibrate.py).
 TOF_ENABLED = True
-TOF_USE_DISTANCE = (
-    False  # False: the ToF's distance is only shown beside the box-size one
-)
+TOF_USE_DISTANCE = False  # False: the ToF's distance is only shown beside the box-size one
 # The /dev/videoN the SDK opens (not the CSI port number). None: the node media-ctl links
 # to the arducam-pivariety sensor, which moves with probe order once both ports are in use.
 TOF_VIDEO_INDEX = None
-TOF_RANGE_MM = (
-    4000  # the SDK's range setting (2000 or 4000: beyond 2 m that one wraps to near)
-)
+TOF_RANGE_MM = 4000  # the SDK's range setting (2000 or 4000: beyond 2 m that one wraps to near)
 TOF_FRAME_TIMEOUT_MS = 500
 TOF_RETRY_BACKOFF_S = (2.0, 5.0, 10.0)
-TOF_MIN_CONFIDENCE = (
-    30.0  # depth pixels the sensor is less sure of than this are dropped
-)
+TOF_MIN_CONFIDENCE = 30.0  # depth pixels the sensor is less sure of than this are dropped
 TOF_MIN_MM = 150.0
 TOF_MAX_MM = 4000.0
 # Is the SDK's distance along each pixel's ray (True) or along the lens axis? Bench check:
 # tools/device/tof_calibrate.py wall, pointed square-on at a flat wall.
 TOF_DEPTH_IS_RADIAL = True
-TOF_PAIR_MAX_S = (
-    0.06  # a camera picture uses the ToF frame captured nearest it, within this
-)
+TOF_PAIR_MAX_S = 0.06  # a camera picture uses the ToF frame captured nearest it, within this
 TOF_BUFFER_FRAMES = 8
 TOF_LIVE_MAX_FPS = 15  # /tof/live: at most this many frames a second (~170 KB each)
 # Until tools/device/tof_calibrate.py writes TOF_CALIBRATION_FILE (checkerboard on the bench),
@@ -846,9 +809,7 @@ TOF_BOX_MIN_SHARE = 0.20
 # keeps all its detail; a block between ones that got a reading takes the nearest of theirs.
 TOF_ALIGNED_CELL_PX = 4 * CAMERA_PX_SCALE
 TOF_RANGE_SD_M = 0.05  # how far off a ToF distance is (1 sigma), plus...
-TOF_RANGE_SD_FRAC = (
-    0.02  # ...this much of it (the motion tracker's camera error ellipse)
-)
+TOF_RANGE_SD_FRAC = 0.02  # ...this much of it (the motion tracker's camera error ellipse)
 
 # ---- Hazards on the ground ahead, from the ToF, confirmed by the front camera
 # (app/perception/ground_hazards.py, 2026-11-06): stairs up and down, single steps (kerbs), drops,
@@ -862,9 +823,7 @@ TOF_HAZARD_HZ = 10.0  # analyses a second (each on the newest ToF frame; ~15 ms 
 TOF_HAZARD_FRESH_S = 0.5  # the guidance uses an analysis no older than this
 # The ground, fitted on every frame: these only steer the fit, it measures the rest.
 TOF_MOUNT_HEIGHT_M = 1.45  # the front camera above the ground when worn
-TOF_MOUNT_HEIGHT_TOL_M = (
-    0.45  # a level surface further from that is not taken as the ground
-)
+TOF_MOUNT_HEIGHT_TOL_M = 0.45  # a level surface further from that is not taken as the ground
 TOF_GROUND_MAX_TILT_DEG = 15.0  # the body's sway and the mount's error, at most
 TOF_GROUND_INLIER_M = 0.03  # a point this near the plane is on it
 TOF_GROUND_MIN_POINTS = 300  # fewer on the plane: no ground seen
@@ -886,9 +845,7 @@ TOF_STAIR_RUN_M = (0.18, 0.60)
 TOF_OBSTACLE_MIN_H_M = 0.08
 TOF_OBSTACLE_MIN_POINTS = 20
 TOF_LOW_MAX_H_M = 0.60  # an obstacle no taller: "low" (under the LiDAR's plane)
-TOF_OVERHANG_MIN_H_M = (
-    0.50  # nothing of it lower than this: overhanging (the cane passes under)
-)
+TOF_OVERHANG_MIN_H_M = 0.50  # nothing of it lower than this: overhanging (the cane passes under)
 TOF_POLE_MAX_WIDTH_M = 0.30  # a pole: this narrow, from the ground up...
 TOF_POLE_MIN_H_M = 0.80  # ...this high or out of the top of the ToF's view
 # Said from WARN_M; a drop or stairs down within STOP_M is said as "..., stop" (level 2).
@@ -928,9 +885,7 @@ TOF_FALL_ALONE_M = 0.15
 # far around where the hazard lands on it (the design calibration is ~26 px off).
 TOF_CAMERA_MAX_AGE_S = 0.3
 TOF_CAMERA_MARGIN_PX = 40 * CAMERA_PX_SCALE
-TOF_CAMERA_EDGE_DENSITY = (
-    0.04  # edge pixels, as a share of the area: an outline is there
-)
+TOF_CAMERA_EDGE_DENSITY = 0.04  # edge pixels, as a share of the area: an outline is there
 
 SPEECH_LOG_ENABLED = True
 SPEECH_LOG_TO_FILE = False  # True writes logs/speech_*.log for a field test
@@ -946,9 +901,7 @@ SPEECH_LOG_KEEP_LINES = 400
 # for tools/field/walk_replay.py. Off unless SHAPPE_RECORD_WALK=1 or POST /guidance/record.
 WALK_RECORD = os.environ.get("SHAPPE_RECORD_WALK", "") == "1"
 WALK_RECORD_DIR = os.path.join(_APP_DIR, "logs", "walks")
-WALK_RECORD_MAX_MB = (
-    500  # uncompressed; a recording stops itself here (~1 h of walking)
-)
+WALK_RECORD_MAX_MB = 500  # uncompressed; a recording stops itself here (~1 h of walking)
 # Older recordings are deleted when a new one starts: the newest this many, this much in all
 # (compressed, on the card).
 WALK_RECORD_KEEP_FILES = 30
@@ -1086,15 +1039,15 @@ SIMPLE_CROSSING_CONFIRM_GAP_S = 0.5
 
 SIMPLE_DRIFT_NEAR_FT = 5.0  # drift said only inside 5 ft, ahead of the 4 ft near-wall band (was 2.5, decided 2026-10-01)
 SIMPLE_DRIFT_MIN_DEG = 4.0
-SIMPLE_DRIFT_AHEAD_FT = 20.0  # converging wall must meet the path within this (was 12; ~1.8 s earlier at 8 deg)
+SIMPLE_DRIFT_AHEAD_FT = (
+    20.0  # converging wall must meet the path within this (was 12; ~1.8 s earlier at 8 deg)
+)
 SIMPLE_DRIFT_WINDOW_S = 1.0  # trend window (was 1.5)
 SIMPLE_DRIFT_MIN_SPAN_S = 0.6  # minimum trend span (was 1.0)
 SIMPLE_DRIFT_CLOSING_FT_S = 0.2
 SIMPLE_DRIFT_JUMP_MM = 300.0
 
-SIMPLE_WALL_NEAR_FT = (
-    4.0  # "Near left wall, move right" inside this (was 1.5, decided 2026-10-01)
-)
+SIMPLE_WALL_NEAR_FT = 4.0  # "Near left wall, move right" inside this (was 1.5, decided 2026-10-01)
 SIMPLE_WALL_NEAR_MARGIN_FT = 0.5
 SIMPLE_MOVE_ROOM_FT = 2.0
 SIMPLE_GLASS_BESIDE_FT = 4.0  # "Glass on left, move right": glass only one front board hears, inside this (decided 2026-10-01)
@@ -1233,9 +1186,7 @@ DETECTION_DISTANCE_HFOV_DEG = (_CAMERA_HFOV_DEG - 3.0, _CAMERA_HFOV_DEG + 3.0)
 # A thing shorter than its class (sitting, half hidden) makes that estimate too FAR, so
 # the laser may be much nearer; hardly ever much farther (that is the wall behind it).
 DETECTION_DISTANCE_AGREE = (0.5, 1.4)
-DETECTION_SEATED_ASPECT = (
-    0.5  # a person box at least this wide for its height is sitting
-)
+DETECTION_SEATED_ASPECT = 0.5  # a person box at least this wide for its height is sitting
 DETECTION_SEATED_HEIGHT_M = 1.3
 
 SIMPLE_CAMERA_FRESH_S = 2.0

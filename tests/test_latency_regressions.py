@@ -535,8 +535,13 @@ class CameraPipelineTimingTests(unittest.TestCase):
     def test_the_lag_is_by_the_sensors_own_clock(self):
         now = 50_000_000_000
         self.assertAlmostEqual(pc._sensor_lag_ms({"SensorTimestamp": now - 85_000_000}, now), 85.0)
-        for bad in ({}, None, {"SensorTimestamp": 0}, {"SensorTimestamp": "x"},
-                    {"SensorTimestamp": now + 5_000_000}):  # from the future: another clock
+        for bad in (
+            {},
+            None,
+            {"SensorTimestamp": 0},
+            {"SensorTimestamp": "x"},
+            {"SensorTimestamp": now + 5_000_000},
+        ):  # from the future: another clock
             self.assertIsNone(pc._sensor_lag_ms(bad, now))
 
     def test_the_timings_say_where_the_delay_goes(self):
@@ -562,7 +567,10 @@ class CameraPipelineTimingTests(unittest.TestCase):
             def wait(self, job, timeout=None):
                 time.sleep(0.01)
                 stamp = time.monotonic_ns() - 70_000_000
-                return [np.zeros((4, 4, 3), np.uint8)], {"SensorTimestamp": stamp, "FrameDuration": 33333}
+                return [np.zeros((4, 4, 3), np.uint8)], {
+                    "SensorTimestamp": stamp,
+                    "FrameDuration": 33333,
+                }
 
         before = pc.current_frame_id
         with patch.object(pc, "picam2", Cam()), patch.object(pc, "running", True):
@@ -1077,8 +1085,10 @@ class LaserViewNewestScanTests(unittest.IsolatedAsyncioTestCase):
 
     def test_the_page_draws_each_scan_as_it_arrives(self):
         page = (Path(__file__).resolve().parent.parent / "templates" / "dashboard.html").read_text()
-        self.assertFalse("setInterval(drawScan," in page, "drawn on a timer again")  # 5 scans a second
-        handler = page[page.index("function connectScan"):page.index("function drawScanSoon")]
+        self.assertFalse(
+            "setInterval(drawScan," in page, "drawn on a timer again"
+        )  # 5 scans a second
+        handler = page[page.index("function connectScan") : page.index("function drawScanSoon")]
         self.assertIn("drawScanSoon()", handler)
         self.assertIn('ws.send("next")', handler)  # asks for each, so none queue
 

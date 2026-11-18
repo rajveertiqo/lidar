@@ -2074,7 +2074,13 @@ def decide(
             if s in moving_to and (tight or s not in near_sides):
                 drift = s
             elif tight:
-                tight_turn = "left" if s == "right" else "right"
+                away = "left" if s == "right" else "right"
+                # Only with a turn's room that way, as every turn (2026-11-18, scene hunt): a
+                # passage 0.65-0.8 m wide, its left wall brushing the path and the right one
+                # 1.1-1.6 ft off, was "Turn right", into that wall. Without the room, the
+                # walk policy's way out is said (turn around, stop), as on any block.
+                if _clearance(walk_decision, away) >= WALK_MIN_TURN_FT:
+                    tight_turn = away
             else:
                 close, close_band = s, [s]
         elif brushed:

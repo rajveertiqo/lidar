@@ -1353,6 +1353,56 @@ class ConsoleRoomTests(unittest.TestCase):
         self.assertNotIn("room", tc._evidence(raw))
 
 
+class HeldPaneBlocksAtOnceTests(unittest.TestCase):
+    """2026-11-18, tools/sim/walk_sim (the spoken path, walking in at 1.2 m/s): "Blocked by
+    glass" came at 3.1 ft, a wall's at 3.8. A block only the radar measures waited
+    SIMPLE_ALERT_CONFIRM_S (0.2 s), on top of a radar frame's age (RADAR_UPDATE_RATE). A pane
+    already held as glass that comes within the block now blocks at once, as a block the
+    laser measures does; one first heard inside the block still waits."""
+
+    def tearDown(self):
+        sg.reset()
+
+    @staticmethod
+    def _raw(pane_mm):
+        from tools.sim import scene_hunt as sh
+
+        room = {"left": None, "right": None, "ahead": None, "glass": pane_mm, "posts": []}
+        return sh.decide(room)[1]
+
+    @staticmethod
+    def _said(polls):
+        world = sg._World()
+        return [world.update(dict(raw), t)[0] for t, raw in polls]
+
+    def test_a_held_pane_blocks_at_once(self):
+        far, near = self._raw(2400.0), self._raw(900.0)
+        self.assertEqual(far["instruction"], sg.GLASS_AHEAD)
+        said = self._said([(1000.0 + k * 0.05, far) for k in range(20)] + [(1001.0, near)])
+        self.assertEqual(said[-2], sg.GLASS_AHEAD)
+        self.assertIn(said[-1], sg.BLOCKED_GLASS_ANY)  # was 0.2 s later
+
+    def test_a_pane_first_heard_inside_the_block_waits(self):
+        near = self._raw(900.0)
+        said = self._said([(1000.0 + k * 0.05, near) for k in range(6)])
+        self.assertNotIn(said[2], sg.BLOCKED_GLASS_ANY)  # 0.1 s in
+        self.assertIn(said[-1], sg.BLOCKED_GLASS_ANY)  # 0.25 s in
+
+    def test_walking_in_a_pane_blocks_as_a_wall_does(self):
+        from tools.sim import walk_sim as ws
+
+        for name in ("glass across open floor", "wall across"):
+            with self.subTest(name):
+                ticks = ws.walk(ws.SCENES[name])
+                self.assertEqual(ws.judge(name, ws.SCENES[name], ticks, False), [])
+                first = next(
+                    min(d for d in (line, pane) if d is not None)
+                    for _t, _w, line, pane, text, spoken in ticks
+                    if spoken and sg._LEVEL.get(text, -1) >= sg._BLOCKED
+                )
+                self.assertGreaterEqual(first / 304.8, 3.5)  # the pane's was 3.1 ft
+
+
 class GlassDoorAtAnAngleTests(_GlassDoorScenes, unittest.TestCase):
     """2026-11-13: a glass door met 15-20 deg off said "Walk straight" from 3 to 6 ft. The
     tilted wall it is set in comes nearer than the pane past 45 deg on one side, and was taken

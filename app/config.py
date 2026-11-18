@@ -983,8 +983,9 @@ FRAME_SECTOR_LAYOUT = {  # camera quadrant mapping; do not change without a phys
 SIMPLE_ALERT_CONFIRM_S = 0.2
 # A block, and a wall, the LiDAR itself measures in this many DIFFERENT scans in a row is
 # confirmed at once (~67 ms at 15 Hz), not after SIMPLE_ALERT_CONFIRM_S, which was ~250 ms of
-# a ~320 ms reaction (2026-10-30). Radar-only (glass) and camera names keep the 0.2 s:
-# their frames come slower and can repeat between ticks. 0: off. VALIDATE on a walk.
+# a ~320 ms reaction (2026-10-30). A pane only the radar hears keeps the 0.2 s while it is
+# new (its frames come slower and repeat between ticks); one already held as glass blocks at
+# once (2026-11-18, simple_guidance._World). Camera names: below. 0: off. VALIDATE on a walk.
 SIMPLE_LIDAR_CONFIRM_SCANS = 2
 # The same for what the FRONT CAMERA names (a person, a vehicle in front) and a vehicle its
 # tracker judges approaching: this many DIFFERENT detected frames in a row (~65-130 ms at

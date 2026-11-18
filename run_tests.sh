@@ -25,7 +25,7 @@ echo "== tests: $(echo "$MODULES" | wc -l) modules"
 "$PY" -m unittest $MODULES
 
 if [ "$FULL" = 1 ]; then
-    for sim in glass_sim drift_sim route_sim movers_sim; do
+    for sim in glass_sim drift_sim route_sim movers_sim walk_sim; do
         echo "== tools.sim.$sim"
         "$PY" -m "tools.sim.$sim" 2>&1 | tail -3
     done

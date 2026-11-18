@@ -2859,8 +2859,14 @@ class _World:
         fast, scan = SIMPLE_LIDAR_CONFIRM_SCANS, raw.get("scan_index")
         lidar_block = self.block_scans.update(bool(raw.get("lidar_block")), scan)
         lidar_wall = self.wall_scans.update(bool(raw["wall"]), scan)
+        # A pane already held (its "Glass ahead" confirmed over the frames before) coming
+        # within the block: only its range changed, not what is there, so it blocks at once,
+        # as the laser's does (2026-11-18, tools/sim/walk_sim: "Blocked by glass" came at
+        # 3.1 ft, 0.7 ft after a wall's: the 0.2 s on top of a radar frame's age). A pane first
+        # heard inside the block still waits SIMPLE_ALERT_CONFIRM_S.
+        held_pane = bool(self.glass.state and raw["glass"] and raw["blocked"])
         self.blocked.attack = (
-            0.0 if fast and lidar_block >= fast else SIMPLE_ALERT_CONFIRM_S
+            0.0 if (fast and lidar_block >= fast) or held_pane else SIMPLE_ALERT_CONFIRM_S
         )
         self.wall.attack = 0.0 if fast and lidar_wall >= fast else SIMPLE_ALERT_CONFIRM_S
         # And what the front camera names, on two different camera frames (2026-10-30) — its

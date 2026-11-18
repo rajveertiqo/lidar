@@ -627,3 +627,32 @@ Kept because each one explains why the code is the way it is.
     outside the left beam, in the turn's lane, is not counted, and a check of the turn's whole
     lane counts the obstacle being faced, beside the shoulder after any turn in place, as well
     (6 and 10 such turns in seeds 1 and 11 before, 6 and 9 now, left and right alike).
+
+28. **Walking in, through the spoken path; a held pane blocks at once (2026-11-18).** The scene
+    hunt and glass_sim judge one poll of the decision (glass_sim's walk: `read_direction` per
+    frame). What the wearer hears also passes through time: `simple_guidance._World` confirms a
+    block on a second LiDAR scan or after `SIMPLE_ALERT_CONFIRM_S`, holds and releases each
+    reading, and the speech gate settles and repeats sentences. `tools/sim/walk_sim.py` walks
+    the wearer in at walking pace through scene_hunt's scenes, a guidance tick per LiDAR scan
+    (`LIDAR_RPM` / 60, as `pi_voice` runs it), the radar at `RADAR_UPDATE_RATE`, each scan
+    analysed with the one before it as `lidar_utils._publish_scan` does (without it a 5 cm
+    pole, stepped over by the laser's beams on some scans, read as "Glass ahead"), on the
+    scene's clock as `walk_replay` replays a walk. Rules: a block spoken by 3 ft
+    (`WALK_BLOCK_FT` less 1 ft for the reaction and the voice), never "Walk straight" within
+    4 ft, no glass sentence without glass, no block with nothing on the line; with `--stop`, at
+    most 2 sentences and no flipped way out standing 4 s at the block. Solid things: "Obstacle
+    ahead" / "Wall ahead" at 7-11 ft, the block at 3.6-3.8 ft. A pane: "Glass ahead" at 10.8 ft,
+    but "Blocked by glass" only at 3.1 ft. A block the laser measures is confirmed on its
+    second different scan (`SIMPLE_LIDAR_CONFIRM_SCANS`, ~90 ms); one only the radar hears
+    kept the 0.2 s, its frames coming slower and repeating between ticks, on top of the
+    frame's own age (up to 1/6 s): ~0.3 s, 0.7 ft at 1.2 m/s. But a pane held as glass for
+    seconds that comes within the block has not newly appeared; only its range changed. Now
+    the block's hold takes it at once when the glass hold is on and this poll reads glass and
+    a block: 3.8 ft. A pane first heard inside the block still waits its 0.2 s (through the
+    glass hold too). In a 2.4 m corridor the pane is lost between ~5.7 and 3.3 ft, the walls
+    echoing from its range (Known limits), held by `SIMPLE_GLASS_LOSS_CONFIRM_S` as "Glass
+    ahead" and blocked at 3.3 ft; with `GLASS_CLOSING_SPEAK` (note 18) at 3.8, and the 3 m
+    hall's pane named from 9.6 ft instead of 3.6. All 15 scenes pass with 10 mm laser and 20
+    mm radar range noise on 4 seeds, the closing rule off and on, at 0.8 and 1.6 m/s, and
+    standing at the block. The glass, route and movers simulators give the same results (they
+    judge the decision, not the holds).

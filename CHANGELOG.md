@@ -7,6 +7,16 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
 ## [Unreleased]
 
 ### Added
+- **A walking simulator through the spoken path** (`tools/sim/walk_sim.py`, design note 28). The
+  scene hunt judges one poll of the decision; what the wearer hears also passes through time
+  (a block confirmed on a second scan, holds, the speech gate). Here the wearer walks in at
+  walking pace, every LiDAR scan (~23 a second) decided on by `walk_policy.decide` and
+  `simple_guidance.guidance` on the scene's clock, the radar at its 6 frames a second, and
+  each spoken sentence is listed with how far off the thing was. 15 scenes (posts, a 5 cm
+  pole, walls, corridors, panes, empty corridors, open floor); checked: a block spoken by
+  3 ft, never "Walk straight" within 4 ft, no glass sentence without glass, no block with
+  nothing on the line; `--stop` stands at the block (no chatter, no flipped way out),
+  `--noise`, `--pace`, and `--turn-on` as `walk_replay`. In `./run_tests.sh --full`.
 - **A full-resolution camera switch, off** (`SHAPPE_CAMERA_FULL_RES=1`, `CAMERA_FULL_RES`): the
   sensor's whole 4656 x 3496 unbinned, so each camera gives its same 66 deg view at 2328 x 1748,
   4x the pixels. Expected: ~4-5 pictures a second against 15.7 (Arducam gives that mode ~9,
@@ -48,6 +58,16 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   Nothing said changes.
 
 ### Fixed
+- **"Blocked by glass" as soon as a wall's** (design note 28). Walking in at 1.2 m/s
+  (`walk_sim`), a pane already named ("Glass ahead" from 10.8 ft) was "Blocked by glass" only
+  at 3.1 ft, a wall at 3.8: a block the laser measures is confirmed on its second scan, one
+  only the radar hears waited `SIMPLE_ALERT_CONFIRM_S` (0.2 s) on top of a radar frame's age.
+  A pane already held as glass that comes within the block now blocks at once (its range
+  changed, not what is there): 3.8 ft. One first heard inside the block still waits 0.2 s. In
+  a 2.4 m corridor, 3.3 ft: there the walls echo from the pane's range from ~5.7 ft in and it
+  is found again only nearer than them (Known limits); with `GLASS_CLOSING_SPEAK`, 3.8 ft
+  there too, and in a 3 m hall named from 9.6 ft instead of 3.6, with no false alarm in any
+  scene over 4 seeds of range noise (evidence for the walk that is to check it).
 - **No turn into a wall or post under 2 ft off** (design note 27). Found by a sweep of
   passages 0.4-2.4 m wide and the scene hunt. (1) A wall brushing the path on one side with
   the other side near too said "Turn" away from it whatever the room that way: in a passage

@@ -89,7 +89,9 @@ tests/                  Unit tests, hardware-free (./run_tests.sh)
 tools/sim/              Desk simulators: the real code on synthetic sensor data
   scene_hunt.py           Random scenes and their mirror images against the safety rules
   walk_sim.py             Walking in at walking pace through the spoken path (holds, the
-                          speech gate): what is said, and how far off; a block in time
+                          speech gate): what is said, and how far off; a block in time.
+                          --follow: rooms walked through doing what is said;
+                          --faults: a sensor failing on the way in
   glass_sim.py            Glass doors, panes beside walls, corridors and posts: is the pane
                           named, and only the pane? Then grids of doors met 10-50 deg off and
                           with someone standing by them, walked in from 8 ft

@@ -50,6 +50,7 @@ from app.config import (
     GLASS_CLOSING_FRAC,
     GLASS_CLOSING_MIN_MPS,
     GLASS_CLOSING_FIT_MM,
+    GLASS_BESIDE_ALIKE_S,
     HEADING_NOMINAL_SPEED_MPS,
     HEADING_STATE_STALE_S,
     WALK_GLASS_GAP_FT,
@@ -351,6 +352,44 @@ def _near_echo_steady(radar_state: Dict[str, Any], echo_ft: Optional[float] = No
     if len(since) < 4:
         return False
     return sum(since) / len(since) >= GLASS_NEAR_STEADY_FRAC
+
+
+def pane_heard_alike_lately(
+    echo_mm: float, radar_state: Optional[Dict[str, Any]] = None
+) -> bool:
+    """Did both front boards hear an echo alike (GLASS_SAME_ECHO_MM), where one now at
+    `echo_mm` would have been walking toward it (as far as _WALK_MM_S farther), in a front
+    radar frame of the last GLASS_BESIDE_ALIKE_S before `radar_state`'s? Then an echo only one
+    board hears now is that pane, straight ahead, and the other board missed this frame: not
+    glass beside (simple_guidance.glass_beside, 2026-11-19). From the frames
+    _near_echo_steady records: only those still in _near_frames (as _closing_echo), and aged
+    from this radar frame, not the newest recorded, so a history that stopped, or one left
+    from another clock, is not "lately"."""
+    sec = ((radar_state or {}).get("sectors") or {}).get("front") or {}
+    now = sec.get("last_update")
+    with _near_lock:
+        frames = [(t, _board_peaks.get(t) or {}) for t, _p in _near_frames]
+    if not isinstance(now, (int, float)):
+        if not frames:
+            return False
+        now = frames[-1][0]
+    for stamp, boards in reversed(frames):
+        age = now - stamp
+        if age < 0.0:
+            continue  # recorded after this frame: another clock's
+        if age > GLASS_BESIDE_ALIKE_S:
+            break
+        if len(boards) < 2:
+            continue
+        first, *rest = boards.values()
+        lo = echo_mm - GLASS_SAME_ECHO_MM
+        hi = echo_mm + _WALK_MM_S * age + GLASS_SAME_ECHO_MM
+        for e in first:
+            if lo <= e <= hi and all(
+                any(abs(x - e) <= GLASS_SAME_ECHO_MM for x in other) for other in rest
+            ):
+                return True
+    return False
 
 
 _WALK_MM_S = 1500.0  # a brisk walking pace: how far a pane's echo can move per second
@@ -1065,13 +1104,16 @@ def _side_walls_mm(
     return out
 
 
-def _on_side_wall(a: float, d: float, side_lat: Dict[bool, float]) -> bool:
-    """Is the laser return (bearing a, range d) on a side wall _side_walls_mm found?"""
+def _on_side_wall(
+    a: float, d: float, side_lat: Dict[bool, float], min_deg: float = 30.0
+) -> bool:
+    """Is the laser return (bearing a, range d), `min_deg` or more off ahead, on a side wall
+    _side_walls_mm found?"""
     signed = (float(a) + 180.0) % 360.0 - 180.0
     lat = side_lat.get(signed > 0)
     return (
         lat is not None
-        and 30.0 <= abs(signed) <= 150.0
+        and min_deg <= abs(signed) <= 150.0
         and abs(d * math.sin(math.radians(abs(signed))) - lat) <= _SIDE_WALL_TOL_MM
     )
 
@@ -1177,8 +1219,14 @@ def _door_in_wall_ft(
         float(m.group(1)) for m in (_BOARD_KEY.match(str(k)) for k in boards) if m
     ]
 
+    # From 25 deg off ahead (2026-11-19): in a 1 m corridor the left wall, half in the blind
+    # arc, is not found as a side wall, its returns read as facing ahead-left, and one return
+    # of the right wall at 29.9 deg, just short of _on_side_wall's 30, as facing ahead-right:
+    # a "wall" fitted through them (_door_on_line) made the walls' own echo a glass door
+    # ("Blocked by glass, turn around" walking out of a 1 m dead end, walk_sim --follow with
+    # radar ghosts). Here only: in _laser_explains (_wall_too_far) 25 lost real panes.
     def on_side_wall(a: float, d: float) -> bool:
-        return _on_side_wall(a, d, side_lat)
+        return _on_side_wall(a, d, side_lat, min_deg=25.0)
 
     def side_wall_echo(e: float) -> bool:
         return _side_wall_echo(angles, dists, side_lat, e, board_bearings)

@@ -1712,6 +1712,273 @@ class RadarClosingEchoTests(unittest.TestCase):
         self.assertIn("closing at", raw["closing_reason"])
 
 
+class PaneAheadNotBesideOnAMissedFrameTests(unittest.TestCase):
+    """2026-11-19, tools/sim/walk_sim with radar frames dropped (--drop 0.2): walking at a pane
+    across a 3 m hall, one front board missed a frame, the other alone heard the pane, and
+    glass_beside read it as glass BESIDE: the block was dropped ("Glass on right, move left",
+    the front the laser's 39 ft), the side flipped with the board that missed, and "Walk
+    straight" stood to 1 ft. Both boards heard it alike a moment before, where it was as the
+    wearer walked toward it: a pane ahead (walk_policy.pane_heard_alike_lately)."""
+
+    def setUp(self):
+        walk_policy._near_frames.clear()
+        walk_policy._board_peaks.clear()
+
+    tearDown = setUp
+
+    @staticmethod
+    def _frame(echoes, stamp):
+        from tools.sim import glass_sim as gs
+
+        rs = gs.radar_state(echoes)
+        for row in rs["sectors"].values():
+            row["last_update"] = stamp
+        rs["sectors"]["front"]["peaks_mm"] = sorted(
+            e for k in ("deg030", "deg330") for e in rs["sectors"][k]["peaks_mm"]
+        )
+        walk_policy._near_echo_steady(rs)  # recorded, as read_direction records each frame
+        return rs
+
+    def test_a_pane_ahead_one_board_missing_a_frame(self):
+        self._frame({"deg330": [1560.0, 1680.0], "deg030": [1565.0, 1690.0]}, 1000.0)
+        now = self._frame({"deg330": None, "deg030": [1360.0, 1690.0]}, 1000.17)
+        self.assertIsNone(sg.glass_beside(now))  # was "right"
+
+    def test_glass_beside_is_still_beside(self):
+        for k in range(4):  # only the right board ever hears it; the left hears nothing
+            now = self._frame({"deg330": None, "deg030": [1300.0]}, 1000.0 + k / 6.0)
+        self.assertEqual(sg.glass_beside(now), "right")
+
+    def test_not_from_long_ago(self):
+        self._frame({"deg330": [1560.0], "deg030": [1565.0]}, 1000.0)
+        now = self._frame({"deg330": None, "deg030": [1300.0]}, 1001.5)  # past GLASS_BESIDE_ALIKE_S
+        self.assertEqual(sg.glass_beside(now), "right")
+
+    def test_not_from_frames_of_another_clock(self):
+        # Frames left in _board_peaks from a run on a later clock, _near_frames cleared: not
+        # "lately" for this one (review: walk_sim and the tests clear _near_frames alone).
+        self._frame({"deg330": [1330.0], "deg030": [1335.0]}, 2000.0)
+        walk_policy._near_frames.clear()
+        now = self._frame({"deg330": None, "deg030": [1300.0]}, 1000.0)
+        self.assertEqual(sg.glass_beside(now), "right")
+
+    def test_not_from_a_history_that_stopped(self):
+        # Aged from THIS radar frame, not the newest recorded (review).
+        self._frame({"deg330": [1330.0], "deg030": [1335.0]}, 1000.0)
+        from tools.sim import glass_sim as gs
+
+        now = gs.radar_state({"deg330": None, "deg030": [1300.0]})
+        for row in now["sectors"].values():
+            row["last_update"] = 1005.0  # not recorded
+        self.assertEqual(sg.glass_beside(now), "right")
+
+    def test_walking_in_with_frames_missed(self):
+        from tools.sim import walk_sim as ws
+
+        name = "glass across a 3 m hall"
+        i = list(ws.SCENES).index(name)  # as the command line runs it
+        ticks = ws.walk(ws.SCENES[name], noise_mm=10, seed=2, ghosts=0.5, drop=0.2,
+                        t0=1000.0 + 100.0 * i)
+        self.assertEqual(ws.judge(name, ws.SCENES[name], ticks, False), [])  # was no block
+
+
+class CorridorWallsNotAGlassDoorTests(unittest.TestCase):
+    """2026-11-19, walk_sim --follow with a noisy radar (ghosts 0.5, frames dropped 0.2, range
+    noise): walking out of a 1 m dead end, "Stop, no clear way", then "Blocked by glass, turn
+    around", back to the dead end. The left wall, half in the blind arc, was not found as a
+    side wall; its returns read as facing ahead-left, one right-wall return at 29.9 deg as
+    facing ahead-right, a wall was fitted through them, and the walls' own echo was a glass
+    door (_door_in_wall_ft). Its own side-wall check now starts at 25 deg."""
+
+    def test_walking_out_of_a_1_m_dead_end_with_a_noisy_radar(self):
+        from tools.sim import walk_sim as ws
+
+        name = "dead end, 1.0 m corridor"
+        i = list(ws.ROOMS).index(name)  # as the command line runs it
+        ticks = ws.follow(ws.ROOMS[name], noise_mm=10, seed=1, ghosts=0.5, drop=0.2,
+                          t0=1000.0 + 100.0 * i)
+        self.assertEqual(ws.judge_follow(ws.ROOMS[name], ticks), [])
+        said = {text for *_r, text, spoken, _c in ticks if spoken}
+        self.assertFalse(said & set(sg.BLOCKED_GLASS_ANY + (sg.GLASS_AHEAD,)), said)
+
+    def test_from_25_deg_in_the_door_rule_only(self):
+        # In _laser_explains (_wall_too_far) 25 deg lost real panes in the scene hunt.
+        side = {True: 500.0}
+        a = 29.9
+        d = 500.0 / math.sin(math.radians(a))
+        self.assertFalse(walk_policy._on_side_wall(a, d, side))
+        self.assertTrue(walk_policy._on_side_wall(a, d, side, min_deg=25.0))
+
+
+class PeopleComingWalkedTests(unittest.TestCase):
+    """2026-11-19, walk_sim --follow with people walking straight on, the trackers run as on the
+    device: the LiDAR mover warnings (LIDAR_MOVERS_SPEAK, not yet spoken) get the wearer past
+    someone coming head-on on open floor and someone crossing; nobody standing still is ever
+    called moving, spoken or "would say". Evidence for the walk that is to turn them on."""
+
+    def _walk(self, name, on=True):
+        from tools.field.walk_replay import turned_on
+        from tools.sim import walk_sim as ws
+
+        shadows = []
+        with turned_on(["movers"] if on else []):
+            ticks = ws.follow(ws.ROOMS[name], shadows=shadows)
+        return ws.judge_follow(ws.ROOMS[name], ticks, shadows), ticks
+
+    def test_past_someone_coming_with_the_warnings_on(self):
+        for name in ("someone coming head-on, open floor", "someone crossing from the left"):
+            with self.subTest(name):
+                self.assertEqual(self._walk(name)[0], [])
+
+    def test_nobody_standing_is_called_moving(self):
+        for on in (False, True):
+            with self.subTest(on=on):
+                self.assertEqual(self._walk("someone standing ahead", on)[0], [])
+
+
+class CorridorMiddleNoPingPongTests(unittest.TestCase):
+    """2026-11-19, walk_sim --follow --veer: down the middle of a 2.4 m corridor both walls lie
+    at ~3.9 ft, inside SIMPLE_WALL_NEAR_FT; a few cm off made one "near", "Near left wall, move
+    right", and the step past the middle the other: "move right / move left" every 2 s, and
+    the drift (heading) sentence never said. Both walls in the band: "move" only with the near
+    one SIMPLE_WALL_NEAR_OFFSET_FT nearer, or nearer than SIMPLE_WALL_NEAR_ANYWAY_FT. And near
+    a wall while still heading into it: the turn away, not the step."""
+
+    @staticmethod
+    def _say(**scene):
+        from tools.sim import scene_hunt as sh
+
+        sg.reset()
+        room = {"left": None, "right": None, "ahead": None, "glass": None, "posts": []}
+        return sh.decide({**room, **scene})[1]["instruction"]
+
+    def test_about_the_middle_of_a_corridor(self):
+        self.assertEqual(self._say(left=1222, right=1180), sg.WALK_STRAIGHT)  # seed 12 #1497
+
+    def test_a_step_off_the_middle_is_still_said(self):
+        self.assertEqual(self._say(left=600, right=1800), sg.NEAR_LEFT)
+
+    def test_a_wall_this_close_is_said_whatever_the_other_side(self):
+        # seed 13 #741: the right wall 0.40 m off, posts at the left
+        said = self._say(right=397, posts=[(704, -886, 234), (2400, -592, 76)])
+        self.assertEqual(said, sg.NEAR_RIGHT)
+
+    def test_near_and_heading_into_it_is_the_turn(self):
+        self.assertEqual(sg._sentence(False, False, False, False, None, drift="left",
+                                      close="left"), sg.DRIFT_LEFT)
+        self.assertEqual(sg._sentence(False, False, False, False, None, close="left"),
+                         sg.NEAR_LEFT)
+
+    def test_near_then_heading_into_it_is_said_at_once(self):
+        # Near the right wall, said; seconds later heading into it: the turn away is news,
+        # not a change to settle 2 s (it was; "Wall ahead" came first, then a block).
+        gate = sg._Gate()
+        self.assertTrue(gate.admit(sg.NEAR_RIGHT, 100.0, episode=1)[0])
+        self.assertTrue(gate.admit(sg.DRIFT_RIGHT, 105.0, episode=1)[0])
+
+    def test_veering_down_a_3_m_corridor(self):
+        from tools.sim import walk_sim as ws
+
+        room = ws.ROOMS["long 3 m corridor"]
+        for veer in (3.0, -3.0):
+            with self.subTest(veer=veer):
+                ticks = ws.follow(room, veer_dps=veer)
+                self.assertEqual(ws.judge_follow(room, ticks), [])
+                said = [text for *_r, text, spoken, _c in ticks if spoken]
+                self.assertFalse(set(said) & set(sg.BLOCKED_WALL_ANY), said)
+
+    def test_veering_down_a_2_4_m_corridor(self):
+        from tools.sim import walk_sim as ws
+
+        room = ws.ROOMS["long 2.4 m corridor"]
+        ticks = ws.follow(room, veer_dps=-3.0)
+        self.assertEqual(ws.judge_follow(room, ticks), [])
+        said = [text for *_r, text, spoken, _c in ticks if spoken]
+        flips = sum(1 for a, b in zip(said, said[1:]) if {a, b} == {sg.NEAR_LEFT, sg.NEAR_RIGHT})
+        self.assertEqual(flips, 0, said)
+
+
+class SensorFaultsWalkedTests(unittest.TestCase):
+    """2026-11-19, walk_sim --faults: a sensor failing on the way in. No "Walk straight" off a
+    LiDAR that stopped; a 2 s stall told ("Guidance stopped, use your cane"), the front
+    radar's loss told ("Glass sensor off"); back inside the block, the block said at once; a
+    stall while turning around at a dead end leaves no stale way out after it. Each rule was
+    seen to fail with its notice held back."""
+
+    def test_the_fault_scenes(self):
+        from tools.sim import walk_sim as ws
+
+        for i, (name, (scene, faults)) in enumerate(ws.FAULT_SCENES.items()):
+            with self.subTest(name):
+                ticks = ws.walk(scene, faults=faults, t0=1000.0 + 100.0 * i)
+                self.assertEqual(ws.judge_faults(scene, faults, ticks), [])
+
+    def test_a_stall_while_turning_around(self):
+        from tools.sim import walk_sim as ws
+
+        room = ws.ROOMS["dead end, 1.8 m corridor"]
+        ticks = ws.follow(room, faults=[("lidar", 3.4, 5.0)])
+        self.assertEqual(ws.judge_follow(room, ticks), [])
+        said = [text for *_r, text, spoken, _c in ticks if spoken]
+        self.assertFalse({sg.BLOCKED_WALL_TURN["left"], sg.BLOCKED_WALL_TURN["right"]} & set(said))
+
+
+class NewWayOutOffAHoldTests(unittest.TestCase):
+    """2026-11-18, tools/sim/walk_sim --follow (the wearer doing what is said): at a dead end,
+    "Blocked by wall, turn around"; turning, the wearer faced the side wall and the way out
+    became "turn right", said once the turn was done, facing the open corridor, with only the
+    block's release hold keeping it. They turned into the wall, and back to the dead end. A
+    block's new way out is now said only while this poll still measures the block, as its
+    repeat already was (2026-11-09)."""
+
+    def test_not_said_off_a_releasing_hold(self):
+        gate = sg._Gate()
+        around, right = sg.BLOCKED_WALL_TURN["around"], sg.BLOCKED_WALL_TURN["right"]
+        self.assertTrue(gate.admit(around, 100.0, episode=1)[0])
+        for k in range(1, 41):  # 4 s, past SIMPLE_SETTLE_S
+            said, _seq, why = gate.admit(right, 100.0 + 0.1 * k, episode=1, evidence=False)
+            self.assertFalse(said, why)
+        self.assertIn("no longer measured", why)
+
+    def test_a_closed_side_is_still_said_at_once(self):
+        # Told "turn right", someone stepped into the right: its correction is news whatever
+        # holds the block (2026-11-09), and the guard above does not hold it (review).
+        gate = sg._Gate()
+        right, left = sg.BLOCKED_WALL_TURN["right"], sg.BLOCKED_WALL_TURN["left"]
+        self.assertTrue(gate.admit(right, 100.0, episode=1)[0])
+        said = [gate.admit(left, 100.0 + 0.1 * k, episode=1, closed=True, evidence=False)
+                for k in range(1, 11)]
+        self.assertTrue(any(ok for ok, _seq, _why in said), said)
+
+    def test_only_a_changed_way_out(self):
+        # The same way out, the block renamed: not this guard's (review).
+        gate = sg._Gate()
+        wall, glass = sg.BLOCKED_WALL_TURN["right"], sg.BLOCKED_GLASS_TURN["right"]
+        self.assertTrue(gate.admit(wall, 100.0, episode=1)[0])
+        whys = [gate.admit(glass, 100.0 + 0.1 * k, episode=1, evidence=False)[2]
+                for k in range(1, 41)]
+        self.assertFalse(any("new way out" in why for why in whys), whys)
+
+    def test_said_while_measured(self):
+        gate = sg._Gate()
+        around, right = sg.BLOCKED_WALL_TURN["around"], sg.BLOCKED_WALL_TURN["right"]
+        self.assertTrue(gate.admit(around, 100.0, episode=1)[0])
+        said = [gate.admit(right, 100.0 + 0.1 * k, episode=1)[0] for k in range(1, 41)]
+        self.assertTrue(any(said))  # once settled
+
+    def test_the_dead_end_walked_out_of(self):
+        from tools.sim import walk_sim as ws
+
+        room = ws.ROOMS["dead end, 1.8 m corridor"]
+        for wait in (None, 3.0):
+            with self.subTest(wait=wait):
+                ticks = ws.follow(room, wait_s=wait)
+                self.assertEqual(ws.judge_follow(room, ticks), [])
+                said = [text for *_r, text, spoken, _c in ticks if spoken]
+                self.assertNotIn(sg.BLOCKED_WALL_TURN["right"], said)
+                self.assertNotIn(sg.BLOCKED_WALL_TURN["left"], said)
+
+
 class StatusNoticeCutTests(unittest.TestCase):
     """2026-11-10: a block waited out a status notice's airtime ("Power low", "Glass sensor
     off": ~1.1 s, ~1.4 m at walking pace). Now a block cuts into it, as into any guidance

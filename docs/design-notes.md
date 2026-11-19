@@ -656,3 +656,186 @@ Kept because each one explains why the code is the way it is.
     mm radar range noise on 4 seeds, the closing rule off and on, at 0.8 and 1.6 m/s, and
     standing at the block. The glass, route and movers simulators give the same results (they
     judge the decision, not the holds).
+
+29. **The wearer doing what is said (2026-11-18).** Note 28's walks go straight in. Whether
+    the guide gets someone OUT needs them to act on it: `walk_sim --follow` walks rooms (walls
+    and panes as segments at any angle, posts; the radar as scene_hunt's, the first surface
+    on each ray across the beam, each surface's nearest) and the wearer, REACT_S (0.5 s)
+    after a sentence, turns a quarter on "turn left/right" (90 deg/s), a half on "turn
+    around", steps 0.3 m on "move left/right", 15-20 deg on "turn slightly", stands on
+    "Stop"; "Walk straight" ends a turn or a wait; a turn said again the way they are already
+    turning is the same turn; with `--wait`, after a turn they wait for "Walk straight", 3 s
+    at most. Rules: nothing walked into (0.25 m from the middle), the room's way out reached
+    in 25 s, no third change of turning side, no "Stop, no clear way" with a way. Found: at
+    a 1.8 m dead end, "turn around"; at 67 deg into the turn the front was the side wall
+    (still blocked) and the way out became "turn right", held by the speech gate's settle
+    (`SIMPLE_SETTLE_S`, a way out changing within an episode) and said at 6.4 s, the turn
+    done, facing the open corridor, the front clear since 5.8 s and only the block's
+    `SIMPLE_CLEAR_CONFIRM_S` release keeping it. The wearer turned right into the side wall,
+    was told "turn right" again, faced the dead end, and walked 2 m into it with the block
+    held, unchanged, the whole time, so nothing new was said. The gate already would not
+    REPEAT a block off a releasing hold (2026-11-09) nor say one after an outage; now a
+    block's new way out within the episode is held the same way (`evidence`, the poll's own
+    reading). Both wearers now turn around and walk out. Three rooms fail by known limits,
+    named in the tool: the glass door closing a 1.8 m corridor is named at ~2.5 ft and walked
+    into within the reaction (with `GLASS_CLOSING_SPEAK`, blocked at 3.9 ft and walked out
+    of); an open 0.9 m doorway reads as a glass door, and the wearer is turned away; and a
+    corridor turning LEFT is "turn around": the left board hears the way on's near wall at
+    its beam's back edge (~1.1 m), which the blind laser cannot show off the left's line as
+    it does on the right, so the left reads 3.7 ft, under the 4.8 ft floor (Known limits;
+    the side cameras clear change nothing). All the same with 10 mm range noise on 2 seeds,
+    both wearers. The straight walks, the scene hunt and glass_sim are unchanged (the gate
+    is not in them).
+
+30. **A noisier radar in the walks; a pane ahead with a board missing a frame (2026-11-19).**
+    `walk_sim --ghosts P --drop P`: a double-bounce ghost at twice a wall echo's range (as
+    the scene hunt), and a board hearing nothing in a frame (as glass_sim's walk). Ghosts alone
+    break nothing. Dropped frames do, on glass in a hall or corridor: in 8 runs (range noise,
+    ghosts 0.5, drops 0.1-0.2, 4 seeds) 5 were late (1.2-2.9 ft) or never blocked, and the
+    code before note 28 as many or worse. Traced: one front board missed a frame and the
+    other alone heard the pane straight ahead. `simple_guidance.glass_beside` reads an echo
+    from ONE board, the other live and silent, as glass to that side (right for a glass wall
+    beside open space), and with beside the walk policy's block is dropped, the front taken
+    as the laser's (39 ft, through the pane). The side flipped with whichever board missed,
+    so not even "Glass on right, move left" was confirmed, and "Walk straight" stood to 1 ft.
+    The mistakes are not alike: a pane ahead read as beside is walked into; one beside read
+    as ahead is a moment's needless warning. So beside now also needs the two boards NOT to
+    have heard it alike in the last `GLASS_BESIDE_ALIKE_S`: `walk_policy.pane_heard_alike_lately`
+    looks through the front frames `_near_echo_steady` records per board (`_board_peaks`) for
+    one where every board heard an echo within `GLASS_SAME_ECHO_MM` of each other, at the
+    echo's range now or as far farther as a brisk walk (1.5 m/s) closes it since. A glass wall
+    beside open space never is (the other board hears nothing), nor, walking, a glass side
+    wall beside a solid one (its echo does not close). 0.6 s missed one run where the left
+    board missed four frames in a row; 1 s: 7 of 8 pass, the eighth a 2.4 m corridor's pane
+    blocked at 2.6 ft, where the walk policy itself first measured it (the narrow-passage
+    limit, a frame lost). After a turn, a pane that was ahead stays ahead up to 1 s: the safe
+    side. Rooms (`--follow`) stressed alike: one run of four, a 1 m dead end, said "Stop" and
+    then "Blocked by glass, turn around" walking out: the boards' ghosts of their own side
+    walls (~1.1 m, heard alike) taken for a glass door by `_door_in_wall_ft`'s facing and depth
+    tests (its ghost check is not what fails); the code before the same; ghosts or drops alone,
+    no. Recorded in Known limits, not changed. 4,500 hunt scenes (seeds 1, 12 and 7, ghosts in
+    two), glass_sim, the route and movers simulators: unchanged.
+
+31. **A 1 m corridor's walls read as a glass door (2026-11-19).** Note 30's one stressed room
+    failure, traced on the captured scans: `_door_in_wall_ft` returned the side walls' own
+    echo (~0.6 m, heard alike by both front boards), not the radar ghosts at ~1.1 m (its
+    ghost check holds). In a 1 m corridor the left wall shows to the laser only from 45 to 70
+    deg off ahead (the blind arc), ~318 mm of it, under `_SIDE_WALL_MIN_SPAN_MM`, so
+    `_side_walls_mm` does not find it; its returns at 41-45 deg read as a surface facing
+    ahead-left. One return of the right wall (found) at 29.9 deg and ~995 mm, at the edge of
+    the echo's match, fell short of `_on_side_wall`'s 30 deg and read as facing ahead-right;
+    `_door_on_line` fitted a tilted wall through both sides, `in_wall` set the walls' own echo
+    free of the "corridor's wall" check, and it was a door. Tried, and not kept: finding side
+    walls from 30 deg (both sides: 13 more of glass_sim's 720 single scans of a door with
+    someone beside it unnamed; the left only: 7, the person's front taken for a left wall,
+    "Walk straight" at 2-2.5 ft); at least 3 facing returns each side of a door (doors met
+    25-45 deg off named 10 of 27, was 17; 28 more single scans unnamed); `_on_side_wall` from
+    25 deg everywhere (through `_laser_explains`' `_wall_too_far`, 13 of 6,000 hunt scenes
+    lost real panes, e.g. one 5.9 ft ahead became "Near right wall"). Kept: from 25 deg only
+    in the door rule's own side-wall check. The captured scans no door; the stressed rooms
+    all as expected on 4 seeds; 6,000 hunt scenes (seeds 1, 12 and 7 with ghosts, 13 with the
+    side cameras clear), glass_sim with both door grids scan by scan, the route and movers
+    simulators: unchanged. Not changed: the left wall of a 1 m corridor is still not found
+    as a side wall by the other glass rules.
+
+32. **Review of notes 28-31 (2026-11-19).** A code review of the uncommitted work found, and
+    these were changed: (1) the speech gate's "new way out off a releasing hold" (note 29) came
+    before `closed` was judged, so a side that closed while the hold released (someone stepping
+    into the side given) was not corrected; it now leaves `closed` alone, as it was said at
+    once since 2026-11-09, and holds only a CHANGED way out, not a block renamed with the same
+    one. (2) `pane_heard_alike_lately` (note 30) took the newest frame in `_board_peaks` as
+    now; that store outlives a clear of `_near_frames`, so frames from another clock (the
+    simulators and tests start each scene afresh) or a history that stopped recording counted
+    as lately. It now reads only the frames still in `_near_frames`, as `_closing_echo` does,
+    newest first, aged from the radar frame being judged. (3) walk_sim clears `_board_peaks`
+    between scenes and gives the guidance the same side cameras as the walk policy. Not
+    changed: the review's point that the release hold should freeze a block's way out where it
+    holds it, rather than a third `evidence` check in the gate: a refactor for later. Tests
+    for each fail on the code before. The walks (stressed and clean), rooms and 3,000 hunt
+    scenes: as before.
+
+33. **People coming at the wearer, walked (2026-11-19).** walk_sim's rooms take people walking
+    straight on (`Room(movers=...)`, circles with a velocity: the laser, the radar and the
+    collision see them where they are), and in a room with them each scan runs the trackers as
+    `_publish_scan` does (`heading_tracker`, `lidar_movers`, the Kalman `motion_tracker`), the
+    radar movers as the guidance loop does, and the guidance gets their snapshots and the
+    wearer's motion. The wearer: "..., stop" stands until "Walk straight" (6 s at most);
+    "..., move left/right" steps `ROUTE_STEP_ASIDE_M`. The people never give way (the worst
+    case). As on the device (`LIDAR_MOVERS_SPEAK` False): someone head-on (2.4 m corridor, open
+    floor) or crossing (either side) is walked into: blocked as a post at ~3.5 ft, closing at
+    ~2.4 m/s, inside the reaction; the "would say" is there from ~15-18 ft ("Person coming
+    toward you, move left", "Person approaching from left, stop"). On (`--turn-on movers`):
+    open floor and both crossings get past, on 4 noise seeds and with the waiting wearer; a
+    slower walker ahead is a block and a turn either way; someone standing is never called
+    moving, said or "would say". Not in a corridor 2.0-3.6 m wide: told to move left, the
+    wearer stops and steps; no wall or feature gives the laser their forward motion
+    (`heading_tracker`: "assumed", `HEADING_NOMINAL_SPEED_MPS`), so the tracker still has them
+    walking at 1.2 m/s, the person closing at 1.2 m/s reads as still, the threat ends, and
+    "Near left wall, move right" (0.6 m from it after the step, inside `SIMPLE_WALL_NEAR_FT`)
+    sends them back into the person's way. In the open the same happens unseen: nothing
+    else to say, "Walk straight" from 0.6 m to the side passes. What would mend it, before the
+    warnings are spoken: the guidance telling the tracker the wearer was told to stop or step
+    (own speed 0 until "Walk straight"), or no near-wall step toward a person passing. Not
+    done: it couples the guidance to the tracker, and wants the walk that turns the warnings
+    on. The rooms about a feature not yet spoken (`Room(needs=...)`) are shown, not failed,
+    with it off.
+
+34. **Veering down a corridor (2026-11-19).** `walk_sim --follow --veer DEG_S`: walking, the
+    wearer turns that much a second unawares (drift_sim's 3 deg/s by default there), down
+    1.8, 2.4 and 3 m corridors 46 m long. 1.8 m: "Drifting toward left wall, turn slightly
+    right", the 15 deg turn, "Walk straight", every ~5 s: right. 2.4 m: "Near left wall, move
+    right" / "Near right wall, move left" every 2 s from the first second. Both walls lie at
+    ~3.9 ft, inside `SIMPLE_WALL_NEAR_FT` (4); "near" is one side only (`one(near_sides)`), so a
+    few cm off the middle made one near, and the 0.3 m step past the middle the other. Now,
+    with both walls in the near band (`SIMPLE_WALL_NEAR_FT` + its margin: a corridor up to
+    ~2.7 m), "move" needs the near wall `SIMPLE_WALL_NEAR_OFFSET_FT` (2 ft, ~0.3 m off the middle,
+    a step) nearer than the other, or nearer than `SIMPLE_WALL_NEAR_ANYWAY_FT` (1.5 ft: in the
+    hunt walls 0.40-0.46 m off lost "move" without it). And `_sentence`: near a wall AND
+    drifting into it (converging and closing), the drifting sentence, whose turn mends the
+    heading; "move" alone left it, held and not repeated, and the veer grew until the wall
+    ahead was a block. 2.4 m now walked at +-3 deg/s. Left as it is (Known limits): 3 m at 3
+    deg/s, and every width at 6: the drift is judged at ~9 deg toward the wall, the side wall
+    reaches the walking line at ~12 ("Wall ahead", which outranks it, the drift sentence still
+    in the speech gate's settle), and the block at ~15 deg turns a quarter, into the other
+    wall; the route planner's "Turn slightly ..." would say the right thing, but with it on the
+    walk is the same. The hunt: 25 of 4,500 scenes changed, each "Near ... wall, move ..." to
+    "Walk straight" with both sides walled under 2 ft apart in range; glass, route and movers
+    simulators, the straight walks and the rooms: as before.
+    Then the 3 m corridor (the same day): the drift was judged at ~9 deg, but the gate held
+    "Near right wall" -> "Drifting toward right wall" as a change to settle (`SIMPLE_SETTLE_S`,
+    2 s), "Wall ahead" (the side wall on the walking line within `SIMPLE_WALL_APPROACH_FT`, not
+    alongside: the line meets it, and the rule finds something else on the path) outranked
+    it, and the block followed. The reverse, drifting then near, was already news
+    (`arrived`); so is this now: the turn away said once the voice is free (0.05 s after it
+    comes, was 2.05). 3 m at +-3 deg/s walked, no block. Left: 6 deg/s (Known limits), where
+    the 15 deg turns at the voice's pace do not keep up and the shallow-angle block remains.
+
+35. **A sensor failing on the way in (2026-11-19).** `walk_sim --faults` (and `faults=` on
+    `walk` and `follow`): in a window of the walk the LiDAR publishes nothing (a stall: the
+    state keeps the last scan), or 15% of its returns ("lidar-sparse": a hand over it, a dirty
+    window), or both front radar boards go offline ("radar-front"). Rules (`judge_faults`),
+    each seen to fail with its notice held back: no "Walk straight" off a LiDAR that has
+    stopped; a stall past `SIMPLE_LIDAR_FRESH_S` told ("Guidance stopped, use your cane") by
+    0.5 s after; the front radar's loss told ("Glass sensor off") by `SIMPLE_GLASS_LOSS_CONFIRM_S`
+    + 0.5 s, unless a hazard sentence is standing (the notice is said only where "Walk straight"
+    would be); back inside the block, a block said within 0.5 s. Found, all as designed: a
+    2 s stall walking at a wall is "Guidance stopped" at 2 s and, the scans back with the wall
+    at 3.8 ft, "Blocked by wall, turn right" at once; a 4 s stall on open floor, "Guidance
+    stopped" at 2 s and "Walk straight" 1 s after; sparse scans walking at a wall, "Wall
+    ahead" becomes "Obstacle ahead" (too few returns to fit the wall) and the block comes at
+    3.8 ft; the front radar lost walking at a pane, "Glass sensor off" 3 s on (the pane then
+    unseen: the notice is the designed mitigation); lost 2 s and back, the pane blocked 0.2 s
+    after, at 3.1 ft. A 1.6 s stall while turning around at a dead end, the wearer eager or
+    waiting: no stale way out after it (the gate's after-the-outage rule). Clean and with
+    ghosts, drops and range noise: all as expected. No change to the guidance.
+    Review of this (the same day): (1) the corridor mute judged the other side by its HELD
+    wall (`side_walls(holding=True)`, extended past where it was last seen), so walking out
+    into an opening a wall that had ended could mute "Near left wall"; it now takes the wall
+    as seen (`walls`), within the near band: a corridor is two walls (10 of the hunt's 25
+    changed scenes, posts and not a wall on the far side, have their "Near ... wall" back).
+    (2) Could near -> drift as news, with drift -> near already news, let a drift reading
+    flickering at its threshold trade the two back to back? Walked parallel to a wall 0.4-0.9 m
+    off, in 1.8-3 m corridors, with range noise: no trade in any run; drifting needs the wall
+    converging, and noise does not make a parallel wall converge. (A guard on the near
+    sentence's standing time was tried and dropped: the near sentence's own airtime, ~2.2 s,
+    is longer than the settle, so it never acted.)

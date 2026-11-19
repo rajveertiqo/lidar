@@ -16,7 +16,17 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   pole, walls, corridors, panes, empty corridors, open floor); checked: a block spoken by
   3 ft, never "Walk straight" within 4 ft, no glass sentence without glass, no block with
   nothing on the line; `--stop` stands at the block (no chatter, no flipped way out),
-  `--noise`, `--pace`, and `--turn-on` as `walk_replay`. In `./run_tests.sh --full`.
+  `--noise`, `--ghosts`, `--drop` (radar frames heard empty), `--pace`, and `--turn-on` as
+  `walk_replay`. `--follow`: rooms (dead ends, corners,
+  a T junction, walls, a pane, a post, a doorway) the wearer walks through doing what is
+  said (a quarter turn on "turn left", a step on "move right", ...; `--wait`: after a turn,
+  waiting for "Walk straight"): nothing walked into, the way out reached, no back-and-forth.
+  Three rooms fail by known limits and say so (design note 29). People walking straight on
+  (head-on, crossing, slower ahead, standing), the mover trackers run as on the device: a
+  room about a feature not yet spoken (the mover warnings) is shown, not failed, unless turned
+  on (design note 33). `--veer`: the wearer turns unawares, down 1.8-3 m corridors (note 34).
+  `--faults`: the LiDAR stalling or sparse, the front radar lost, on the way in (note 35).
+  In `./run_tests.sh --full`.
 - **A full-resolution camera switch, off** (`SHAPPE_CAMERA_FULL_RES=1`, `CAMERA_FULL_RES`): the
   sensor's whole 4656 x 3496 unbinned, so each camera gives its same 66 deg view at 2328 x 1748,
   4x the pixels. Expected: ~4-5 pictures a second against 15.7 (Arducam gives that mode ~9,
@@ -58,6 +68,46 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   Nothing said changes.
 
 ### Fixed
+- **No "move left / move right" ping-pong down a corridor** (design note 34). Down the middle
+  of a 2.4 m corridor both walls lie at ~3.9 ft, inside the 4 ft near-wall band: a few cm off
+  made one wall "near" ("Near left wall, move right"), and the step past the middle the other,
+  every 2 s (`walk_sim --follow --veer 3`). With both walls in the band, "move" now needs the
+  near one 2 ft nearer (`SIMPLE_WALL_NEAR_OFFSET_FT`), or under 1.5 ft away
+  (`SIMPLE_WALL_NEAR_ANYWAY_FT`). And near a wall while still heading into it, the drifting
+  sentence ("..., turn slightly right") is said, not the step: the step left the heading to
+  grow until the wall ahead was a block. And "Near right wall" then "Drifting toward right
+  wall" is news, said once the voice is free, not after the 2 s settle (it lost to "Wall
+  ahead", then a block, a quarter turn into the other wall). Veering 3 deg/s, the 1.8, 2.4 and
+  3 m corridors are walked; 25 of 4,500 hunt scenes changed, each a "move" off the middle of a
+  corridor to "Walk straight".
+- **A 1 m corridor's own walls are not a glass door** (design note 31). With a noisy radar
+  (`walk_sim --follow --ghosts 0.5 --drop 0.2 --noise 10`), walking out of a 1 m dead end said
+  "Stop, no clear way" and "Blocked by glass, turn around", back to the dead end. The left
+  wall, half in the blind arc, is too short in view to be found as a side wall; its returns
+  read as a surface facing ahead-left, one right-wall return at 29.9 deg (just short of the
+  side-wall check's 30) as facing ahead-right, a wall with a door in it was fitted through
+  them, and the walls' own echo (~0.6 m) became the pane. The glass-door rule's own side-wall
+  check now starts at 25 deg. The stressed rooms: all as expected on 4 seeds (was 3 of 4);
+  6,000 hunt scenes, glass_sim with both door grids scan by scan, and the route and movers
+  simulators: unchanged.
+- **A pane ahead is not "glass beside" when one radar board misses a frame** (design note 30).
+  With radar frames dropped (`walk_sim --drop 0.2`), walking at a pane across a 3 m hall, one
+  front board missed a frame and the other alone heard the pane: that reads as glass to one
+  side, so the block was dropped ("Glass on right, move left", the front the laser's 39 ft
+  through the pane), the side flipped with the board that missed, nothing was confirmed, and
+  "Walk straight" stood to 1 ft. Now glass is beside only if the two boards did not hear it
+  alike in the last `GLASS_BESIDE_ALIKE_S` (1 s), where it was as the wearer walked in
+  (`walk_policy.pane_heard_alike_lately`). Stressed (range noise, ghosts 50%, frames dropped
+  10-20%, 4 seeds): 7 of 8 runs pass, was 3; the one left blocks at 2.6 ft in a 2.4 m
+  corridor, the narrow-passage limit and a lost frame. 4,500 hunt scenes, the glass, route
+  and movers simulators: unchanged.
+- **No new way out off a block that is releasing** (design note 29). At a dead end, "Blocked
+  by wall, turn around"; turning, the wearer faced the side wall and the way out became
+  "turn right", said once the turn was done, facing the open corridor, with only the block's
+  1 s release keeping it. Doing what was said, they turned into the wall and back to the
+  dead end, and walked into it (`walk_sim --follow`). A block's new way out is now said only
+  while the poll still measures the block, as its repeat already was (2026-11-09): "turn
+  around", then "Walk straight" and out.
 - **"Blocked by glass" as soon as a wall's** (design note 28). Walking in at 1.2 m/s
   (`walk_sim`), a pane already named ("Glass ahead" from 10.8 ft) was "Blocked by glass" only
   at 3.1 ft, a wall at 3.8: a block the laser measures is confirmed on its second scan, one

@@ -206,8 +206,7 @@ if CORS_ORIGINS:
 
 
 class _LimitRequestBody:
-    """413 for a request body over SERVER_MAX_BODY_BYTES, declared or streamed (chunked),
-    before it is parsed (2026-10-23). WebSocket messages: uvicorn's ws_max_size."""
+    """413 for a request body over SERVER_MAX_BODY_BYTES, declared or streamed (chunked), before it is parsed (2026-10-23). WebSocket messages: uvicorn's ws_max_size."""
 
     def __init__(self, app):
         self.app = app

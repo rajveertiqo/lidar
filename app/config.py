@@ -1051,7 +1051,21 @@ SIMPLE_DRIFT_JUMP_MM = 300.0
 SIMPLE_WALL_NEAR_FT = 4.0  # "Near left wall, move right" inside this (was 1.5, decided 2026-10-01)
 SIMPLE_WALL_NEAR_MARGIN_FT = 0.5
 SIMPLE_MOVE_ROOM_FT = 2.0
+# Both side walls within the near band (SIMPLE_WALL_NEAR_FT + its margin: a corridor up to
+# ~2.7 m): "Near left wall, move right" only with the left this much nearer than the right
+# (~0.3 m off the middle, a step's worth). Down the middle of a 2.4 m corridor both walls lie
+# at ~3.9 ft, a few cm off made one "near", and the step past the middle the other: "move
+# right / move left" every 2 s (2026-11-19, walk_sim --follow --veer).
+SIMPLE_WALL_NEAR_OFFSET_FT = 2.0
+# ...unless the near wall is this close: then it is said whatever the other side (shoulder to
+# wall ~0.2 m; the scene hunt had walls 0.40-0.46 m off lose "move" without it).
+SIMPLE_WALL_NEAR_ANYWAY_FT = 1.5
 SIMPLE_GLASS_BESIDE_FT = 4.0  # "Glass on left, move right": glass only one front board hears, inside this (decided 2026-10-01)
+# ...but not when both front boards heard it alike in their frames of this long ago, where
+# it would have been walking toward it: a pane ahead, the other board missing a frame
+# (walk_policy.pane_heard_alike_lately, 2026-11-19: read as beside, the block was dropped and
+# "Walk straight" stood to 1 ft, in tools/sim/walk_sim with radar frames dropped).
+GLASS_BESIDE_ALIKE_S = 1.0
 SIMPLE_SIDE_WALL_EXTEND_MM = 600.0
 SIMPLE_SIDE_WALL_HOLD_SPAN_MM = 400.0
 

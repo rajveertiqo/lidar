@@ -342,6 +342,17 @@ class _Gate:
             NEAR_LEFT,
             NEAR_RIGHT,
         )
+        # And near a wall, now heading into it (2026-11-19, walk_sim --veer): "Near right wall,
+        # move left", then the veer turned the wearer toward it; its "Drifting toward right
+        # wall, turn slightly left" waited the 2 s settle, "Wall ahead" came first, and a block
+        # a quarter turn. The turn away is the news.
+        # (Review: could a drift reading flickering at its threshold trade the two back to back?
+        # Walking parallel to a wall 0.4-0.9 m off with range noise, no: drifting needs the
+        # wall converging, which noise does not make a parallel one; design note 34.)
+        arrived = arrived or (self._spoken, text) in (
+            (NEAR_LEFT, DRIFT_LEFT),
+            (NEAR_RIGHT, DRIFT_RIGHT),
+        )
         # A camera vehicle or a LiDAR mover coming at the user is news, and so is its passing.
         vehicle_news = text in _APPROACHING and self._spoken not in _APPROACHING
         after_vehicle = (
@@ -414,6 +425,23 @@ class _Gate:
         # away during a stall, and "Blocked by glass, turn right" came on an open path).
         if self._spoken == SENSORS_OFFLINE and _is_block(text) and not evidence:
             return False, self._seq, "after the outage — the block is not measured now"
+        # Nor a block's NEW way out, as its repeat above, off a hold that is releasing
+        # (2026-11-18, walk_sim following what is said): told "turn around" at a dead end, the
+        # wearer turning faced the side wall, the way out became "turn right", and it was said
+        # once the turn was done, facing the open corridor; they turned into the wall. Only a
+        # changed way out, and not one whose side given has CLOSED (`closed`): that is said
+        # at once, as it was (2026-11-09: someone stepped into the side the wearer was told).
+        if (
+            _is_block(text)
+            and not evidence
+            and not closed
+            and self._has_spoken
+            and _is_block(self._spoken)
+            and _way_out(text) != _way_out(self._spoken)
+            and episode is not None
+            and episode == self._episode
+        ):
+            return False, self._seq, "new way out — the block is no longer measured"
         held = now - self._pending_since
         need = SIMPLE_CLEAR_SAY_CONFIRM_S if level == 0 else SIMPLE_CONFIRM_S
         # One approach warning becoming another (review, 2026-11-06): until then only a

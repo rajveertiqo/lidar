@@ -31,6 +31,10 @@ if [ "$FULL" = 1 ]; then
     done
     echo "== tools.sim.ground_hazard_sim (the ToF: hazards on the ground, walls)"
     "$PY" -m tools.sim.ground_hazard_sim 2>&1 | grep -v '^\[ok\]' | tail -8
+    echo "== tools.sim.walk_sim --faults (a sensor failing on the way in)"
+    "$PY" -m tools.sim.walk_sim --faults 2>&1 | tail -1
+    echo "== tools.sim.walk_sim --follow (the wearer doing what is said)"
+    "$PY" -m tools.sim.walk_sim --follow 2>&1 | grep -E '^(FAIL|limit)|room' || true
     echo "== scene hunt (mirror)"
     "$PY" -m tools.sim.scene_hunt mirror -n 300 || true
     echo "== scene hunt (rules)"

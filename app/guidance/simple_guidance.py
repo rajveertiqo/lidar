@@ -64,6 +64,8 @@ from app.config import (
     SIMPLE_SIDE_WALL_EXTEND_MM,
     SIMPLE_SIDE_WALL_HOLD_SPAN_MM,
     SIMPLE_WALL_NEAR_FT,
+    SIMPLE_WALL_NEAR_OFFSET_FT,
+    SIMPLE_WALL_NEAR_ANYWAY_FT,
     SIMPLE_WALL_NEAR_MARGIN_FT,
     SIMPLE_MOVE_ROOM_FT,
     SIMPLE_GLASS_BESIDE_FT,
@@ -716,7 +718,14 @@ def glass_beside(radar_state: Optional[Dict[str, Any]]) -> Optional[str]:
     if (left is None) == (right is None):
         return None
     # Nearer than RADAR_CONE_TRUST_MM the pane is inside the walking corridor, whichever board heard it.
-    if (left if left is not None else right) * MM_PER_FT <= RADAR_CONE_TRUST_MM:
+    heard_mm = (left if left is not None else right) * MM_PER_FT
+    if heard_mm <= RADAR_CONE_TRUST_MM:
+        return None
+    # Both boards heard it alike a moment ago, where it was as the wearer walked toward it: a
+    # pane ahead, and the other board missed this frame (2026-11-19).
+    from app.perception.walk_policy import pane_heard_alike_lately
+
+    if pane_heard_alike_lately(heard_mm, radar_state):
         return None
     return "left" if left is not None else "right"
 
@@ -1884,6 +1893,12 @@ def _sentence(
     if obstacle:
         return OBSTACLE_AHEAD
     # (Glass beside is said above, before steers: never "move" toward it — 2026-10-22.)
+    # Near a wall AND still heading into it: the turn away mends the heading, which a step
+    # does not (2026-11-19, walk_sim --veer: in a 3 m corridor "Near left wall, move right",
+    # held and not repeated, kept "Drifting ... turn slightly right" back while the veer grew
+    # to 12 deg, and the wall ahead was a block, a quarter turn into the other wall).
+    if close and drift == close:
+        return DRIFT_LEFT if drift == "left" else DRIFT_RIGHT
     if close:
         return NEAR_LEFT if close == "left" else NEAR_RIGHT
     if drift:
@@ -2087,6 +2102,20 @@ def decide(
             close_band = [brushed]
     else:
         close = one(near_sides - boxed)
+        # A corridor the wearer is about in the middle of: both walls in the band, the near
+        # one under SIMPLE_WALL_NEAR_OFFSET_FT nearer. No step: it goes past the middle, and
+        # the other wall is "near" (2026-11-19, ping-pong in a 2.4 m corridor).
+        # The other wall as seen now, not held past where it was last seen (review: walking out
+        # into an opening, a wall that had ended muted "Near left wall" for the hold's length).
+        if close:
+            other = walls.get("right" if close == "left" else "left")
+            if (
+                other is not None
+                and other["ft"] <= SIMPLE_WALL_NEAR_FT + SIMPLE_WALL_NEAR_MARGIN_FT
+                and other["ft"] - walls[close]["ft"] < SIMPLE_WALL_NEAR_OFFSET_FT
+                and walls[close]["ft"] > SIMPLE_WALL_NEAR_ANYWAY_FT
+            ):
+                close = None
         close_band = (
             sorted(band_sides)
             if len(band_sides) == 1 and not band_sides & boxed

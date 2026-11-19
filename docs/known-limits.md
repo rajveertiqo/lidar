@@ -60,6 +60,41 @@
   5-11 false "Glass ahead" in 1,500 crowded scenes: almost all these, and a post almost hidden
   behind a nearer one or standing inside a wall, whose last sliver the laser sees only
   edge-on (a hunt artefact as much as a limit: its radar lists every post apart).
+  Walking up to a 0.9 m doorway in a wall, with no door in it, it is "Glass ahead", then
+  "Blocked by glass, turn right": the wearer is turned away from the doorway
+  (`tools/sim/walk_sim.py --follow`).
+- **A corridor turning LEFT is "turn around"** (in the simulator, 2026-11-18). At the end of a
+  1.8 m corridor that goes on to the left, the left board hears the way on's near wall at
+  the back edge of its beam (~1.1 m, behind-left), and the laser, blind from 170 to 290 deg,
+  cannot show that echo off the left's line, as it does on the right: the left's room reads
+  ~3.7 ft, under the 4.8 ft a turn needs from 3.3 ft, and the wearer is sent back down the
+  corridor (`walk_sim --follow`, with the side cameras clear too). The same corner turning
+  right is "Blocked by wall, turn right". Not the radar (checked 2026-11-19): the back-left
+  board hearing the same range as the left one would put the echo between their axes (~240
+  deg, off the left's line), but a plain wall 450 mm to the left reads 450 and 510 mm on the
+  two, alike within `GLASS_SAME_ECHO_MM`, even with the simulator's hard-edged beams; real
+  beams spill past their edge (`GLASS_BOARD_VIEW_MARGIN_DEG`), and alike there is most plain
+  walls: "turn left" into one. What could tell: the left camera's walkable floor, or the LiDAR
+  worn where the left is not blind. Until then "turn around" is the safe mistake.
+- **Someone coming at the wearer is warned of only as an obstacle, late** (in the
+  simulator, 2026-11-19). The LiDAR mover warnings ("Person coming toward you, move left",
+  "... approaching from left, stop") are not yet spoken (`LIDAR_MOVERS_SPEAK`): someone
+  walking head-on, or crossing, is blocked like a post, at ~3.5 ft, closing at ~2.4 m/s,
+  inside the wearer's reaction (`walk_sim --follow`, people who do not give way: the worst
+  case). With them on, the wearer is warned at ~15-18 ft and gets past on open floor and
+  crossing, but not in a corridor up to ~3.6 m wide: stepped aside, the wearer stands, and
+  their own speed, which the laser cannot measure in a bare corridor or open floor
+  (`heading_tracker`), is still assumed 1.2 m/s, so the person seems to stop, the warning
+  ends, and "Near left wall, move right" sends the wearer back into the person's way (or
+  against the wall). The guidance could tell the tracker the wearer was told to stop (design
+  note 33); not done.
+- **A fast steady veer ends in a block** (in the simulator, 2026-11-19). Veering 6 deg/s
+  unawares (3 deg/s is walked, in 1.8-3 m corridors): the drifting sentence comes every ~2.7 s,
+  as fast as the voice repeats it, and a 15 deg turn each time does not keep up; at ~15 deg
+  the side wall on the walking line is "Blocked by wall, turn ...", where a quarter turn faces
+  the other wall (`walk_sim --follow --veer 6`). A wall met that obliquely wants "turn
+  slightly", not a block's turn; the route planner's "would say" is that, but turning it on
+  does not mend the walk. Not changed: it is how a block reads a wall at a shallow angle.
 - **Very close to a wall, the left is not offered.** Facing a flat wall with only the left
   open, "turn left" needs the left camera's fresh picture naming nobody, the laser to see the
   wall ahead stretch out past the left board's echo, and that echo at least 2 ft off: nearer

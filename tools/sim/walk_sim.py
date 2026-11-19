@@ -5,6 +5,10 @@
     venv/bin/python -m tools.sim.walk_sim -k glass -v  # the glass scenes, every tick
     venv/bin/python -m tools.sim.walk_sim --stop       # stop at the first block, stand 4 s
     venv/bin/python -m tools.sim.walk_sim --turn-on glass-closing --noise 10 --seed 3
+    venv/bin/python -m tools.sim.walk_sim --ghosts 0.5 --drop 0.2 --noise 10 --seed 2
+    venv/bin/python -m tools.sim.walk_sim --follow     # rooms, the wearer doing what is said
+    venv/bin/python -m tools.sim.walk_sim --faults     # a sensor failing on the way in
+    venv/bin/python -m tools.sim.walk_sim --follow --wait 3 --side-camera-clear
 
 The scene hunt (tools/sim/scene_hunt) judges one poll of the decision per scene. What the
 wearer hears also passes through time: a block is confirmed on a second scan, sentences are
@@ -20,10 +24,18 @@ within WALK_BLOCK_FT less 1 ft (the wearer's reaction and the voice); "Walk stra
 spoken with it within WALK_BLOCK_FT; no glass sentence where there is no glass; where nothing
 is on the line, no block warning at all; and, with --stop, nothing said more than
 STAND_MAX_SPOKEN times while standing at the block (chatter), and the way out not flipped.
+
+--follow: rooms (walls and panes at any angle, posts: Room) the wearer walks through doing
+what is said, REACT_S after it is said (_action): "turn left/right" a quarter turn, "turn
+around" a half, "move left/right" a 0.3 m step, "turn slightly" 15-20 deg, "Stop" standing;
+with --wait, after a turn they wait for "Walk straight" (at most that long). Checked: nothing
+walked into, the way out of a dead end or a corner reached, no back-and-forth turning, no
+"Stop, no clear way" where there is a way. A room failing by a known limit says so (`limit`).
 (added 2026-11-18)"""
 
 import argparse
 import contextlib
+import math
 import os
 import random
 import sys
@@ -41,6 +53,10 @@ from app.perception import walk_policy as wp  # noqa: E402
 from app.core.shared_state import get_lidar_state, get_radar_state, update_lidar_state  # noqa: E402
 from tools.sim import scene_hunt as sh  # noqa: E402
 from tools.field.walk_replay import FEATURES, turned_on  # noqa: E402
+from app.perception import heading_tracker as ht  # noqa: E402
+from app.perception.lidar_movers import get_movers  # noqa: E402
+from app.perception.motion_tracker import get_motion_tracker  # noqa: E402
+from app.perception.radar_movers import get_radar_movers  # noqa: E402
 
 FT = 304.8
 SCAN_HZ = c.LIDAR_RPM / 60.0  # a guidance tick per scan, as pi_voice runs it
@@ -71,6 +87,50 @@ SCENES = {
 }
 
 
+# name -> (scene, faults): a sensor failing on the way in (--faults; walk's `faults`).
+FAULT_SCENES = {
+    "LiDAR stalls 2 s, walking at a wall": (dict(ahead=START_MM), [("lidar", 2.0, 4.0)]),
+    "LiDAR stalls 4 s on open floor": (dict(), [("lidar", 2.0, 6.0)]),
+    "LiDAR sparse 3 s, walking at a wall": (dict(ahead=START_MM), [("lidar-sparse", 2.0, 5.0)]),
+    "front radar lost, walking at a pane": (dict(glass=START_MM), [("radar-front", 1.0, 99.0)]),
+    "front radar lost 2 s, walking at a pane": (dict(glass=START_MM),
+                                                [("radar-front", 2.0, 4.0)]),
+}
+
+
+def judge_faults(scene, faults, ticks):
+    """The rules broken with a sensor failing, as text: nothing "Walk straight" off a LiDAR
+    that has stopped; a stall past SIMPLE_LIDAR_FRESH_S told ("Guidance stopped"), and the
+    front radar's loss past SIMPLE_GLASS_LOSS_CONFIRM_S ("Glass sensor off", or a hazard
+    standing); once scans come back, a block that is near now said within 0.5 s."""
+    bad = []
+    said = [(t, text) for t, _w, _l, _p, text, sp in ticks if sp]
+    end = ticks[-1][0]
+    for kind, a, b in faults:
+        if kind == "lidar":
+            during = [t for t, text in said if a <= t < b + 0.2 and text == sg.WALK_STRAIGHT]
+            if during:
+                bad.append(f"'Walk straight' {during[0]:.1f}s, the LiDAR stalled")
+            told_by = a + c.SIMPLE_LIDAR_FRESH_S + 0.5
+            if min(b, end) >= told_by and not any(
+                a <= t <= told_by and text == sg.SENSORS_OFFLINE for t, text in said
+            ):
+                bad.append(f"a {b - a:.0f} s stall not told by {told_by:.1f}s")
+            back = [(t, line) for t, _w, line, _p, _x, _s in ticks if t >= b]
+            if back and back[0][1] is not None and back[0][1] < c.WALK_BLOCK_FT * FT:
+                if not any(b <= t <= b + 0.5 and sg._LEVEL.get(text, -1) >= sg._BLOCKED
+                           for t, text in said):
+                    bad.append(f"back at {b:.1f}s inside the block, no block by {b + 0.5:.1f}s")
+        if kind == "radar-front":
+            told_by = a + c.SIMPLE_GLASS_LOSS_CONFIRM_S + 0.5
+            if min(b, end) >= told_by:
+                standing = [text for t, *_r, text, _sp in ticks if t <= told_by][-1]
+                if not any(a <= t <= told_by and text == sg.GLASS_SENSOR_OFF for t, text in said) \
+                        and standing == sg.WALK_STRAIGHT:
+                    bad.append(f"the front radar lost from {a:.1f}s, not told by {told_by:.1f}s")
+    return bad
+
+
 def scene_at(scene, walked):
     """The scene from where the wearer is, `walked` mm along."""
     s = {"left": None, "right": None, "ahead": None, "glass": None, "posts": [], **scene}
@@ -90,14 +150,55 @@ def on_line_mm(s):
     return line, glass
 
 
-def publish(s, scan_index, now, radar, rnd, noise_mm, previous=None):
-    """One LiDAR scan (and, with `radar`, one frame of every board) of scene `s`, stamped
-    `now`, as scene_hunt.publish does but numbered (a block is confirmed on a second scan)
-    and with the scan before it, as lidar_utils._publish_scan analyses it (a thin pole the
-    laser's beams step over in one scan is held from the last). Returns this scan's points."""
-    raw = [(15, b, sh.laser_range(s, b) + rnd.gauss(0.0, noise_mm))
+def publish(laser, echoes, scan_index, now, radar, rnd, noise_mm, previous=None, drop=0.0,
+            track=False, faults=()):
+    """One LiDAR scan (`laser(bearing)`: mm) and, with `radar`, one frame of every board
+    (`echoes(board bearing)`: its echoes, mm), stamped `now`, as scene_hunt.publish does but
+    numbered (a block is confirmed on a second scan) and with the scan before it, as
+    lidar_utils._publish_scan analyses it (a thin pole the laser's beams step over in one scan
+    is held from the last). `drop`: the chance a board hears nothing in a frame (as
+    glass_sim.walk_toward). `track`: the heading, mover and Kalman trackers follow this scan,
+    as _publish_scan has them do. `faults` now: "lidar", no scan at all (a stall: the state
+    keeps the last one); "lidar-sparse", 15% of its returns; "radar-front", both front boards
+    offline. Returns this scan's points
+    (None in a stall: the next is analysed without one, as past LIDAR_PERSIST_MAX_AGE_S)."""
+    if "lidar" in faults:
+        points = None
+    else:
+        points = _publish_lidar(laser, scan_index, now, rnd, noise_mm, previous, track,
+                                keep=0.15 if "lidar-sparse" in faults else 1.0)
+    if radar:
+        for board in c.RADAR_BEARINGS.values():
+            key = c.radar_board_key(board)
+            if "radar-front" in faults and key in _front_boards():
+                ru._publish(key, {"min_dist": None, "peaks_mm": [], "online": False,
+                                  "degraded": False, "lag_s": None, "phase": "lost",
+                                  "error": "no frames (walk_sim fault)"})
+                continue
+            heard = [] if drop and rnd.random() < drop else echoes(board)
+            peaks = [round(p + rnd.gauss(0.0, noise_mm * 2.0), 1) for p in heard]
+            ru._publish(key, {
+                "min_dist": min(peaks) if peaks else None, "peaks_mm": sorted(peaks),
+                "online": True, "degraded": False, "lag_s": 0.0, "phase": "streaming",
+                "error": None})
+    return points
+
+
+def _front_boards():
+    """The boards the front cardinal is made of, as the guidance reads them (review: not
+    deg030 / deg330 by name, which a changed RADAR_BEARINGS would leave online)."""
+    from app.sensors.radar_calibration import cardinal_sources
+
+    return set(cardinal_sources().get("front") or ())
+
+
+def _publish_lidar(laser, scan_index, now, rnd, noise_mm, previous, track, keep=1.0):
+    raw = [(15, b, laser(b) + rnd.gauss(0.0, noise_mm))
            for b in (k * 360.0 / 520 for k in range(520))]
     swept = [a for _q, a, _d in raw]
+    if keep < 1.0:  # "lidar-sparse": most returns lost (a hand over it, a dirty window)
+        lose = random.Random(scan_index)  # its own draws: the seed's noise stays comparable
+        raw = [p for p in raw if lose.random() < keep]
     scan = [p for p in raw if not lu._in_blind_arc(lu.correct_angle(p[1]))]
     points = [(lu.correct_angle(a), d) for _q, a, d in scan]
     update_lidar_state(
@@ -105,33 +206,70 @@ def publish(s, scan_index, now, radar, rnd, noise_mm, previous=None):
         lu.analyze_sectors(points, previous), c.LIDAR_RPM, scan_index,
         lu._mark_unswept(lu.analyze_cones(points, previous), swept),
         captured_at=now, valid_fraction=lu._valid_fraction(points, swept))
-    if radar:
-        for board in c.RADAR_BEARINGS.values():
-            peaks = [round(p + rnd.gauss(0.0, noise_mm * 2.0), 1)
-                     for p in sh.board_echoes(s, board, 0.0, rnd)]
-            ru._publish(c.radar_board_key(board), {
-                "min_dist": min(peaks) if peaks else None, "peaks_mm": sorted(peaks),
-                "online": True, "degraded": False, "lag_s": 0.0, "phase": "streaming",
-                "error": None})
+    if track:
+        lu._update_movers(points, lu._step_heading(points, now), now)
     return points
 
 
-def walk(scene, pace=1.2, stop=False, noise_mm=0.0, seed=0, t0=1000.0):
-    """[(t, walked mm, on-line mm, pane mm, sentence, spoken)] per scan, walking at `pace`
-    m/s until something on the line is 0.3 m off (or 8 s); with `stop`, standing still
-    from the first block warning spoken, for STAND_S."""
-    rnd = random.Random(seed)
+@contextlib.contextmanager
+def _scene_clock(t0, pace):
+    """A fresh guidance state on a clock of the scene's own, from `t0`: yields {"t": now};
+    `pace()` is the walking pace walk_policy reads (None standing or turning)."""
     clock = {"t": t0}
     sg.reset()
     wp._last_measured.clear()
     wp._remember_turn(None, 0.0)
     wp._near_frames.clear()
+    wp._board_peaks.clear()
     lu._self_since.clear()
-    out, walked, stood_at, k, previous = [], 0.0, None, 0, None
+    ht._tracker = ht.HeadingTracker()  # no reset of its own
+    get_movers().reset()
+    get_motion_tracker().reset()
+    get_radar_movers().reset()
     with contextlib.ExitStack() as stack:
         stack.enter_context(mock.patch("time.time", lambda: clock["t"]))
         stack.enter_context(mock.patch("time.monotonic", lambda: clock["t"]))
-        stack.enter_context(mock.patch.object(wp, "_walking_pace", lambda: None if stood_at else pace))
+        stack.enter_context(mock.patch.object(wp, "_walking_pace", pace))
+        yield clock
+
+
+def _tick(laser, echoes, k, now, t0, rnd, noise_mm, previous, cameras=None, drop=0.0,
+          track=False, faults=()):
+    """Scan k (the radar on its own rate), decided on as pi_voice's tick does: (sentence,
+    spoken, this scan's points, a held "would say" of a feature not yet spoken). `cameras`:
+    "clear", the side cameras showing nobody (scene_hunt.clear_cameras), else none. `track`:
+    the moving-thing trackers too, and their snapshots and the wearer's motion to the
+    guidance, as unified_guidance gives them."""
+    radar = k == 0 or int((now - t0) * RADAR_HZ) != int((now - t0 - 1.0 / SCAN_HZ) * RADAR_HZ)
+    previous = publish(laser, echoes, k + 1, now, radar, rnd, noise_mm, previous, drop, track,
+                       faults)
+    lidar, radar_state = get_lidar_state(), get_radar_state()
+    camera = sh.clear_cameras() if cameras == "clear" else {}
+    decision = wp.decide(lidar, radar_state, camera)
+    motion = movers = None
+    if track:
+        motion = ht.get_tracker().state()
+        movers = {**get_movers().snapshot(), "kalman": get_motion_tracker().snapshot()}
+        if c.RADAR_MOVERS_ENABLED:
+            get_radar_movers().update(radar_state, movers.get("blobs"), movers.get("ego"),
+                                      turn_dps=(motion or {}).get("yaw_rate_dps"))
+            movers["radar"] = get_radar_movers().snapshot()
+    got = sg.guidance(decision, lidar, now=now, radar_state=radar_state, camera_state=camera,
+                      motion=motion, movers=movers)
+    shadow = got.get("mover_shadow") or got.get("route_shadow") or None
+    return got.get("instruction"), bool(got.get("speak")), previous, shadow
+
+
+def walk(scene, pace=1.2, stop=False, noise_mm=0.0, seed=0, t0=1000.0, ghosts=0.0, drop=0.0,
+         faults=()):
+    """[(t, walked mm, on-line mm, pane mm, sentence, spoken)] per scan, walking at `pace`
+    m/s until something on the line is 0.3 m off (or 8 s); with `stop`, standing still
+    from the first block warning spoken, for STAND_S. `ghosts`: the chance of a double-bounce
+    ghost per wall echo (scene_hunt.board_echoes); `drop`: of a board hearing nothing.
+    `faults`: (kind, from s, to s) a sensor fails in (publish)."""
+    rnd = random.Random(seed)
+    out, walked, stood_at, k, previous = [], 0.0, None, 0, None
+    with _scene_clock(t0, lambda: None if stood_at else pace) as clock:
         while True:
             now = clock["t"]
             s = scene_at(scene, walked)
@@ -141,12 +279,11 @@ def walk(scene, pace=1.2, stop=False, noise_mm=0.0, seed=0, t0=1000.0):
                 break
             if stood_at is not None and now - stood_at > STAND_S:
                 break
-            radar = int((now - t0) * RADAR_HZ) != int((now - t0 - 1.0 / SCAN_HZ) * RADAR_HZ) or k == 0
-            previous = publish(s, k + 1, now, radar, rnd, noise_mm, previous)
-            lidar, radar_state = get_lidar_state(), get_radar_state()
-            decision = wp.decide(lidar, radar_state, {})
-            got = sg.guidance(decision, lidar, now=now, radar_state=radar_state, camera_state={})
-            text, spoken = got.get("instruction"), bool(got.get("speak"))
+            text, spoken, previous, _shadow = _tick(
+                lambda b, s=s: sh.laser_range(s, b),
+                lambda b, s=s: sh.board_echoes(s, b, ghosts, rnd),
+                k, now, t0, rnd, noise_mm, previous, drop=drop,
+                faults={kind for kind, a, b in faults if a <= now - t0 < b})
             out.append((now - t0, walked, line, pane, text, spoken))
             if stop and stood_at is None and spoken and sg._LEVEL.get(text, -1) >= sg._BLOCKED:
                 stood_at = now
@@ -193,6 +330,328 @@ def judge(name, scene, ticks, stop):
     return bad
 
 
+# ---------------------------------------------------------------- doing what is said
+
+BODY_MM = 250.0  # the wearer's half-width: a surface nearer the middle than this is walked into
+REACT_S = 0.5  # from a sentence spoken to the wearer acting on it
+TURN_DPS = 90.0  # turning on the spot
+STEP_MPS = 0.3  # a step to the side
+FOLLOW_S = 25.0
+STOOD_S = 5.0  # "Stop, no clear way" and nothing else said this long: given up
+HOLD_S = 6.0  # "..., stop" for something coming: stood until "Walk straight", this long at most
+MOVER_STEP_MM = c.ROUTE_STEP_ASIDE_M * 1000.0  # "..., move left": a step that far aside
+FLIPS_MAX = 2  # left, right, left: the third change of side is back and forth
+
+
+class Room:
+    """Walls and panes (x1, y1, x2, y2: the laser looks through a pane, the radar hears it)
+    and round posts (x, y, radius), in the world frame: mm, x ahead of where the wearer
+    starts, y to the right of it, headings clockwise from x. `goal(x, y)`: out of the room's
+    trouble (None: nothing to reach, only nothing to walk into). `limit`: why it is not, a
+    known limit (docs/known-limits.md): reported, not counted as a failure. `movers`: people
+    walking straight on, (x, y, vx, vy, radius), mm and mm/s, where they are at `t` s.
+    `needs`: a feature not yet spoken (walk_replay.FEATURES) the room is about: off, the walk
+    is shown and not counted; on (--turn-on), judged."""
+
+    def __init__(self, walls=(), glass=(), posts=(), goal=None, limit=None, movers=(),
+                 needs=None):
+        self.limit = limit
+        self.needs = needs
+        self.movers = [(f"mover{i}", m) for i, m in enumerate(movers)]
+        self.t = 0.0
+        self.segs = [(f"wall{i}", w, False) for i, w in enumerate(walls)]
+        self.segs += [(f"glass{i}", g, True) for i, g in enumerate(glass)]
+        self.posts = [(f"post{i}", p) for i, p in enumerate(posts)]
+        self.goal = goal
+
+    def circles(self):
+        """The posts, and the movers where they are at `t`."""
+        return self.posts + [(n, (x + vx * self.t, y + vy * self.t, r))
+                             for n, (x, y, vx, vy, r) in self.movers]
+
+    def hits(self, x, y, angle_deg, laser):
+        """(name, range mm) of every surface on the ray from (x, y) at `angle_deg`."""
+        a = math.radians(angle_deg)
+        dx, dy = math.cos(a), math.sin(a)
+        out = []
+        for name, (x1, y1, x2, y2), glass in self.segs:
+            if glass and laser:
+                continue
+            ex, ey = x2 - x1, y2 - y1
+            den = dx * ey - dy * ex
+            if abs(den) < 1e-12:
+                continue
+            qx, qy = x1 - x, y1 - y
+            t = (qx * ey - qy * ex) / den
+            u = (qx * dy - qy * dx) / den
+            if t > 1.0 and 0.0 <= u <= 1.0:
+                out.append((name, t))
+        for name, (px, py, r) in self.circles():
+            qx, qy = px - x, py - y
+            proj = qx * dx + qy * dy
+            d2 = qx * qx + qy * qy - proj * proj
+            if proj > 0 and d2 < r * r:
+                out.append((name, proj - math.sqrt(r * r - d2)))
+        return out
+
+    def laser(self, x, y, heading):
+        return lambda b: min([d for _n, d in self.hits(x, y, heading + b, True)] + [12000.0])
+
+    def echoes(self, x, y, heading, ghosts=0.0, rnd=None):
+        """A board's echoes as scene_hunt.board_echoes makes them: across its beam every 2 deg
+        the first surface on the ray (no hearing through a wall), each surface's nearest; and,
+        with chance `ghosts` each, a double-bounce ghost at twice a wall's range."""
+        half = int(c.RADAR_BEAM_H_DEG / 2)
+
+        def board(bearing):
+            best = {}
+            for off in range(-half, half + 1, 2):
+                hits = self.hits(x, y, heading + bearing + off, False)
+                if hits:
+                    name, d = min(hits, key=lambda h: h[1])
+                    best[name] = min(best.get(name, 1e9), d)
+            peaks = [d for d in best.values() if c.RADAR_START_MM <= d <= c.RADAR_END_MM]
+            if ghosts:
+                peaks += [2.0 * d for n, d in best.items() if n.startswith("wall")
+                          and rnd.random() < ghosts and 2.0 * d <= c.RADAR_END_MM]
+            return sorted(round(d, 1) for d in peaks)
+        return board
+
+    def clearance(self, x, y):
+        """mm from (x, y) to the nearest surface, panes included."""
+        best = 1e9
+        for _n, (x1, y1, x2, y2), _g in self.segs:
+            ex, ey = x2 - x1, y2 - y1
+            n2 = ex * ex + ey * ey
+            u = 0.0 if n2 == 0 else max(0.0, min(1.0, ((x - x1) * ex + (y - y1) * ey) / n2))
+            best = min(best, math.hypot(x - (x1 + u * ex), y - (y1 + u * ey)))
+        for _n, (px, py, r) in self.circles():
+            best = min(best, math.hypot(x - px, y - py) - r)
+        return best
+
+
+def _corridor(half, end, glass_end=False, back=-6000.0):
+    walls = [(back, -half, end, -half), (back, half, end, half)]
+    across = [(end, -half, end, half)]
+    return (walls + across, []) if not glass_end else (walls, across)
+
+
+def _corner(side, limit=None):
+    """A 1.8 m corridor turning 90 deg to `side` (-1 left, +1 right) at 4.1-5.9 m."""
+    k = float(side)
+    walls = [(-3000, -900 * k, 5900, -900 * k), (5900, 7000 * k, 5900, -900 * k),
+             (-3000, 900 * k, 4100, 900 * k), (4100, 7000 * k, 4100, 900 * k)]
+    return Room(walls=walls, goal=lambda x, y: y * k > 3000, limit=limit)
+
+
+def _long(half):
+    return [(-6000, -half, 40000, -half), (-6000, half, 40000, half)]
+
+
+_dead = _corridor(900, 5000)
+_dead_narrow = _corridor(500, 5000)
+_glass_door = _corridor(900, 5000, glass_end=True)
+ROOMS = {
+    "dead end, 1.8 m corridor": Room(walls=_dead[0], goal=lambda x, y: x < -2000),
+    "dead end, 1.0 m corridor": Room(walls=_dead_narrow[0], goal=lambda x, y: x < -2000),
+    "glass door closing a 1.8 m corridor": Room(
+        walls=_glass_door[0], glass=_glass_door[1], goal=lambda x, y: x < -2000,
+        limit="a pane across a narrow passage is named only nearer than its walls "
+              "(passes with --turn-on glass-closing)"),
+    "corner, the way on to the left": _corner(
+        -1, limit="a corner turning left: the left's room is the radar's alone, and it hears "
+                  "the way on's near wall at its beam's edge"),
+    "corner, the way on to the right": _corner(+1),
+    "T junction": Room(
+        walls=[(-3000, -900, 4100, -900), (-3000, 900, 4100, 900), (4100, -7000, 4100, -900),
+               (4100, 900, 4100, 7000), (5900, -7000, 5900, 7000)],
+        goal=lambda x, y: abs(y) > 3000),
+    "wall across open floor": Room(walls=[(4000, -8000, 4000, 8000)],
+                                   goal=lambda x, y: abs(y) > 3000),
+    "pane across open floor": Room(glass=[(4000, -8000, 4000, 8000)],
+                                   goal=lambda x, y: abs(y) > 3000),
+    "post on open floor": Room(posts=[(4000, 0, 150)], goal=lambda x, y: x > 5000 or abs(y) > 2500),
+    # People walking straight on, whatever the wearer does (the worst case: real people give
+    # way too). r 0.22 m, as movers_sim's.
+    # Off (as on the device), each is walked into: blocked as a post, at ~3.5 ft, closing
+    # 2.4 m/s, inside the reaction (design note 33).
+    "someone coming head-on, 2.4 m corridor": Room(
+        walls=[(-6000, -1200, 20000, -1200), (-6000, 1200, 20000, 1200)],
+        movers=[(9000, 0, -1200, 0, 220)], goal=lambda x, y: x > 9000, needs="movers",
+        limit="stepped aside, the wearer stands; their own speed, unmeasured in a bare "
+              "corridor, is assumed 1.2 m/s, the person looks still, and 'Near left wall, "
+              "move right' sends them back into the person's way"),
+    "someone coming head-on, open floor": Room(
+        movers=[(9000, 0, -1200, 0, 220)], goal=lambda x, y: x > 9000, needs="movers"),
+    "someone crossing from the left": Room(
+        movers=[(4500, -4500, 0, 1200, 220)], goal=lambda x, y: x > 7000, needs="movers"),
+    "someone crossing from the right": Room(
+        movers=[(4500, 4500, 0, -1200, 220)], goal=lambda x, y: x > 7000, needs="movers"),
+    "someone walking slowly ahead": Room(movers=[(3000, 0, 500, 0, 220)]),
+    "someone standing ahead": Room(
+        movers=[(4000, 0, 0, 0, 220)], goal=lambda x, y: x > 5000 or abs(y) > 2500),
+    "0.9 m doorway straight ahead": Room(
+        walls=[(4000, -8000, 4000, -450), (4000, 450, 4000, 8000)], goal=lambda x, y: x > 5500,
+        limit="an open doorway reads as a glass door (its frames echo alike)"),
+    # Long corridors, to walk down veering (--veer): told in time, and not nagged.
+    "long 1.8 m corridor": Room(walls=_long(900), goal=lambda x, y: x > 20000),
+    "long 2.4 m corridor": Room(walls=_long(1200), goal=lambda x, y: x > 20000),
+    "long 3 m corridor": Room(walls=_long(1500), goal=lambda x, y: x > 20000),
+}
+
+
+def _action(text):
+    """What the wearer does on hearing `text`: ("turn", deg, + right), ("step", mm, + right),
+    ("stop",), ("walk",) (walk on, ending a turn), or None (an approach: carry on)."""
+    way = sg._WAY_OUT.get(text) or {sg.TURN_LEFT: "left", sg.TURN_RIGHT: "right",
+                                     sg.TURN_AROUND: "around"}.get(text)
+    if way:
+        return ("turn", {"left": -90.0, "right": 90.0, "around": 180.0}[way])
+    if text == sg.STOP_NO_WAY:
+        return ("stop",)
+    mover = sg._MOVER_INFO.get(text)
+    if mover:  # "..., stop": until "Walk straight"; "..., move left": a step aside
+        if mover["move"] is None:
+            return ("hold", None)
+        return ("step", MOVER_STEP_MM * (1.0 if mover["move"] == "right" else -1.0))
+    if text == sg.WALK_STRAIGHT:
+        return ("walk",)
+    step = {sg.NEAR_LEFT: 300.0, sg.NEAR_RIGHT: -300.0, sg.GLASS_LEFT: 300.0, sg.GLASS_RIGHT: -300.0}
+    if text in step:
+        return ("step", step[text])
+    slight = {sg.DRIFT_LEFT: 15.0, sg.DRIFT_RIGHT: -15.0,
+              sg.TURN_SLIGHT_LEFT: -20.0, sg.TURN_SLIGHT_RIGHT: 20.0}
+    if text in slight:
+        return ("turn", slight[text])
+    return None
+
+
+def follow(room, pace=1.2, seconds=FOLLOW_S, noise_mm=0.0, seed=0, t0=1000.0, wait_s=None,
+           cameras=None, ghosts=0.0, drop=0.0, shadows=None, veer_dps=0.0, faults=()):
+    """Walk the wearer through `room` from (0, 0) facing x, doing what is said REACT_S after
+    it is said (_action): [(t, x, y, heading, sentence, spoken, clearance mm)] per scan,
+    until the goal, a collision, STOOD_S stood at "Stop", or `seconds`. A turn said again
+    the way the wearer is already turning is the same turn. `wait_s`: after a turn, stand
+    until "Walk straight" (or anything else to do) is said, this long at most; None: walk on
+    at once. A room with movers runs the trackers (_tick `track`); `shadows`, a list, gets
+    (t, sentence) of each "would say" of a feature not yet spoken. `veer_dps`: walking, the
+    wearer turns this much a second without knowing (+ right), as drift_sim's. `faults`: as
+    walk's."""
+    rnd = random.Random(seed)
+    track = bool(room.movers)
+    x = y = heading = 0.0
+    doing, pending, stood_at = ("walk",), None, None
+    out, k, previous = [], 0, None
+    dt = 1.0 / SCAN_HZ
+
+    def after_turn(now):
+        return ("wait", now) if wait_s else ("walk",)
+
+    with _scene_clock(t0, lambda: pace if doing[0] == "walk" else None) as clock:
+        while clock["t"] - t0 <= seconds:
+            now = clock["t"]
+            room.t = now - t0
+            text, spoken, previous, shadow = _tick(
+                room.laser(x, y, heading), room.echoes(x, y, heading, ghosts, rnd), k, now, t0,
+                rnd, noise_mm, previous, cameras, drop, track,
+                {kind for kind, a, b in faults if a <= now - t0 < b})
+            if shadow and shadows is not None:
+                shadows.append((now - t0, shadow))
+            clear = room.clearance(x, y)
+            out.append((now - t0, x, y, heading, text, spoken, clear))
+            if clear < BODY_MM or (room.goal and room.goal(x, y)):
+                break
+            if stood_at is not None and now - stood_at > STOOD_S:
+                break
+            if spoken and _action(text) is not None:
+                pending = (now + REACT_S, _action(text))
+            if pending and now >= pending[0]:
+                act, pending = pending[1], None
+                same_turn = (act[0] == "turn" and doing[0] == "turn"
+                             and (act[1] > 0) == (doing[1] > 0))
+                if not same_turn:
+                    doing = ("hold", now) if act[0] == "hold" else act
+                    stood_at = now if act[0] == "stop" else None
+            if doing[0] == "wait" and now - doing[1] >= (wait_s or 0.0):
+                doing = ("walk",)
+            if doing[0] == "hold" and now - doing[1] >= HOLD_S:
+                doing = ("walk",)
+            if doing[0] == "walk":
+                heading += veer_dps * dt
+                r = math.radians(heading)
+                x, y = x + pace * 1000.0 * dt * math.cos(r), y + pace * 1000.0 * dt * math.sin(r)
+            elif doing[0] == "turn":
+                d = math.copysign(min(abs(doing[1]), TURN_DPS * dt), doing[1])
+                heading += d
+                doing = ("turn", doing[1] - d) if abs(doing[1] - d) > 1e-6 else after_turn(now)
+            elif doing[0] == "step":
+                d = math.copysign(min(abs(doing[1]), STEP_MPS * 1000.0 * dt), doing[1])
+                r = math.radians(heading + 90.0)
+                x, y = x + d * math.cos(r), y + d * math.sin(r)
+                doing = ("step", doing[1] - d) if abs(doing[1] - d) > 1e-6 else ("walk",)
+            k += 1
+            clock["t"] = now + dt
+    return out
+
+
+def judge_follow(room, ticks, shadows=()):
+    """The rules broken doing what was said, as text. `shadows`: follow's "would say"s."""
+    bad = []
+    if room.movers and all(vx == 0 and vy == 0 for _n, (_x, _y, vx, vy, _r) in room.movers):
+        called = [text for *_r, text, sp, _c in ticks if sp and text in sg._MOVER_INFO]
+        called += [text for _t, text in shadows if text in sg._MOVER_INFO]
+        if called:
+            bad.append(f"someone standing still called moving: {called[0]!r}")
+    t, x, y, h, *_r, clear = ticks[-1]
+    if clear < BODY_MM:
+        bad.append(f"walked into something at {t:.1f}s, ({x / 1000:.1f}, {y / 1000:.1f}) m")
+    elif room.goal and not room.goal(x, y):
+        bad.append(f"not out after {t:.0f}s: at ({x / 1000:.1f}, {y / 1000:.1f}) m, facing {h % 360:.0f} deg")
+    sides = []
+    for *_r, text, sp, _c in ticks:
+        act = _action(text) if sp else None
+        if act and act[0] == "turn" and abs(act[1]) == 90.0:
+            sides.append("right" if act[1] > 0 else "left")
+    flips = sum(1 for a, b in zip(sides, sides[1:]) if a != b)
+    if flips >= FLIPS_MAX:
+        bad.append(f"turned back and forth: {' '.join(sides)}")
+    if room.goal and any(sp and text == sg.STOP_NO_WAY for *_r, text, sp, _c in ticks):
+        bad.append("said 'Stop, no clear way' where there is a way")
+    return bad
+
+
+def run_follow(args, names):
+    failed = 0
+    for i, (name, room) in enumerate(ROOMS.items()):
+        if args.k not in name:
+            continue
+        shadows = []
+        with turned_on(names):
+            ticks = follow(room, args.pace, noise_mm=args.noise, seed=args.seed,
+                           t0=1000.0 + 100.0 * i, wait_s=args.wait, cameras=args.cameras,
+                           ghosts=args.ghosts, drop=args.drop, shadows=shadows,
+                           veer_dps=args.veer)
+        bad = judge_follow(room, ticks, shadows)
+        off = room.needs and room.needs not in names
+        limit = room.limit if bad and not off else None
+        failed += bool(bad) and not limit and not off
+        tag = "off  " if off and bad else "limit" if limit else "FAIL " if bad else " ok  "
+        print(f"{tag} {name}"
+              + (f"  ({room.needs} not spoken: --turn-on {room.needs})" if off and bad else "")
+              + (f"  ({limit})" if limit else "")
+              + ("  (a known limit, now passing)" if room.limit and not bad and not off else ""))
+        for t, x, y, h, text, sp, clear in ticks:
+            if sp or args.v:
+                print(f"        {t:4.1f}s  ({x / 1000:5.1f},{y / 1000:5.1f}) m {h % 360:4.0f} deg"
+                      f"  {clear / FT:4.1f} ft clear  {'🔊' if sp else '  '} {text}")
+        for t, shadow in shadows:
+            print(f"        {t:4.1f}s  👁 would say: {shadow}")
+        for b in bad:
+            print(f"      ✗ {b}")
+    print(f"\n{failed} room(s) breaking a rule" if failed else "\nall rooms as expected")
+    return failed
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("-k", default="", help="only the scenes whose name contains this")
@@ -200,18 +659,55 @@ def main():
     ap.add_argument("--stop", action="store_true", help="stand at the first block for 4 s")
     ap.add_argument("--noise", type=float, default=0.0, help="laser range noise, mm (1 sigma)")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--ghosts", type=float, default=0.0, metavar="P",
+                    help="the chance of a radar double-bounce ghost per wall echo")
+    ap.add_argument("--drop", type=float, default=0.0, metavar="P",
+                    help="the chance a radar board hears nothing in a frame")
     ap.add_argument("-v", action="store_true", help="every scan, not just what is spoken")
+    ap.add_argument("--faults", action="store_true",
+                    help="walk in with a sensor failing on the way (FAULT_SCENES)")
+    ap.add_argument("--follow", action="store_true",
+                    help="the rooms, the wearer doing what is said (turns, steps, stops)")
+    ap.add_argument("--wait", type=float, default=None, metavar="S",
+                    help="with --follow: after a turn, wait up to S s for 'Walk straight'")
+    ap.add_argument("--veer", type=float, default=0.0, metavar="DEG_S",
+                    help="with --follow: walking, the wearer veers this much a second (+ right)")
+    ap.add_argument("--side-camera-clear", dest="cameras", action="store_const", const="clear",
+                    help="with --follow: the side cameras show nobody there (as scene_hunt)")
     ap.add_argument("--turn-on", action="append", default=[], metavar="FEATURE",
                     choices=sorted(FEATURES) + ["all"],
                     help="walk with a not-yet-spoken feature on (as walk_replay --turn-on)")
     args = ap.parse_args()
     names = sorted(FEATURES) if "all" in args.turn_on else args.turn_on
+    if args.follow:
+        return 1 if run_follow(args, names) else 0
+    if args.faults:
+        failed = 0
+        for i, (name, (scene, faults)) in enumerate(FAULT_SCENES.items()):
+            if args.k not in name:
+                continue
+            with turned_on(names):
+                ticks = walk(scene, args.pace, False, args.noise, args.seed,
+                             t0=1000.0 + 100.0 * i, faults=faults)
+            bad = judge_faults(scene, faults, ticks)
+            failed += bool(bad)
+            print(f"{'FAIL' if bad else ' ok '}  {name}  {faults}")
+            for t, _w, line, pane, text, sp in ticks:
+                if sp or args.v:
+                    near = min([d for d in (line, pane) if d is not None], default=None)
+                    where = f"{near / FT:5.1f} ft" if near is not None else "   -   "
+                    print(f"        {t:4.1f}s  {where}  {'🔊' if sp else '  '} {text}")
+            for b in bad:
+                print(f"      ✗ {b}")
+        print(f"\n{failed} scene(s) breaking a rule" if failed else "\nall scenes as expected")
+        return 1 if failed else 0
     failed = 0
     for i, (name, scene) in enumerate(SCENES.items()):
         if args.k not in name:
             continue
         with turned_on(names):
-            ticks = walk(scene, args.pace, args.stop, args.noise, args.seed, t0=1000.0 + 100.0 * i)
+            ticks = walk(scene, args.pace, args.stop, args.noise, args.seed,
+                         t0=1000.0 + 100.0 * i, ghosts=args.ghosts, drop=args.drop)
         bad = judge(name, scene, ticks, args.stop)
         failed += bool(bad)
         print(f"{'FAIL' if bad else ' ok '}  {name}")

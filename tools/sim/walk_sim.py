@@ -9,6 +9,7 @@
     venv/bin/python -m tools.sim.walk_sim --follow     # rooms, the wearer doing what is said
     venv/bin/python -m tools.sim.walk_sim --faults     # a sensor failing on the way in
     venv/bin/python -m tools.sim.walk_sim --follow --record /tmp/walks   # as recordings
+    venv/bin/python -m tools.sim.walk_sim --follow --turn-on movers --timing  # cost per stage
     venv/bin/python -m tools.sim.walk_sim --follow --wait 3 --side-camera-clear
 
 The scene hunt (tools/sim/scene_hunt) judges one poll of the decision per scene. What the
@@ -709,6 +710,40 @@ def run_follow(args, names):
     return failed
 
 
+@contextlib.contextmanager
+def _timing():
+    """Each guidance stage's cost per call while the walks run, as a table at the end (--timing,
+    2026-11-20): the scan's analysis, walk_policy.decide, simple_guidance.guidance and, in rooms
+    with people, the trackers; not the simulator's own geometry. A guidance tick runs per
+    LiDAR scan, ~23 a second: ~43 ms in all. (The first block of a run imports cv2 for the
+    spatial scan, ~40 ms once: on the device the camera code and the BEV grid have by then.)"""
+    import statistics
+    import time as _t
+
+    cost = {}
+
+    def timed(name, fn):
+        def wrap(*a, **k):
+            t = _t.perf_counter_ns()
+            try:
+                return fn(*a, **k)
+            finally:
+                cost.setdefault(name, []).append((_t.perf_counter_ns() - t) / 1e6)
+        return wrap
+
+    with contextlib.ExitStack() as stack:
+        for mod, attr, name in ((lu, "analyze_sectors", "scan: sectors"), (lu, "analyze_cones", "scan: cones"),
+                                (wp, "decide", "walk_policy.decide"), (sg, "guidance", "sg.guidance"),
+                                (lu, "_update_movers", "trackers")):
+            stack.enter_context(mock.patch.object(mod, attr, timed(name, getattr(mod, attr))))
+        yield
+    q = lambda v, f: sorted(v)[min(len(v) - 1, int(f * len(v)))]  # noqa: E731
+    print(f"\n{'stage':20} {'calls':>7} {'median':>8} {'p95':>8} {'p99':>8} {'max':>8}  ms")
+    for name, v in cost.items():
+        print(f"{name:20} {len(v):7d} {statistics.median(v):8.2f} {q(v, .95):8.2f} "
+              f"{q(v, .99):8.2f} {max(v):8.2f}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("-k", default="", help="only the scenes whose name contains this")
@@ -721,6 +756,8 @@ def main():
     ap.add_argument("--drop", type=float, default=0.0, metavar="P",
                     help="the chance a radar board hears nothing in a frame")
     ap.add_argument("-v", action="store_true", help="every scan, not just what is spoken")
+    ap.add_argument("--timing", action="store_true",
+                    help="each guidance stage's cost per call, as a table at the end")
     ap.add_argument("--record", metavar="DIR",
                     help="write each walk as the device records one (sim-<name>.jsonl.gz), for "
                          "tools/field/walk_replay.py and walk_report.py")
@@ -738,6 +775,13 @@ def main():
                     choices=sorted(FEATURES) + ["all"],
                     help="walk with a not-yet-spoken feature on (as walk_replay --turn-on)")
     args = ap.parse_args()
+    if args.timing:
+        with _timing():
+            return _main(args)
+    return _main(args)
+
+
+def _main(args):
     names = sorted(FEATURES) if "all" in args.turn_on else args.turn_on
     if args.follow:
         return 1 if run_follow(args, names) else 0

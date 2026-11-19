@@ -7,6 +7,11 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
 ## [Unreleased]
 
 ### Added
+- **`walk_sim --timing`**: each guidance stage's cost per call, as a table. On this Pi 5 a tick
+  is ~8-9 ms (scan analysis ~1, `walk_policy.decide` ~4.4, `sg.guidance` ~3.4; p99 ~17, the worst
+  20) of the ~43 ms a 23 Hz scan allows, and no slower than on 2026-11-17. **The battery walk**
+  (`docs/field-testing.md`) gains the live sensor check before setting off and the fixes since
+  2026-11-18 to walk, each with what to hear and what is wrong.
 - **`tools/field/walk_report.py`: a recorded walk, summed up**, for the first walks on the
   device. Sensor gaps (the LiDAR's scan age, the front radar's losses); every sentence, how
   often, and with `--timeline` when and how far off; each block and how far off it was, late

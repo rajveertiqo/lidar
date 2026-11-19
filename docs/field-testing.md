@@ -117,6 +117,10 @@ checked on a real walk.
   to put it through the current code with each such feature turned on in turn. Try it on
   the desk first with a simulated walk: `venv/bin/python -m tools.sim.walk_sim --follow
   --record /tmp/walks`.
+- Before walking, a minute standing still facing a room with walls 1-3 m off: `venv/bin/python
+  tools/device/live_check.py -s 60` (read-only). It gives each radar board's frames a second,
+  missed frames, double-bounce ghosts and jitter, the camera's delay and the LiDAR reader: what
+  the desk simulators assume (`walk_sim --drop`, `--ghosts`, `--noise`). Note the numbers.
 - The earpiece connected, the dashboard open on the tester's phone, the wearer with a cane.
 - Two people, the wearer and the tester just behind with the phone; a third, the helper, for
   the people part.
@@ -136,6 +140,20 @@ sentence. On open floor with nothing ahead, press Nothing now and then.
 
 Each feature needs at least 10 labels of its own and 20 others before it is judged
 (`DECIDE_MIN_TARGET`, `DECIDE_MIN_REST` in `tools/field/label_report.py`).
+
+**The fixes since 2026-11-18, walked** (about 15 minutes, in the same walk). Each was found
+and fixed in the simulator (`tools/sim/walk_sim.py`); this checks them on the real sensors.
+Press **Wrong** at once when you hear what is in the last column. `walk_report.py` checks the
+starred ones by itself.
+
+| Do | You should hear | Wrong (press Wrong) |
+| --- | --- | --- |
+| Walk 20 m down the middle of a 2-2.6 m corridor | "Walk straight"; at most one "Near ... wall" if well off the middle | "Near left wall, move right" and "Near right wall, move left" back and forth * |
+| In the same corridor, walk at a slight angle toward one wall, keep going | "Drifting toward ... wall, turn slightly ...", said again while you still drift in | Nothing until "Wall ahead" or "Blocked by wall, turn ..." |
+| Walk into a dead end, do as told | "Blocked by wall, turn around", then "Walk straight" once you face back | "Turn right" / "Turn left" once you have turned * |
+| Walk at a glass door on open floor or in a wide hall | "Glass ahead" from ~10 ft, "Blocked by glass, ..." at ~4 ft | The block under 3 ft * |
+| Stand in a narrow gap (0.7-0.9 m: a wall and a cupboard) facing a wall | "Turn around" or "Stop, no clear way" | "Turn left/right" toward a side under 2 ft |
+| The helper walks past you in a corridor, both of you walking on | (mover warnings are silent: "would say" in the report) | "Stop, no clear way" after they have passed, the way clear |
 
 **The heading check** (at the start and again at the end)
 

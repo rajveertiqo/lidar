@@ -107,6 +107,9 @@ tools/sim/              Desk simulators: the real code on synthetic sensor data
 tools/field/            For test walks and the data they give
   walk_replay.py          Replays a recording or clip through the CURRENT code: what would it
                           say now? (--turn-on: features not yet spoken)
+  walk_report.py          A recording summed up: sensor gaps, what was said and how far off,
+                          the simulators' checks, tester marks, what the features not yet
+                          spoken would say (--replay: through the current code)
   label_report.py         Scores the code against the testers' "what was really there"
                           labels, and exports them for training (on a laptop)
   walk_logger.py          Guidance + FPS + CPU temperature to CSV during a walk

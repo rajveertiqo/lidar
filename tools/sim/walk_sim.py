@@ -8,6 +8,7 @@
     venv/bin/python -m tools.sim.walk_sim --ghosts 0.5 --drop 0.2 --noise 10 --seed 2
     venv/bin/python -m tools.sim.walk_sim --follow     # rooms, the wearer doing what is said
     venv/bin/python -m tools.sim.walk_sim --faults     # a sensor failing on the way in
+    venv/bin/python -m tools.sim.walk_sim --follow --record /tmp/walks   # as recordings
     venv/bin/python -m tools.sim.walk_sim --follow --wait 3 --side-camera-clear
 
 The scene hunt (tools/sim/scene_hunt) judges one poll of the decision per scene. What the
@@ -233,8 +234,44 @@ def _scene_clock(t0, pace):
         yield clock
 
 
+# The guidance output a recording keeps (unified_guidance._record).
+_RECORDED_OUT = ("instruction", "speak", "cue_seq", "quiet_reason", "rule", "reason",
+                 "mover_shadow", "route_shadow", "wall_shadow", "ground_shadow", "closing_shadow")
+
+
+class Recording:
+    """A walk written as the device's walk recorder writes one (app/core/walk_recorder: a
+    gzipped JSON line per guidance tick, {"t", "mono", "in", "out"}), so tools/field/
+    walk_replay.py and walk_report.py read it as a real walk (2026-11-20)."""
+
+    def __init__(self, path):
+        import gzip
+
+        from app.core.walk_recorder import _plain
+
+        self._plain = _plain
+        self._fh = gzip.open(path, "wt", encoding="utf-8")
+
+    def tick(self, now, inputs, got):
+        import json
+
+        out = {k: got.get(k) for k in _RECORDED_OUT}
+        self._fh.write(json.dumps({"t": now, "mono": now, "in": inputs, "out": out},
+                                  default=self._plain) + "\n")
+
+    def mark(self, now, kind, text="", label="", said=""):
+        import json
+
+        from app.core.walk_recorder import _mark_line
+
+        self._fh.write(json.dumps(_mark_line(now, now, kind, text, label, said)) + "\n")
+
+    def close(self):
+        self._fh.close()
+
+
 def _tick(laser, echoes, k, now, t0, rnd, noise_mm, previous, cameras=None, drop=0.0,
-          track=False, faults=()):
+          track=False, faults=(), record=None):
     """Scan k (the radar on its own rate), decided on as pi_voice's tick does: (sentence,
     spoken, this scan's points, a held "would say" of a feature not yet spoken). `cameras`:
     "clear", the side cameras showing nobody (scene_hunt.clear_cameras), else none. `track`:
@@ -256,17 +293,21 @@ def _tick(laser, echoes, k, now, t0, rnd, noise_mm, previous, cameras=None, drop
             movers["radar"] = get_radar_movers().snapshot()
     got = sg.guidance(decision, lidar, now=now, radar_state=radar_state, camera_state=camera,
                       motion=motion, movers=movers)
+    if record is not None:  # the device's inputs to that call (unified_guidance._record)
+        record.tick(now, {"walk_decision": decision, "lidar": lidar, "radar": radar_state,
+                          "camera": camera, "motion": motion, "movers": movers, "ground": None,
+                          "hold": None, "hold_lidar_absent": False, "at_crossing": False}, got)
     shadow = got.get("mover_shadow") or got.get("route_shadow") or None
     return got.get("instruction"), bool(got.get("speak")), previous, shadow
 
 
 def walk(scene, pace=1.2, stop=False, noise_mm=0.0, seed=0, t0=1000.0, ghosts=0.0, drop=0.0,
-         faults=()):
+         faults=(), record=None):
     """[(t, walked mm, on-line mm, pane mm, sentence, spoken)] per scan, walking at `pace`
     m/s until something on the line is 0.3 m off (or 8 s); with `stop`, standing still
     from the first block warning spoken, for STAND_S. `ghosts`: the chance of a double-bounce
     ghost per wall echo (scene_hunt.board_echoes); `drop`: of a board hearing nothing.
-    `faults`: (kind, from s, to s) a sensor fails in (publish)."""
+    `faults`: (kind, from s, to s) a sensor fails in (publish). `record`: a Recording."""
     rnd = random.Random(seed)
     out, walked, stood_at, k, previous = [], 0.0, None, 0, None
     with _scene_clock(t0, lambda: None if stood_at else pace) as clock:
@@ -283,7 +324,7 @@ def walk(scene, pace=1.2, stop=False, noise_mm=0.0, seed=0, t0=1000.0, ghosts=0.
                 lambda b, s=s: sh.laser_range(s, b),
                 lambda b, s=s: sh.board_echoes(s, b, ghosts, rnd),
                 k, now, t0, rnd, noise_mm, previous, drop=drop,
-                faults={kind for kind, a, b in faults if a <= now - t0 < b})
+                faults={kind for kind, a, b in faults if a <= now - t0 < b}, record=record)
             out.append((now - t0, walked, line, pane, text, spoken))
             if stop and stood_at is None and spoken and sg._LEVEL.get(text, -1) >= sg._BLOCKED:
                 stood_at = now
@@ -524,7 +565,8 @@ def _action(text):
 
 
 def follow(room, pace=1.2, seconds=FOLLOW_S, noise_mm=0.0, seed=0, t0=1000.0, wait_s=None,
-           cameras=None, ghosts=0.0, drop=0.0, shadows=None, veer_dps=0.0, faults=()):
+           cameras=None, ghosts=0.0, drop=0.0, shadows=None, veer_dps=0.0, faults=(),
+           record=None):
     """Walk the wearer through `room` from (0, 0) facing x, doing what is said REACT_S after
     it is said (_action): [(t, x, y, heading, sentence, spoken, clearance mm)] per scan,
     until the goal, a collision, STOOD_S stood at "Stop", or `seconds`. A turn said again
@@ -532,8 +574,8 @@ def follow(room, pace=1.2, seconds=FOLLOW_S, noise_mm=0.0, seed=0, t0=1000.0, wa
     until "Walk straight" (or anything else to do) is said, this long at most; None: walk on
     at once. A room with movers runs the trackers (_tick `track`); `shadows`, a list, gets
     (t, sentence) of each "would say" of a feature not yet spoken. `veer_dps`: walking, the
-    wearer turns this much a second without knowing (+ right), as drift_sim's. `faults`: as
-    walk's."""
+    wearer turns this much a second without knowing (+ right), as drift_sim's. `faults`,
+    `record`: as walk's."""
     rnd = random.Random(seed)
     track = bool(room.movers)
     x = y = heading = 0.0
@@ -551,7 +593,7 @@ def follow(room, pace=1.2, seconds=FOLLOW_S, noise_mm=0.0, seed=0, t0=1000.0, wa
             text, spoken, previous, shadow = _tick(
                 room.laser(x, y, heading), room.echoes(x, y, heading, ghosts, rnd), k, now, t0,
                 rnd, noise_mm, previous, cameras, drop, track,
-                {kind for kind, a, b in faults if a <= now - t0 < b})
+                {kind for kind, a, b in faults if a <= now - t0 < b}, record)
             if shadow and shadows is not None:
                 shadows.append((now - t0, shadow))
             clear = room.clearance(x, y)
@@ -617,17 +659,29 @@ def judge_follow(room, ticks, shadows=()):
     return bad
 
 
+def _recording(args, name):
+    """A Recording of this scene under --record DIR, or None."""
+    if not args.record:
+        return None
+    os.makedirs(args.record, exist_ok=True)
+    slug = "".join(ch if ch.isalnum() else "-" for ch in name).strip("-")
+    return Recording(os.path.join(args.record, f"sim-{slug}.jsonl.gz"))
+
+
 def run_follow(args, names):
     failed = 0
     for i, (name, room) in enumerate(ROOMS.items()):
         if args.k not in name:
             continue
         shadows = []
+        rec = _recording(args, name)
         with turned_on(names):
             ticks = follow(room, args.pace, noise_mm=args.noise, seed=args.seed,
                            t0=1000.0 + 100.0 * i, wait_s=args.wait, cameras=args.cameras,
                            ghosts=args.ghosts, drop=args.drop, shadows=shadows,
-                           veer_dps=args.veer)
+                           veer_dps=args.veer, record=rec)
+        if rec is not None:
+            rec.close()
         bad = judge_follow(room, ticks, shadows)
         off = room.needs and room.needs not in names
         limit = room.limit if bad and not off else None
@@ -661,6 +715,9 @@ def main():
     ap.add_argument("--drop", type=float, default=0.0, metavar="P",
                     help="the chance a radar board hears nothing in a frame")
     ap.add_argument("-v", action="store_true", help="every scan, not just what is spoken")
+    ap.add_argument("--record", metavar="DIR",
+                    help="write each walk as the device records one (sim-<name>.jsonl.gz), for "
+                         "tools/field/walk_replay.py and walk_report.py")
     ap.add_argument("--faults", action="store_true",
                     help="walk in with a sensor failing on the way (FAULT_SCENES)")
     ap.add_argument("--follow", action="store_true",
@@ -683,9 +740,12 @@ def main():
         for i, (name, (scene, faults)) in enumerate(FAULT_SCENES.items()):
             if args.k not in name:
                 continue
+            rec = _recording(args, name)
             with turned_on(names):
                 ticks = walk(scene, args.pace, False, args.noise, args.seed,
-                             t0=1000.0 + 100.0 * i, faults=faults)
+                             t0=1000.0 + 100.0 * i, faults=faults, record=rec)
+            if rec is not None:
+                rec.close()
             bad = judge_faults(scene, faults, ticks)
             failed += bool(bad)
             print(f"{'FAIL' if bad else ' ok '}  {name}  {faults}")
@@ -702,9 +762,12 @@ def main():
     for i, (name, scene) in enumerate(SCENES.items()):
         if args.k not in name:
             continue
+        rec = _recording(args, name)
         with turned_on(names):
             ticks = walk(scene, args.pace, args.stop, args.noise, args.seed,
-                         t0=1000.0 + 100.0 * i, ghosts=args.ghosts, drop=args.drop)
+                         t0=1000.0 + 100.0 * i, ghosts=args.ghosts, drop=args.drop, record=rec)
+        if rec is not None:
+            rec.close()
         bad = judge(name, scene, ticks, args.stop)
         failed += bool(bad)
         print(f"{'FAIL' if bad else ' ok '}  {name}")

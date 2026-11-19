@@ -113,6 +113,12 @@ def replay_ticks(path, recompute_policy=True, turn_on=()):
     sg.reset()
     walk_policy._last_measured.clear()
     walk_policy._remember_turn(None, 0.0)
+    # And the radar frames the glass rules follow over time (_near_frames, _board_peaks): left
+    # from a replay before, a frame not newer than their last was not recorded, and a second
+    # replay of the same walk in one process (walk_report --replay, label_report against a
+    # feature turned on) saw no pane closing (2026-11-20).
+    walk_policy._near_frames.clear()
+    walk_policy._board_peaks.clear()
 
     # walk_policy reads the ToF itself (ground_hazards.snapshot(), while its worker runs): it
     # gets the analysis recorded with each tick, as the device's guidance did. Without it the

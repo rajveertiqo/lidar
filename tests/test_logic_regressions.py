@@ -2156,5 +2156,56 @@ class LiveCheckTests(unittest.TestCase):
         self.assertEqual(st["jitter_mm"], 6.0)
 
 
+class WalkReportTests(unittest.TestCase):
+    """2026-11-20, for the first walks on the device: walk_sim writes its walks as the walk
+    recorder does (Recording), walk_replay reproduces them, and tools/field/walk_report.py sums
+    one up. A second replay of the same walk in one process saw no pane closing (the radar
+    frames of the first were left): replay_ticks now clears them."""
+
+    def _record(self, room_name, path, **kw):
+        from tools.sim import walk_sim as ws
+
+        rec = ws.Recording(path)
+        ticks = ws.follow(ws.ROOMS[room_name], record=rec, **kw)
+        rec.close()
+        return ticks
+
+    def test_a_simulated_walk_replays_exactly(self):
+        import tempfile
+        from tools.field.walk_replay import replay_ticks
+
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "walk.jsonl.gz")
+            self._record("dead end, 1.8 m corridor", path)
+            same = [rec["out"]["instruction"] == got["instruction"]
+                    and bool(rec["out"].get("speak")) == bool(got.get("speak"))
+                    for rec, got in replay_ticks(path) if got is not None]
+        self.assertTrue(same)
+        self.assertTrue(all(same))
+
+    def test_a_feature_turned_on_after_a_replay(self):
+        import tempfile
+        from tools.field import walk_report as wr
+
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "walk.jsonl.gz")
+            self._record("glass door closing a 1.8 m corridor", path)
+            lines = wr.replay_lines(path, ["glass-closing"], 1000.0)
+        self.assertIn("100.0% of ticks said the same", lines[0])
+        self.assertNotIn(" 0 announcement", lines[1])  # was 0: no pane closing seen
+
+    def test_the_checks(self):
+        from tools.field import walk_report as wr
+
+        rows = [(0.0, sg.WALK_STRAIGHT, 3.0, True, "clear"),  # something 3 ft ahead, measured
+                (1.0, sg.BLOCKED_WALL_TURN["left"], 3.5, True, "blocked"),
+                (3.0, sg.BLOCKED_WALL_TURN["right"], 3.5, True, "blocked"),  # flipped in 2 s
+                (10.0, sg.NEAR_LEFT, None, False, "near_wall"),
+                (12.0, sg.NEAR_RIGHT, None, False, "near_wall"),  # ping-pong
+                (13.0, sg.NEAR_RIGHT, None, False, "near_wall")]  # again in 1 s
+        hits = [len(h) for _rule, h in wr.check_lines(rows, 0.0)]
+        self.assertEqual(hits, [1, 1, 1, 1])
+
+
 if __name__ == "__main__":
     unittest.main()

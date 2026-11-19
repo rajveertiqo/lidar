@@ -110,6 +110,13 @@ checked on a real walk.
 
 - Start with the walk recorded: `SHAPPE_RECORD_WALK=1 ./start_lidar.sh`. The labels save their
   clips either way; the recording also lets `walk_replay.py` show the whole walk.
+- After the walk, one summary of it: `venv/bin/python tools/field/walk_report.py
+  logs/walks/walk-*.jsonl.gz` (sensor gaps, what was said and how far off each block was,
+  checks the desk simulators make, each tester mark with what was said before it, and what
+  the features not yet spoken would have said); `--timeline` for every sentence, `--replay`
+  to put it through the current code with each such feature turned on in turn. Try it on
+  the desk first with a simulated walk: `venv/bin/python -m tools.sim.walk_sim --follow
+  --record /tmp/walks`.
 - The earpiece connected, the dashboard open on the tester's phone, the wearer with a cane.
 - Two people, the wearer and the tester just behind with the phone; a third, the helper, for
   the people part.

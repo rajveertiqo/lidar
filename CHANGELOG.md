@@ -7,6 +7,16 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
 ## [Unreleased]
 
 ### Added
+- **`tools/field/walk_report.py`: a recorded walk, summed up**, for the first walks on the
+  device. Sensor gaps (the LiDAR's scan age, the front radar's losses); every sentence, how
+  often, and with `--timeline` when and how far off; each block and how far off it was, late
+  ones flagged; the desk simulators' checks on the real walk ("Walk straight" with something
+  measured within 4 ft, a way out flipped, near-wall ping-pong, quick repeats); each tester
+  mark with what was said before it; what each feature not yet spoken would have said. With
+  `--replay`, through the current code and with each such feature turned on: how many
+  announcements it would change. **`walk_sim --record DIR`** writes the simulator's walks as the
+  device records them, so the replay and the report can be tried at the desk (a simulated walk
+  replays 100% the same).
 - **`tools/device/live_check.py`: what the real sensors do, from the running app** (read-only,
   GET requests only). Per radar board, from its own frames: frames a second, frames missed
   between two that heard something, frames with a double-bounce ghost, and the nearest echo's
@@ -73,6 +83,11 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   Nothing said changes.
 
 ### Fixed
+- **A walk replayed twice in one process** (`walk_replay.replay_ticks`) left the walk policy's
+  radar frames from the first pass, and the second, not newer, recorded none: with
+  `GLASS_CLOSING_SPEAK` turned on it saw no pane closing (a glass door blocked at 3.2 s replayed
+  as never changing). `walk_report --replay` and `label_report` (clips out of time order, or
+  one clip against a feature turned on) were affected. The replay now clears them.
 - **A block is said only while it is measured: one rule in the speech gate** (design note 36).
   Three rules held a block back off the hold that keeps it from flickering off (its repeat,
   after an outage, a new way out); a fourth case fell between them: someone passing in a

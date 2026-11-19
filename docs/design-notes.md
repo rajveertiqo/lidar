@@ -839,3 +839,28 @@ Kept because each one explains why the code is the way it is.
     converging, and noise does not make a parallel wall converge. (A guard on the near
     sentence's standing time was tried and dropped: the near sentence's own airtime, ~2.2 s,
     is longer than the settle, so it never acted.)
+
+36. **Told to stop, and a block only while measured (2026-11-19).** Note 33's corridor failure.
+    (1) The Kalman tracker's own-motion fallback (`motion_tracker._own_step`): odometry, still
+    things, a trusted heading speed, confidently still, else "assumed": the nominal 1.2 m/s.
+    In a bare corridor or open floor the last is all there is, and the wearer, told "Person
+    coming toward you, move left", stops and steps; still "walking" to the tracker, the person
+    closing at 1.2 m/s reads as standing, the threat ends, and the near-wall sentence takes
+    over. Now the guidance tells the tracker what it said (`_tell_tracker` ->
+    `told_still`): a mover or vehicle warning or "Stop, no clear way" has them standing (pace
+    0, "told to stop", a 0.3 m/s doubt for the step) until "Walk straight" or
+    `MOTION_TOLD_STILL_S` (6 s), below every measured source. Not a block's turn: tried, the
+    wearer turns and walks on (often before "Walk straight"), and taken as standing, their
+    own walking made someone standing still look moving ("someone standing ahead" broke,
+    with the warnings on and off). Erring the other way (walking again inside the window) makes
+    something coming look faster: the safe side. (2) With that, the corridor walks met a
+    gate case: someone passing beside, "Stop, no clear way" (blocked, no side room) was held
+    by the block's release hold and said once "Person approaching from right, stop" ended,
+    the person 4 m behind and the way clear. The gate had three rules against a block said off
+    its hold (its repeat; after an outage; a new way out after a block), and this came by the
+    news path after an approach warning, before any of them. Now one rule, before every path:
+    a block, newly or again, only while the poll measures it (`evidence`), but a side given
+    that closed. Head-on in 2.0-3.6 m corridors, 3 seeds and the waiting wearer: 12 of 12
+    past (was 3). Walks, rooms (movers off and on, noise, ghosts and drops, veer), faults, the
+    movers and route simulators: as before. The review's point (note 32) that the hold should
+    not announce is met at the gate; the hold itself is unchanged.

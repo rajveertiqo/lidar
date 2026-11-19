@@ -474,13 +474,10 @@ ROOMS = {
     # People walking straight on, whatever the wearer does (the worst case: real people give
     # way too). r 0.22 m, as movers_sim's.
     # Off (as on the device), each is walked into: blocked as a post, at ~3.5 ft, closing
-    # 2.4 m/s, inside the reaction (design note 33).
+    # 2.4 m/s, inside the reaction (design note 33). On, each is got past (note 36).
     "someone coming head-on, 2.4 m corridor": Room(
         walls=[(-6000, -1200, 20000, -1200), (-6000, 1200, 20000, 1200)],
-        movers=[(9000, 0, -1200, 0, 220)], goal=lambda x, y: x > 9000, needs="movers",
-        limit="stepped aside, the wearer stands; their own speed, unmeasured in a bare "
-              "corridor, is assumed 1.2 m/s, the person looks still, and 'Near left wall, "
-              "move right' sends them back into the person's way"),
+        movers=[(9000, 0, -1200, 0, 220)], goal=lambda x, y: x > 9000, needs="movers"),
     "someone coming head-on, open floor": Room(
         movers=[(9000, 0, -1200, 0, 220)], goal=lambda x, y: x > 9000, needs="movers"),
     "someone crossing from the left": Room(

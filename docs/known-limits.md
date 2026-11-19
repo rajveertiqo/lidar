@@ -81,13 +81,10 @@
   "... approaching from left, stop") are not yet spoken (`LIDAR_MOVERS_SPEAK`): someone
   walking head-on, or crossing, is blocked like a post, at ~3.5 ft, closing at ~2.4 m/s,
   inside the wearer's reaction (`walk_sim --follow`, people who do not give way: the worst
-  case). With them on, the wearer is warned at ~15-18 ft and gets past on open floor and
-  crossing, but not in a corridor up to ~3.6 m wide: stepped aside, the wearer stands, and
-  their own speed, which the laser cannot measure in a bare corridor or open floor
-  (`heading_tracker`), is still assumed 1.2 m/s, so the person seems to stop, the warning
-  ends, and "Near left wall, move right" sends the wearer back into the person's way (or
-  against the wall). The guidance could tell the tracker the wearer was told to stop (design
-  note 33); not done.
+  case). With them on, the wearer is warned at ~15-18 ft and gets past on open floor, crossing
+  either way, and head-on in corridors 2.0-3.6 m wide (design note 36), on noise seeds and
+  with the waiting wearer; nobody standing is called moving. They wait for a walk to check
+  them.
 - **A fast steady veer ends in a block** (in the simulator, 2026-11-19). Veering 6 deg/s
   unawares (3 deg/s is walked, in 1.8-3 m corridors): the drifting sentence comes every ~2.7 s,
   as fast as the voice repeats it, and a 15 deg turn each time does not keep up; at ~15 deg

@@ -3560,6 +3560,8 @@ def guidance(
         if raw["rule"] in ("waiting", "stale"):
             quiet = quiet if (hold and not through_hold) else raw["reason"]
         _tell_cut_status_again(_gate.take_cut_status())
+        if speak and text:
+            _tell_tracker(text, now)
         announced = _gate.counted
         shadow = (
             _shadow.update((raw.get("mover") or {}).get("would_say"), now)
@@ -3774,6 +3776,28 @@ def voice_failed(seq: int, text: str) -> bool:
         return True
     finally:
         _lock.release()
+
+
+def _tell_tracker(text: str, now: float) -> None:
+    """A sentence said that has the wearer stop or step aside ("Stop, no clear way", a vehicle
+    or mover warning), or walk on ("Walk straight"): the Kalman tracker's guess at
+    their own motion where nothing measures it (motion_tracker.told_still, 2026-11-19: told to
+    step aside in a corridor, they were still "walking" to it, and someone coming at them
+    looked still)."""
+    # Not a block's turn: the wearer turns and walks on, often before "Walk straight", and
+    # taken as standing, their own walking made someone standing still look as if moving.
+    still = text in _MOVER_INFO or text in _VEHICLE_APPROACH or text == STOP_NO_WAY
+    if not still and text != WALK_STRAIGHT:
+        return
+    try:
+        from app.config import MOTION_TRACKER_ENABLED
+
+        if MOTION_TRACKER_ENABLED:
+            from app.perception.motion_tracker import get_motion_tracker
+
+            get_motion_tracker().told_still(now, still)
+    except Exception:
+        pass  # a hint to the tracker never costs the sentence
 
 
 def _tell_cut_status_again(text: str) -> None:

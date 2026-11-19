@@ -117,6 +117,8 @@ tools/device/           Run against the real device
   tof_calibrate.py        The ToF-to-camera bench calibration
   hailo_monitor.py        Live NPU utilisation and FPS of the running app
   bev_check.py            Is the BEV grid actually working? --checklist: the physical tests
+  live_check.py           The running app's real radar (frames/s, missed frames, ghosts, jitter),
+                          camera delay and LiDAR reader, read-only: what the simulators assume
   anchor_diversity.py     Can the scan band anchor camera depth? (the Spatial Plan's E2)
 
 docs/                   This documentation

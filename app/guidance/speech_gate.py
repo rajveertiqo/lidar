@@ -310,6 +310,18 @@ class _Gate:
         if text != self._pending:
             self._pending, self._pending_since = text, now
 
+        # A block is said, newly or again, only while this poll still measures it: never off
+        # the hold that keeps it from flickering off as it releases. One rule for what were
+        # three: its repeat (timing review, 2026-11-09: "Blocked by wall, turn right" again,
+        # facing an open path), after an outage (the same day: the wearer turned away during a
+        # stall), a new way out (2026-11-18: "turn around", then "turn right" said once the
+        # turn was done, facing the open corridor), and what fell between them (2026-11-19,
+        # walk_sim, someone passing in a corridor: "Stop, no clear way" said after "Person
+        # approaching from right, stop" ended, the way clear again for a second). The side
+        # given that CLOSED (`closed`) is said at once still (2026-11-09).
+        if _is_block(text) and not evidence and not closed:
+            return False, self._seq, "the block is no longer measured — not said off its hold"
+
         if text == self._spoken and (episode is None or episode == self._episode):
             if level < _BLOCKED:
                 return False, self._seq, "already said — not repeated"
@@ -331,11 +343,6 @@ class _Gate:
                     self._seq,
                     f"unchanged — said {since:.0f}s ago (repeats after {window:.0f}s)",
                 )
-            # A block is said again only while it is still measured, not off a hold that is
-            # releasing: "Blocked by wall, turn right" again, facing an open path, told the
-            # wearer to turn a second time (timing review, 2026-11-09).
-            if _is_block(text) and not evidence:
-                return False, self._seq, "not repeated — the block is no longer measured"
             return self._commit(text, level, now, episode)
 
         arrived = self._spoken in (DRIFT_LEFT, DRIFT_RIGHT) and text in (
@@ -420,28 +427,6 @@ class _Gate:
                 )
             return self._commit(text, level, now, episode)
 
-        # Nor through the gap after it: a block a hold kept through the outage is not said
-        # unless this poll still measures it (timing review, 2026-11-09: the wearer turned
-        # away during a stall, and "Blocked by glass, turn right" came on an open path).
-        if self._spoken == SENSORS_OFFLINE and _is_block(text) and not evidence:
-            return False, self._seq, "after the outage — the block is not measured now"
-        # Nor a block's NEW way out, as its repeat above, off a hold that is releasing
-        # (2026-11-18, walk_sim following what is said): told "turn around" at a dead end, the
-        # wearer turning faced the side wall, the way out became "turn right", and it was said
-        # once the turn was done, facing the open corridor; they turned into the wall. Only a
-        # changed way out, and not one whose side given has CLOSED (`closed`): that is said
-        # at once, as it was (2026-11-09: someone stepped into the side the wearer was told).
-        if (
-            _is_block(text)
-            and not evidence
-            and not closed
-            and self._has_spoken
-            and _is_block(self._spoken)
-            and _way_out(text) != _way_out(self._spoken)
-            and episode is not None
-            and episode == self._episode
-        ):
-            return False, self._seq, "new way out — the block is no longer measured"
         held = now - self._pending_since
         need = SIMPLE_CLEAR_SAY_CONFIRM_S if level == 0 else SIMPLE_CONFIRM_S
         # One approach warning becoming another (review, 2026-11-06): until then only a

@@ -1826,7 +1826,8 @@ class PeopleComingWalkedTests(unittest.TestCase):
         return ws.judge_follow(ws.ROOMS[name], ticks, shadows), ticks
 
     def test_past_someone_coming_with_the_warnings_on(self):
-        for name in ("someone coming head-on, open floor", "someone crossing from the left"):
+        for name in ("someone coming head-on, open floor", "someone crossing from the left",
+                     "someone coming head-on, 2.4 m corridor"):
             with self.subTest(name):
                 self.assertEqual(self._walk(name)[0], [])
 
@@ -1923,6 +1924,54 @@ class SensorFaultsWalkedTests(unittest.TestCase):
         self.assertFalse({sg.BLOCKED_WALL_TURN["left"], sg.BLOCKED_WALL_TURN["right"]} & set(said))
 
 
+class ToldToStopTests(unittest.TestCase):
+    """2026-11-19: told to step aside in a bare corridor, the wearer was still "walking" to the
+    Kalman tracker (its own motion unmeasured: the assumed pace), someone coming at 1.2 m/s
+    looked still, the warning ended, and "Near left wall, move right" sent them back into that
+    person's way. The guidance now tells the tracker (told_still), which takes the wearer's
+    pace as 0 where nothing measures it, until "Walk straight" or MOTION_TOLD_STILL_S."""
+
+    def test_the_tracker_takes_the_wearer_as_standing(self):
+        from app.perception.motion_tracker import MotionTracker
+        from app import config as cfg
+
+        walking = {"moving": True, "speed_mps": 1.2}  # nothing measured: the nominal pace
+        step = MotionTracker._own_step
+        self.assertEqual(step(walking, None, 0.1)[4], "assumed")
+        self.assertEqual(step(walking, None, 0.1, told_still=True)[:2], (0.0, 0.0))
+        self.assertEqual(step(walking, None, 0.1, told_still=True)[4], "told to stop")
+        measured = {"scan_fwd_mm": 120.0, "scan_right_mm": 0.0}  # odometry rules still
+        self.assertEqual(step(measured, None, 0.1, told_still=True)[4], "odometry")
+        tr = MotionTracker()
+        tr.update([], 100.0, walking)  # the first scan sets the clock: no step yet
+        tr.told_still(100.0)
+        tr.update([], 100.5, walking)
+        self.assertEqual(tr.snapshot()["own"]["source"], "told to stop")
+        tr.update([], 100.5 + 0.3, walking)
+        tr.told_still(100.9, still=False)  # "Walk straight"
+        tr.update([], 101.0, walking)
+        self.assertEqual(tr.snapshot()["own"]["source"], "assumed")
+        tr.told_still(102.0)
+        late = 102.0 + cfg.MOTION_TOLD_STILL_S + 0.1  # updates every 0.5 s up to then
+        t = 101.0
+        while t < late:
+            t = min(late, t + 0.5)
+            tr.update([], t, walking)
+        self.assertEqual(tr.snapshot()["own"]["source"], "assumed")
+
+    def test_said_to_the_tracker_only_for_a_stop_or_a_step(self):
+        from unittest import mock
+
+        told = []
+        fake = type("T", (), {"told_still": lambda self, t, still=True: told.append(still)})()
+        with mock.patch("app.perception.motion_tracker.get_motion_tracker", lambda: fake):
+            sg._tell_tracker(sg.MOVER_TOWARD[("Person", "left")], 1.0)
+            sg._tell_tracker(sg.STOP_NO_WAY, 2.0)
+            sg._tell_tracker(sg.BLOCKED_WALL_TURN["left"], 3.0)  # a turn: walks on after
+            sg._tell_tracker(sg.WALK_STRAIGHT, 4.0)
+        self.assertEqual(told, [True, True, False])
+
+
 class NewWayOutOffAHoldTests(unittest.TestCase):
     """2026-11-18, tools/sim/walk_sim --follow (the wearer doing what is said): at a dead end,
     "Blocked by wall, turn around"; turning, the wearer faced the side wall and the way out
@@ -1950,14 +1999,29 @@ class NewWayOutOffAHoldTests(unittest.TestCase):
                 for k in range(1, 11)]
         self.assertTrue(any(ok for ok, _seq, _why in said), said)
 
-    def test_only_a_changed_way_out(self):
-        # The same way out, the block renamed: not this guard's (review).
-        gate = sg._Gate()
+    def test_a_renamed_block_is_said_while_measured_only(self):
+        # One rule (2026-11-19): any block, renamed or not, is said only while measured.
         wall, glass = sg.BLOCKED_WALL_TURN["right"], sg.BLOCKED_GLASS_TURN["right"]
+        gate = sg._Gate()
         self.assertTrue(gate.admit(wall, 100.0, episode=1)[0])
-        whys = [gate.admit(glass, 100.0 + 0.1 * k, episode=1, evidence=False)[2]
+        said = [gate.admit(glass, 100.0 + 0.1 * k, episode=1, evidence=False)[0]
                 for k in range(1, 41)]
-        self.assertFalse(any("new way out" in why for why in whys), whys)
+        self.assertFalse(any(said))
+        gate = sg._Gate()
+        self.assertTrue(gate.admit(wall, 100.0, episode=1)[0])
+        said = [gate.admit(glass, 100.0 + 0.1 * k, episode=1) for k in range(1, 41)]
+        self.assertTrue(any(ok for ok, _seq, _why in said))
+
+    def test_a_block_after_a_mover_warning_only_while_measured(self):
+        # 2026-11-19, walk_sim: someone passing in a corridor, "Stop, no clear way" held from a
+        # second before was said once "Person approaching from right, stop" ended, the way
+        # clear again (the news path after an approach warning skipped the old guards).
+        gate = sg._Gate()
+        mover = sg.MOVER_CROSSING[("Person", "right")]
+        self.assertTrue(gate.admit(mover, 100.0, episode=1)[0])
+        said = [gate.admit(sg.STOP_NO_WAY, 100.0 + 0.1 * k, episode=1, evidence=False)[0]
+                for k in range(1, 60)]
+        self.assertFalse(any(said))
 
     def test_said_while_measured(self):
         gate = sg._Gate()
@@ -2068,6 +2132,28 @@ class StatusNoticeCutTests(unittest.TestCase):
         self.assertFalse(is_urgent({"rule": "ground_hazard", "instruction": sg.STAIRS_UP_AHEAD}))
         self.assertTrue(is_urgent({"rule": "blocked", "instruction": sg.OBSTACLE_IN_FRONT["left"]}))
         self.assertFalse(is_urgent({"rule": "status", "instruction": sg.POWER_LOW}))
+
+
+class LiveCheckTests(unittest.TestCase):
+    """tools/device/live_check.py (2026-11-19): each radar board's own frames from /radar/state
+    polls, and the numbers the simulators assume (missed frames, ghosts, jitter)."""
+
+    def test_the_numbers(self):
+        from tools.device import live_check as lc
+
+        def snap(t, peaks):
+            return {"sectors": {"deg030": {"last_update": t, "online": True, "peaks_mm": peaks},
+                                "front": {"last_update": t, "peaks_mm": peaks}}}
+
+        samples = [snap(1.0, [1000.0]), snap(1.0, [1000.0]), snap(1.17, []),
+                   snap(1.33, [1010.0, 2005.0]), snap(1.5, [1004.0]), snap(1.67, [998.0])]
+        frames = lc.board_frames(samples)
+        self.assertEqual(list(frames), ["deg030"])  # boards only, not the cardinals
+        st = lc.board_stats(frames["deg030"])
+        self.assertEqual(st["frames"], 5)  # the same frame polled twice counts once
+        self.assertAlmostEqual(st["missed"], 1 / 3, places=3)  # silent between two that heard
+        self.assertAlmostEqual(st["ghosts"], 1 / 5, places=3)  # 2005 is twice 1010, within 150
+        self.assertEqual(st["jitter_mm"], 6.0)
 
 
 if __name__ == "__main__":

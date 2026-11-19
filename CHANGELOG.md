@@ -7,6 +7,11 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
 ## [Unreleased]
 
 ### Added
+- **`tools/device/live_check.py`: what the real sensors do, from the running app** (read-only,
+  GET requests only). Per radar board, from its own frames: frames a second, frames missed
+  between two that heard something, frames with a double-bounce ghost, and the nearest echo's
+  jitter; the camera's side of the live picture's delay; the LiDAR reader. The walking
+  simulator assumes these (`--drop`, `--ghosts`, `--noise`); this measures them.
 - **A walking simulator through the spoken path** (`tools/sim/walk_sim.py`, design note 28). The
   scene hunt judges one poll of the decision; what the wearer hears also passes through time
   (a block confirmed on a second scan, holds, the speech gate). Here the wearer walks in at
@@ -68,6 +73,20 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   Nothing said changes.
 
 ### Fixed
+- **A block is said only while it is measured: one rule in the speech gate** (design note 36).
+  Three rules held a block back off the hold that keeps it from flickering off (its repeat,
+  after an outage, a new way out); a fourth case fell between them: someone passing in a
+  corridor, "Stop, no clear way" held from a second before was said once "Person approaching
+  from right, stop" ended, the way clear again. Now one rule: a block, newly or again, only
+  while the poll measures it; a side given that closed is still said at once.
+- **The mover warnings get the wearer past someone in a corridor** (still not spoken:
+  `LIDAR_MOVERS_SPEAK`; design note 36). Told to step aside, the wearer stops; where nothing
+  measures their own motion (a bare corridor, open floor) the Kalman tracker still had them
+  walking 1.2 m/s, someone coming at 1.2 m/s looked still, the warning ended, and "Near left
+  wall, move right" sent them back into that person's way. The guidance now tells the tracker
+  (a mover or vehicle warning, "Stop, no clear way"; not a block's turn, after which they walk
+  on): their pace is 0 until "Walk straight" or `MOTION_TOLD_STILL_S` (6 s). Head-on in 2.0-3.6 m
+  corridors: 12 of 12 walks past, was 3.
 - **No "move left / move right" ping-pong down a corridor** (design note 34). Down the middle
   of a 2.4 m corridor both walls lie at ~3.9 ft, inside the 4 ft near-wall band: a few cm off
   made one wall "near" ("Near left wall, move right"), and the step past the middle the other,

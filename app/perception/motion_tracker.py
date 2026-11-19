@@ -55,6 +55,7 @@ from app.config import (
     MOTION_GATE_NEW_EXTRA_M,
     MOTION_GATE_VEHICLE_M,
     MOTION_LOST_S,
+    MOTION_TOLD_STILL_S,
     MOTION_PREDICT_DRIFT_PERSON,
     MOTION_PREDICT_DRIFT_VEHICLE,
     MOTION_PREDICT_MAX_SD_M,
@@ -143,6 +144,7 @@ class MotionTracker:
         self._next_id = 1
         self._last_t: Optional[float] = None
         self._cam_seen: Dict[str, float] = {}
+        self._told_still_at: Optional[float] = None  # told_still
         self._own = {
             "fwd_mps": 0.0,
             "right_mps": 0.0,
@@ -171,6 +173,13 @@ class MotionTracker:
         with self._lock:
             self.__init__()
 
+    def told_still(self, t: float, still: bool = True) -> None:
+        """The guidance has told the wearer, at `t`, to stop or step aside (`still`), or to
+        walk on: where nothing measures their own motion, their forward pace is then 0, not
+        the assumed walking pace, until told to walk or MOTION_TOLD_STILL_S (_own_step)."""
+        with self._lock:
+            self._told_still_at = float(t) if still else None
+
     # ---- one scan ---------------------------------------------------------
 
     def update(
@@ -198,7 +207,13 @@ class MotionTracker:
                 self._cam_seen = {}
             dt = 0.0 if self._last_t is None else t - self._last_t
             self._last_t = t
-            fwd, right, sd, speed_sd, source = self._own_step(heading, ego, dt)
+            told = self._told_still_at
+            told_still = bool(
+                MOTION_TOLD_STILL_S > 0
+                and told is not None
+                and 0.0 <= t - told <= MOTION_TOLD_STILL_S
+            )
+            fwd, right, sd, speed_sd, source = self._own_step(heading, ego, dt, told_still)
             if dt > 0:
                 self._own = {
                     "fwd_mps": fwd / dt,
@@ -235,7 +250,10 @@ class MotionTracker:
 
     @staticmethod
     def _own_step(
-        heading: Optional[Dict[str, Any]], ego: Optional[Dict[str, Any]], dt: float
+        heading: Optional[Dict[str, Any]],
+        ego: Optional[Dict[str, Any]],
+        dt: float,
+        told_still: bool = False,
     ) -> Tuple[float, float, float, float, str]:
         """(forward m, right m, that step's 1-sigma m, the user's speed 1-sigma m/s, where
         from) the user moved since the last scan. A step's scatter averages out over scans;
@@ -273,6 +291,10 @@ class MotionTracker:
             )
         if h.get("confidently_still"):
             return 0.0, 0.0, 0.1 * dt, 0.1, "standing still"
+        if told_still:
+            # Told to stop or step aside (told_still): not the assumed walking pace. A step
+            # aside is ~0.3 m/s across, so a wider doubt than standing still.
+            return 0.0, 0.0, 0.3 * dt, 0.3, "told to stop"
         pace = float(h.get("speed_mps") or 0.0) if h.get("moving") else 0.0
         return pace * dt, 0.0, MOTION_EGO_SD_MPS * dt, MOTION_EGO_SD_MPS, "assumed"
 

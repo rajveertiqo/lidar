@@ -702,6 +702,13 @@ MOTION_GATE_M = 1.0  # and no farther than this from where a track should be...
 MOTION_GATE_VEHICLE_M = 2.0  # ...or this for a vehicle (a camera's range is rough)
 MOTION_GATE_NEW_EXTRA_M = 1.0  # a track with under CONFIRM_HITS sightings: this much more
 MOTION_LOST_S = 0.8  # a track unseen this long is dropped
+# The guidance has just told the wearer to stop or step aside ("..., stop", "..., move left",
+# "Stop, no clear way"; not a block's turn): where nothing measures their own motion (a bare corridor,
+# open floor: the "assumed" walking pace), it is taken as 0 until "Walk straight" or this long
+# (2026-11-19, walk_sim --follow: stepped aside in a corridor, the wearer was still "walking"
+# 1.2 m/s, someone coming at 1.2 m/s looked still, the warning ended, and "Near left wall,
+# move right" sent them back into that person's way). 0: off.
+MOTION_TOLD_STILL_S = 6.0
 MOTION_ACCEL_PERSON = 1.2  # m/s^2 of random acceleration a person's model allows
 MOTION_ACCEL_ALONG = 1.5  # a moving vehicle's, along its heading...
 MOTION_ACCEL_ACROSS = 0.4  # ...and across it: a car brakes, it does not slide sideways

@@ -571,8 +571,8 @@ def follow(room, pace=1.2, seconds=FOLLOW_S, noise_mm=0.0, seed=0, t0=1000.0, wa
     it is said (_action): [(t, x, y, heading, sentence, spoken, clearance mm)] per scan,
     until the goal, a collision, STOOD_S stood at "Stop", or `seconds`. A turn said again
     the way the wearer is already turning is the same turn. `wait_s`: after a turn, stand
-    until "Walk straight" (or anything else to do) is said, this long at most; None: walk on
-    at once. A room with movers runs the trackers (_tick `track`); `shadows`, a list, gets
+    until "Walk straight" (or anything else to do) is said, this long at most (after a quarter
+    turn or more: a slight turn is walked on); None: walk on at once. A room with movers runs the trackers (_tick `track`); `shadows`, a list, gets
     (t, sentence) of each "would say" of a feature not yet spoken. `veer_dps`: walking, the
     wearer turns this much a second without knowing (+ right), as drift_sim's. `faults`,
     `record`: as walk's."""
@@ -583,8 +583,12 @@ def follow(room, pace=1.2, seconds=FOLLOW_S, noise_mm=0.0, seed=0, t0=1000.0, wa
     out, k, previous = [], 0, None
     dt = 1.0 / SCAN_HZ
 
+    big_turn = {"on": False}  # the turn under way is a quarter or more, not "turn slightly"
+
     def after_turn(now):
-        return ("wait", now) if wait_s else ("walk",)
+        # Waiting for "Walk straight" after a quarter turn or more; "turn slightly" is walked
+        # on (2026-11-20: waiting after each one, the veering walks never got anywhere).
+        return ("wait", now) if wait_s and big_turn["on"] else ("walk",)
 
     with _scene_clock(t0, lambda: pace if doing[0] == "walk" else None) as clock:
         while clock["t"] - t0 <= seconds:
@@ -610,6 +614,8 @@ def follow(room, pace=1.2, seconds=FOLLOW_S, noise_mm=0.0, seed=0, t0=1000.0, wa
                              and (act[1] > 0) == (doing[1] > 0))
                 if not same_turn:
                     doing = ("hold", now) if act[0] == "hold" else act
+                    if act[0] == "turn":
+                        big_turn["on"] = abs(act[1]) >= 90.0
                     stood_at = now if act[0] == "stop" else None
             if doing[0] == "wait" and now - doing[1] >= (wait_s or 0.0):
                 doing = ("walk",)

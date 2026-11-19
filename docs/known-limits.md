@@ -85,13 +85,13 @@
   either way, and head-on in corridors 2.0-3.6 m wide (design note 36), on noise seeds and
   with the waiting wearer; nobody standing is called moving. They wait for a walk to check
   them.
-- **A fast steady veer ends in a block** (in the simulator, 2026-11-19). Veering 6 deg/s
-  unawares (3 deg/s is walked, in 1.8-3 m corridors): the drifting sentence comes every ~2.7 s,
-  as fast as the voice repeats it, and a 15 deg turn each time does not keep up; at ~15 deg
-  the side wall on the walking line is "Blocked by wall, turn ...", where a quarter turn faces
-  the other wall (`walk_sim --follow --veer 6`). A wall met that obliquely wants "turn
-  slightly", not a block's turn; the route planner's "would say" is that, but turning it on
-  does not mend the walk. Not changed: it is how a block reads a wall at a shallow angle.
+- **A fast steady veer ends in a block** (in the simulator, 2026-11-20). Veering unawares at 3
+  deg/s is walked in 1.8-3 m corridors, and at 4 deg/s in a 3 m one; at 4 deg/s in a 2.4 m
+  corridor, and 6 deg/s in any, it is not: each "turn slightly" is ~15 deg, the sentence and the
+  reaction take ~3 s, and the veer outgrows them; at ~15 deg the side wall on the walking line is
+  "Blocked by wall, turn ...", where a quarter turn faces the other wall (`walk_sim --follow
+  --veer 4`). Saying the drifting sentence in place of that block was tried: the wearer, told
+  only to turn slightly, walked on into the wall sooner (design note 37).
 - **Very close to a wall, the left is not offered.** Facing a flat wall with only the left
   open, "turn left" needs the left camera's fresh picture naming nobody, the laser to see the
   wall ahead stretch out past the left board's echo, and that echo at least 2 ft off: nearer

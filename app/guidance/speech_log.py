@@ -294,10 +294,13 @@ def recent(limit: int = 50) -> Dict[str, Any]:
 
 def latency_summary() -> Dict[str, Any]:
     """How late this run's sentences were (say(timing=...)): median and worst of each part,
-    for urgent sentences and for all, and how far ahead a block was when its warning went.
+    for urgent sentences and for all, and how far ahead a block was when its warning went;
+    the start-up notices in a group of their own ("startup").
     For /guidance/latency, to check a field walk against the bench (2026-10-30)."""
+    from app.guidance.vocabulary import _STARTUP_NOTICES
+
     with _lock:
-        rows = [(r["level"], dict(r.get("timing") or {})) for r in _recent]
+        rows = [(r["level"], r.get("text"), dict(r.get("timing") or {})) for r in _recent]
 
     def stats(values):
         v = sorted(x for x in values if isinstance(x, (int, float)))
@@ -305,9 +308,16 @@ def latency_summary() -> Dict[str, Any]:
             return None
         return {"median": v[len(v) // 2], "worst": v[-1], "n": len(v)}
 
+    # The start-up notices apart ("Starting, please wait", "Ready"): decided while the models
+    # load, one took 1.4 s and stood as the run's worst tick (2026-11-17); a walk is judged
+    # by what is said once guidance runs.
     out: Dict[str, Any] = {}
-    for group, keep in (("urgent", lambda lvl: lvl == "urgent"), ("all", lambda lvl: True)):
-        timings = [t for lvl, t in rows if t and keep(lvl)]
+    for group, keep in (
+        ("urgent", lambda lvl, text: lvl == "urgent" and text not in _STARTUP_NOTICES),
+        ("all", lambda lvl, text: text not in _STARTUP_NOTICES),
+        ("startup", lambda lvl, text: text in _STARTUP_NOTICES),
+    ):
+        timings = [t for lvl, text, t in rows if t and keep(lvl, text)]
         summary: Dict[str, Any] = {"sentences": len(timings)}
         for key in ("scan_age_ms", "camera_age_ms", "decide_ms", "voice_start_ms"):
             s = stats(t.get(key) for t in timings)

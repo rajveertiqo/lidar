@@ -864,3 +864,19 @@ Kept because each one explains why the code is the way it is.
     past (was 3). Walks, rooms (movers off and on, noise, ghosts and drops, veer), faults, the
     movers and route simulators: as before. The review's point (note 32) that the hold should
     not announce is met at the gate; the hold itself is unchanged.
+
+37. **A stronger veer (2026-11-20).** Note 34 left 4-6 deg/s. Tried, in order: (1) a wall ahead
+    that is the side wall being drifted into, met within 30 deg of the way, said as the
+    drifting sentence instead of "Wall ahead" and of the block ("would say" behind a switch):
+    in place of the block it was worse, the collision at 6-8 s instead of 8-16, the wearer told
+    only "turn slightly" walking on, where the block's stop and quarter turn had kept them off;
+    in place of "Wall ahead" only, no change. Taken out. (2) The trace at 4 deg/s: the drifting
+    sentence is an advisory, said once an episode; after its turn the veer brought the wearer
+    back into the same wall and it was "already said", until "Wall ahead" and the block. Now it
+    is said again once it has stood `SIMPLE_DRIFT_REPEAT_S`, the voice free. 4 s came after
+    "Wall ahead" (the sentence is ~3 s and the turn holds ~3.75 s at 4 deg/s); 2.5 s: the 3 m
+    corridor at 4 deg/s walked, 3 deg/s as before, parallel to a wall with range noise no
+    repeat. Left: 2.4 m at 4 deg/s, 6 deg/s (Known limits). And the waiting wearer
+    (`walk_sim --wait`) waited after every turn, "turn slightly" too, and veering never got to
+    the end of a corridor: it now waits only after a quarter turn or more (no collision either
+    way; the model, not the guidance).

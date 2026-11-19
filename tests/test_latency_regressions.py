@@ -942,6 +942,23 @@ class SentenceTimingTests(unittest.TestCase):
         self.assertIn("voice_start_ms", urgent)
         self.assertIn("front_ft", urgent)
 
+    def test_the_start_up_notices_stand_apart(self):
+        # 2026-11-20: decided while the models load, "Starting, please wait" took 1.4 s and
+        # stood as the run's worst tick; it is reported on its own, not among the others.
+        from app.guidance import speech_log
+        from app.guidance.vocabulary import STARTING
+
+        speech_log.reset()
+        t = time.time()
+        speech_log.say("startup", STARTING, level="advisory", now=t,
+                       timing={"scan_age_ms": 0, "decide_ms": 1400.0})
+        speech_log.say("test", "Wall ahead", level="advisory", now=t + 5,
+                       timing={"scan_age_ms": 40, "decide_ms": 4.0})
+        out = speech_log.latency_summary()
+        self.assertEqual(out["all"]["decide_ms"]["worst"], 4.0)
+        self.assertEqual(out["startup"]["sentences"], 1)
+        self.assertEqual(out["startup"]["decide_ms"]["worst"], 1400.0)
+
     def test_events_stamped_when_they_happen(self):
         from app.guidance import speech_log
 

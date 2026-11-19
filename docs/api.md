@@ -13,7 +13,7 @@
 | `GET /guidance/status`  | Sensor health, in plain English                                                                                                                                                                                                         |
 | `GET /guidance/log`     | Every line the device has SAID this run, timestamped. Written at the commit point, so it is the conversation the user had — a poller would see a different one |
 | `GET /guidance/log/text`| The same as plain text, for `curl` from a phone mid-walk |
-| `GET /guidance/latency` | How late this run's sentences were: scan and camera age, tick time, Pi voice start, front range at the warning — median and worst, urgent apart |
+| `GET /guidance/latency` | How late this run's sentences were: scan and camera age, tick time, Pi voice start, front range at the warning — median and worst, urgent apart; the start-up notices ("Starting, please wait", "Ready") in `startup`, out of the others |
 
 **Sensors**
 

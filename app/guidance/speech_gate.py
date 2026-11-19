@@ -11,6 +11,7 @@ from app.config import (
     NOTIFY_AIRTIME_PER_CHAR_S,
     NOTIFY_AIRTIME_PER_COMMA_S,
     SIMPLE_AFTER_SPEECH_S,
+    SIMPLE_DRIFT_REPEAT_S,
     SIMPLE_BLOCKED_REPEAT_S,
     SIMPLE_CLEAR_SAY_CONFIRM_S,
     SIMPLE_CONFIRM_S,
@@ -324,6 +325,14 @@ class _Gate:
 
         if text == self._spoken and (episode is None or episode == self._episode):
             if level < _BLOCKED:
+                # Still drifting into that wall: its turn again, once it has stood
+                # SIMPLE_DRIFT_REPEAT_S and the voice is free (2026-11-20).
+                if (
+                    text in (DRIFT_LEFT, DRIFT_RIGHT)
+                    and now - self._spoken_at >= SIMPLE_DRIFT_REPEAT_S
+                    and now >= self._busy_until + SIMPLE_AFTER_SPEECH_S
+                ):
+                    return self._commit(text, level, now, episode)
                 return False, self._seq, "already said — not repeated"
             # Still blocked (perhaps after turning into something else) is said again
             # soon; "Guidance stopped" for as long as it lasts (2026-10-21).

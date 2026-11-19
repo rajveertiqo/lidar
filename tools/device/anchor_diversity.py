@@ -122,9 +122,7 @@ def report(per_view, hfov, rel_noise, tolerance, n_scans):
     ok = sum(1 for r in all_rows if r["ok"])
     few = sum(1 for r in all_rows if r["why"] == "too few anchors")
     flat = sum(
-        1
-        for r in all_rows
-        if r["why"] in ("no depth diversity", "insufficient depth diversity")
+        1 for r in all_rows if r["why"] in ("no depth diversity", "insufficient depth diversity")
     )
 
     lines += [
@@ -135,12 +133,8 @@ def report(per_view, hfov, rel_noise, tolerance, n_scans):
         else "  no data",
         "",
         "  Of the failures:",
-        f"    too few anchors in view        {few:>6}  ({few / total:.0%})"
-        if total
-        else "",
-        f"    insufficient depth diversity   {flat:>6}  ({flat / total:.0%})"
-        if total
-        else "",
+        f"    too few anchors in view        {few:>6}  ({few / total:.0%})" if total else "",
+        f"    insufficient depth diversity   {flat:>6}  ({flat / total:.0%})" if total else "",
     ]
     return "\n".join(l for l in lines if l is not None)
 
@@ -152,9 +146,7 @@ def verdict(per_view, tolerance):
         return ""
     rate = sum(1 for r in all_rows if r["ok"]) / len(all_rows)
     flat = sum(
-        1
-        for r in all_rows
-        if r["why"] in ("no depth diversity", "insufficient depth diversity")
+        1 for r in all_rows if r["why"] in ("no depth diversity", "insufficient depth diversity")
     )
     flat_share = flat / len(all_rows)
 
@@ -208,9 +200,7 @@ def collect_live(host, port, n_scans, timeout):
                 msg = await asyncio.wait_for(ws.recv(), timeout=5)
                 pts = json.loads(msg).get("points") or {}
                 if pts.get("angles") and pts.get("distances"):
-                    scans.append(
-                        {"angles": pts["angles"], "distances": pts["distances"]}
-                    )
+                    scans.append({"angles": pts["angles"], "distances": pts["distances"]})
                     if len(scans) % 25 == 0:
                         print(f"  ... {len(scans)}/{n_scans} scans", file=sys.stderr)
         return scans

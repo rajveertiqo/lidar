@@ -83,6 +83,15 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   Nothing said changes.
 
 ### Fixed
+- **"Drifting toward ... wall, turn slightly ..." is said again while the wearer drifts back
+  into that wall** (design note 37). An advisory was said once an episode: the turn mended the
+  heading, the veer brought it back, and nothing more was said until "Wall ahead" and a block,
+  a quarter turn into the other wall of the corridor. It is now said again once it has stood
+  `SIMPLE_DRIFT_REPEAT_S` (2.5 s) and the voice is free. Veering 4 deg/s down a 3 m corridor is
+  walked (was not); 3 deg/s in 1.8-3 m corridors as before; walking parallel to a wall, no
+  repeat.
+- **`/guidance/latency` keeps the start-up notices apart** ("Starting, please wait", "Ready":
+  `startup`): decided while the models load, one took 1.4 s and stood as the run's worst tick.
 - **A walk replayed twice in one process** (`walk_replay.replay_ticks`) left the walk policy's
   radar frames from the first pass, and the second, not newer, recorded none: with
   `GLASS_CLOSING_SPEAK` turned on it saw no pane closing (a glass door blocked at 3.2 s replayed

@@ -1019,6 +1019,14 @@ SIMPLE_REPEAT_MAX_S = 120.0
 # Still blocked after turning: the block sentence comes back this soon (doubling to
 # SIMPLE_REPEAT_MAX_S while it lasts), not after SIMPLE_REPEAT_S (2026-10-21).
 SIMPLE_BLOCKED_REPEAT_S = 8.0
+# "Drifting toward right wall, turn slightly left" said again once it has stood this long, the
+# voice free, while still drifting into that wall (2026-11-20, walk_sim --veer 4: an advisory is
+# never said twice in an episode, so the turn mended the heading once, the veer brought it back,
+# and nothing more was said until "Wall ahead" and a block, a quarter turn into the other wall).
+# About the sentence's own length (~2.5-3 s): the turn mends the heading for ~3.75 s at 4 deg/s,
+# the sentence and the reaction take ~3 of them, so 4 s came after "Wall ahead" (tried). At 2.5:
+# 4 deg/s walked in a 3 m corridor (was not); 3 deg/s as before; parallel to a wall, no repeat.
+SIMPLE_DRIFT_REPEAT_S = 2.5
 # "Guidance stopped, use your cane" repeats this often for as long as it lasts, no backoff.
 SIMPLE_OFFLINE_REPEAT_S = 12.0
 

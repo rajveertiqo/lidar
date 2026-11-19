@@ -1877,6 +1877,29 @@ class CorridorMiddleNoPingPongTests(unittest.TestCase):
         self.assertTrue(gate.admit(sg.NEAR_RIGHT, 100.0, episode=1)[0])
         self.assertTrue(gate.admit(sg.DRIFT_RIGHT, 105.0, episode=1)[0])
 
+    def test_still_drifting_in_is_said_again(self):
+        # 2026-11-20: an advisory is said once an episode; a drift into the same wall after
+        # the turn was not, and "Wall ahead" then a block followed. The drifting sentence is
+        # said again once it has stood SIMPLE_DRIFT_REPEAT_S, the voice free; nothing else is.
+        from app import config as cfg
+
+        gate = sg._Gate()
+        self.assertTrue(gate.admit(sg.DRIFT_RIGHT, 100.0, episode=1)[0])
+        said = [t for t in (100.0 + 0.1 * k for k in range(1, 80))
+                if gate.admit(sg.DRIFT_RIGHT, t, episode=1)[0]]
+        self.assertTrue(said)
+        self.assertGreaterEqual(said[0], 100.0 + cfg.SIMPLE_DRIFT_REPEAT_S - 1e-6)
+        gate = sg._Gate()
+        self.assertTrue(gate.admit(sg.NEAR_RIGHT, 100.0, episode=1)[0])
+        self.assertFalse(any(gate.admit(sg.NEAR_RIGHT, 100.0 + 0.1 * k, episode=1)[0]
+                             for k in range(1, 80)))
+
+    def test_veering_4_deg_s_down_a_3_m_corridor(self):
+        from tools.sim import walk_sim as ws
+
+        room = ws.ROOMS["long 3 m corridor"]
+        self.assertEqual(ws.judge_follow(room, ws.follow(room, veer_dps=4.0)), [])
+
     def test_veering_down_a_3_m_corridor(self):
         from tools.sim import walk_sim as ws
 

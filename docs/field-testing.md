@@ -154,6 +154,7 @@ starred ones by itself.
 | Walk at a glass door on open floor or in a wide hall | "Glass ahead" from ~10 ft, "Blocked by glass, ..." at ~4 ft | The block under 3 ft * |
 | Stand in a narrow gap (0.7-0.9 m: a wall and a cupboard) facing a wall | "Turn around" or "Stop, no clear way" | "Turn left/right" toward a side under 2 ft |
 | The helper walks past you in a corridor, both of you walking on | (mover warnings are silent: "would say" in the report) | "Stop, no clear way" after they have passed, the way clear |
+| With the helper beside you, walk slowly toward the top of a staircase going down; stop yourself 1 m short and stand 5 s, then turn away | (the ToF's hazards are silent: "would say" in the report) "Stairs down ahead" ~7 ft out, "Stairs down in front, stop" ~5 ft out, nothing more while you stand | On the phone, `http://<pi-ip>:8000/tof/hazards` with no `top` while you stand at the top (it should stay the stairs, `"held": true` once the floor is out of view); nothing named before you stop |
 | Outdoors, walk past a parked car on your right, about 1.3 m from its side | Maybe "Vehicle in front, be careful", "Car ahead, turn slightly ..." | "Vehicle approaching, ..." for the parked car; "Something approaching from right" in the report |
 
 **The heading check** (at the start and again at the end)

@@ -33,12 +33,17 @@ from app.guidance.vocabulary import (
     GLASS_LEFT,
     GLASS_RIGHT,
     GLASS_SENSOR_OFF,
+    LOW_OBSTACLE_AHEAD,
     NEAR_LEFT,
     NEAR_RIGHT,
     OBJECT_IN_FRONT,
     OBSTACLE_AHEAD,
     SENSORS_OFFLINE,
+    STAIRS_DOWN_AHEAD,
+    STAIRS_UP_AHEAD,
     STEER_IN_FRONT,
+    STEP_DOWN_AHEAD,
+    STEP_UP_AHEAD,
     STOP_NO_WAY,
     TURN_AROUND,
     TURN_LEFT,
@@ -50,6 +55,7 @@ from app.guidance.vocabulary import (
     _APPROACHING,
     _BLOCKED,
     _GLASS_BESIDE,
+    _GROUND_SENTENCES,
     _LEVEL,
     _MOVER_INFO,
     _MOVER_SENTENCES,
@@ -460,6 +466,21 @@ class _Gate:
                 or (self._spoken in _APPROACHING and text not in _APPROACHING)
             )
             upgrade = upgrade or self._spoken in (SENSORS_OFFLINE, STOP_NO_WAY)
+            # Named better: from "Low obstacle ahead" or "Obstacle ahead" to what the ToF now
+            # makes of it, stairs, a step, a drop (not back, nor between those: no chatter).
+            # A kerb seen at the ToF's 4 m reach is low and wide before its top is in view:
+            # "Stairs up ahead" waited the settle and came 0.4 m before the first tread
+            # (walk_sim, 2026-11-20).
+            upgrade = upgrade or (
+                self._spoken in (LOW_OBSTACLE_AHEAD, OBSTACLE_AHEAD)
+                and text in _GROUND_SENTENCES
+                and text != LOW_OBSTACLE_AHEAD
+            )
+            # And a step that turns out to be the first of a flight (its second riser in view).
+            upgrade = upgrade or (self._spoken, text) in (
+                (STEP_UP_AHEAD, STAIRS_UP_AHEAD),
+                (STEP_DOWN_AHEAD, STAIRS_DOWN_AHEAD),
+            )
             # A way out that changed while the one given still has room waits the settle: it
             # is still good advice, and saying every change flip-flopped "turn right / turn
             # left" near a post (turn review, 2026-11-09). One that CLOSED is `closed` below.

@@ -152,18 +152,21 @@ def replay_ticks(path, recompute_policy=True, turn_on=()):
                 if recompute_policy and inp.get("lidar")
                 else inp["walk_decision"]
             )
-            yield rec, sg.guidance(
-                wd,
-                inp["lidar"],
-                now=clock["t"],
-                hold=inp.get("hold"),
-                hold_lidar_absent=bool(inp.get("hold_lidar_absent")),
-                at_crossing=bool(inp.get("at_crossing")),
-                radar_state=inp.get("radar"),
-                camera_state=inp.get("camera"),
-                motion=inp.get("motion"),
-                movers=inp.get("movers"),
-                ground=inp.get("ground"),
+            yield (
+                rec,
+                sg.guidance(
+                    wd,
+                    inp["lidar"],
+                    now=clock["t"],
+                    hold=inp.get("hold"),
+                    hold_lidar_absent=bool(inp.get("hold_lidar_absent")),
+                    at_crossing=bool(inp.get("at_crossing")),
+                    radar_state=inp.get("radar"),
+                    camera_state=inp.get("camera"),
+                    motion=inp.get("motion"),
+                    movers=inp.get("movers"),
+                    ground=inp.get("ground"),
+                ),
             )
 
 
@@ -246,8 +249,7 @@ def main():
     ap.add_argument(
         "--recorded-policy",
         action="store_true",
-        help="use the recorded "
-        "walk_policy decision instead of running the current walk_policy",
+        help="use the recorded walk_policy decision instead of running the current walk_policy",
     )
     ap.add_argument(
         "--turn-on",

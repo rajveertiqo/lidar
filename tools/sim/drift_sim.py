@@ -68,8 +68,7 @@ def run(args):
 
     where = "Open space" if args.open else "Corridor"
     print(
-        f"{where} {args.width:.1f} ft wide, user at {args.speed:.2f} m/s, "
-        f"LiDAR {args.rate:.0f} Hz."
+        f"{where} {args.width:.1f} ft wide, user at {args.speed:.2f} m/s, LiDAR {args.rate:.0f} Hz."
     )
     print("Heading from LiDAR scan matching.")
     if args.veer:
@@ -124,9 +123,7 @@ def run(args):
         if elapsed >= args.veer_start:
             heading -= args.veer * dt
         intended = -args.veer * max(0.0, elapsed - args.veer_start)
-        heading += np.random.uniform(-args.sway, args.sway) - 0.25 * (
-            heading - intended
-        )
+        heading += np.random.uniform(-args.sway, args.sway) - 0.25 * (heading - intended)
         travel = args.speed * 1000.0 * dt
         x += travel * math.cos(math.radians(heading))
         y += travel * math.sin(math.radians(heading))
@@ -146,8 +143,7 @@ def run(args):
         wall = -half if args.veer > 0 else half
         print()
         print(
-            f"  FIRST WARNING  t={first_t:.1f}s, "
-            f"{abs(wall - first_y) / 304.8:.2f} ft from the wall"
+            f"  FIRST WARNING  t={first_t:.1f}s, {abs(wall - first_y) / 304.8:.2f} ft from the wall"
         )
         print(
             f"  SPOKEN COUNT   {len(spoken)} over {clock - 1000.0:.1f}s "
@@ -157,14 +153,9 @@ def run(args):
         print("Spoken instructions: NONE")
 
     if contact_at:
-        print(
-            f"  WALL CONTACT   t={contact_at[0]:.1f}s at "
-            f"y={contact_at[1] / 304.8:+.2f} ft"
-        )
+        print(f"  WALL CONTACT   t={contact_at[0]:.1f}s at y={contact_at[1] / 304.8:+.2f} ft")
         if spoken:
-            print(
-                f"  WARNING LEAD   {contact_at[0] - spoken[0][0]:.1f}s before contact"
-            )
+            print(f"  WARNING LEAD   {contact_at[0] - spoken[0][0]:.1f}s before contact")
     else:
         print(f"  No wall contact in {args.duration:.0f}s.")
 

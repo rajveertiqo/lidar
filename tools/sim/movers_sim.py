@@ -126,10 +126,7 @@ def scan(user, psi, phase, movers, walls, still, blind=None, drop=0.0):
         hits += [_ray_circle(ux, uy, dx, dy, *c) for c in still]
         for m in movers:
             if "box" in m:
-                hits += [
-                    _ray_seg(ux, uy, dx, dy, *s)
-                    for s in _box(m["x"], m["y"], *m["box"])
-                ]
+                hits += [_ray_seg(ux, uy, dx, dy, *s) for s in _box(m["x"], m["y"], *m["box"])]
             else:
                 hits.append(_ray_circle(ux, uy, dx, dy, m["x"], m["y"], m["r"]))
         hits = [h for h in hits if h is not None]
@@ -162,15 +159,11 @@ def run_scene(
         t = i / HZ
         dpsi = math.radians(turn_dps / HZ)
         heading = {
-            "scan_yaw_deg": (
-                math.degrees(dpsi) + YAW_BIAS_DEG + random.gauss(0.0, 0.05)
-            )
+            "scan_yaw_deg": (math.degrees(dpsi) + YAW_BIAS_DEG + random.gauss(0.0, 0.05))
             if i
             else None
         }
-        tracker.update(
-            scan(user, psi, phase, ms, walls, still, blind, drop), 100.0 + t, heading
-        )
+        tracker.update(scan(user, psi, phase, ms, walls, still, blind, drop), 100.0 + t, heading)
         snap = tracker.snapshot()
         truth = []
         for m in ms:
@@ -185,9 +178,7 @@ def run_scene(
         false_moving += sum(
             1
             for trk in snap["tracks"]
-            if not any(
-                math.hypot(trk["x_m"] - x, trk["y_m"] - y) < tol for x, y, tol in truth
-            )
+            if not any(math.hypot(trk["x_m"] - x, trk["y_m"] - y) < tol for x, y, tol in truth)
         )
         th = snap["threat"]
         if th and first is None:
@@ -327,9 +318,7 @@ def _ego_points(user, psi, walls, still, movers):
     objects = []
     for x1, y1, x2, y2 in walls:
         n = max(2, int(math.hypot(x2 - x1, y2 - y1) / 0.05))
-        objects.append(
-            [ego(x1 + (x2 - x1) * i / n, y1 + (y2 - y1) * i / n) for i in range(n + 1)]
-        )
+        objects.append([ego(x1 + (x2 - x1) * i / n, y1 + (y2 - y1) * i / n) for i in range(n + 1)])
     for cx, cy, r in still:
         objects.append(
             [
@@ -360,9 +349,7 @@ def radar_rows(user, psi, walls, still, movers, t):
             ds = [
                 math.hypot(x, y)
                 for x, y in pts
-                if abs(
-                    (math.degrees(math.atan2(y, x)) - bearing + 180.0) % 360.0 - 180.0
-                )
+                if abs((math.degrees(math.atan2(y, x)) - bearing + 180.0) % 360.0 - 180.0)
                 <= RADAR_HALF_BEAM
             ]
             if ds and 0.25 <= min(ds) <= 4.0 and random.random() > RADAR_DROP:
@@ -409,17 +396,13 @@ def run_radar_scene(
             pts,
             t,
             {
-                "scan_yaw_deg": (
-                    math.degrees(dpsi) + YAW_BIAS_DEG + random.gauss(0.0, 0.05)
-                )
+                "scan_yaw_deg": (math.degrees(dpsi) + YAW_BIAS_DEG + random.gauss(0.0, 0.05))
                 if i
                 else None
             },
         )
         if t >= next_frame:
-            rows = radar_rows(
-                user, psi, walls + hidden_walls, still, ms + hidden_things, t
-            )
+            rows = radar_rows(user, psi, walls + hidden_walls, still, ms + hidden_things, t)
             next_frame = t + 1.0 / RADAR_HZ
         if i % 3 == 0:  # the 5 Hz guidance tick
             snap = lidar.snapshot()
@@ -515,9 +498,7 @@ RADAR_SCENES = [
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument(
-        "-k", metavar="TEXT", help="only the scenes whose name contains TEXT"
-    )
+    p.add_argument("-k", metavar="TEXT", help="only the scenes whose name contains TEXT")
     args = p.parse_args()
     failures = 0
     for name, expect, scene in SCENES:
@@ -527,18 +508,10 @@ def main():
         got = first[1:4] if first else None
         ok = got == expect and false_moving == 0
         failures += not ok
-        when = (
-            f"warned at {first[0]:.2f} s, {first[4]:.1f} s ahead"
-            if first
-            else "no warning"
-        )
+        when = f"warned at {first[0]:.2f} s, {first[4]:.1f} s ahead" if first else "no warning"
         print(
             f"{'ok' if ok else 'FAIL':<5} {name:<56} -> {got or '-'}  ({when}"
-            + (
-                f", {false_moving} scans called a still thing moving"
-                if false_moving
-                else ""
-            )
+            + (f", {false_moving} scans called a still thing moving" if false_moving else "")
             + ")"
         )
     for name, expect, scene in RADAR_SCENES:
@@ -547,14 +520,8 @@ def main():
         first = run_radar_scene(**scene)
         got = first[1:4] if first else None
         failures += got != expect
-        when = (
-            f"warned at {first[0]:.2f} s, {first[4]:.1f} s ahead"
-            if first
-            else "no warning"
-        )
-        print(
-            f"{'ok' if got == expect else 'FAIL':<5} {name:<56} -> {got or '-'}  ({when})"
-        )
+        when = f"warned at {first[0]:.2f} s, {first[4]:.1f} s ahead" if first else "no warning"
+        print(f"{'ok' if got == expect else 'FAIL':<5} {name:<56} -> {got or '-'}  ({when})")
     print(f"\n{failures} failure(s)" if failures else "\nall scenes as expected")
     sys.exit(1 if failures else 0)
 

@@ -85,15 +85,17 @@
   either way, and head-on in corridors 2.0-3.6 m wide (design note 36), on noise seeds and
   with the waiting wearer; nobody standing is called moving. They wait for a walk to check
   them.
-- **A car crossing from the side is not warned of in time** (in the simulator,
-  2026-11-20). On a collision course a car keeps its bearing; crossing at 90 deg to the walk it
-  sits ~73 deg off, outside the front camera's 66 deg, until it is in front. The side cameras
-  are detected only every ~1.3 s (`DETECTION_SIDE_MIN_INTERVAL_S`), too seldom to follow one.
-  The LiDAR's mover warnings (not yet spoken) follow nothing over 2 m wide
-  (`LIDAR_MOVERS_MAX_WIDTH_M`: a car's side is 4.5 m) or past 8 m: with them on, ~0.8 s ahead
-  or not at all (`walk_sim --follow -k "car crossing" --turn-on movers`). A car coming in from
-  up to ~25 deg off the walking line is warned of ~3.4 s ahead (design note 38). At a kerb or
-  a car park lane, the cane and hearing.
+- **A car crossing from the side is warned of late, and only by a feature not yet spoken**
+  (in the simulator, 2026-11-20). On a collision course a car keeps its bearing; crossing at 90
+  deg to the walk it sits ~73 deg off, outside the front camera's 66 deg, until it is in front.
+  The side cameras are detected only every ~1.3 s (`DETECTION_SIDE_MIN_INTERVAL_S`), too seldom
+  to follow one. The LiDAR's mover warnings (`LIDAR_MOVERS_SPEAK`, off) see its front from
+  12 m, the LiDAR's reach: at 14 km/h, "Vehicle approaching from left, stop" ~1.6 s before it
+  would reach the wearer (1.1-1.4 s with range noise), who stops short of it
+  (`walk_sim --follow -k "car crossing" --turn-on movers`, design note 39). Faster, or a dark
+  car the laser sees less far, is later. A car coming in from up to ~25 deg off the walking
+  line is warned of by the camera ~3.4 s ahead (design note 38). At a kerb or a car park lane,
+  the cane and hearing.
 - **A fast steady veer ends in a block** (in the simulator, 2026-11-20). Veering unawares at 3
   deg/s is walked in 1.8-3 m corridors, and at 4 deg/s in a 3 m one; at 4 deg/s in a 2.4 m
   corridor, and 6 deg/s in any, it is not: each "turn slightly" is ~15 deg, the sentence and the
@@ -115,6 +117,15 @@
   the ground 1–4 m ahead up to ~1.1 m (stairs, kerbs, drops, low and waist-high things:
   [above](running.md#hazards-on-the-ground--stairs-steps-drops-poles-added-2026-11-06)) — not yet
   spoken (`TOF_HAZARDS_SPEAK`), and nothing at head height.
+- **At a drop, "stop" and no way out** (in the simulator, 2026-11-20). Walked with the ToF's
+  hazards on (`walk_sim --follow -k "6 m out" --turn-on tof-hazards`): a 1 m drop and a
+  platform edge are "Drop ahead" ~2.2 m out and "Drop in front, stop" ~1.5 m out, the wearer
+  stopping ~0.9 m short; the stop is held while the ToF sees no floor (design note 40). Then
+  nothing says which way to go: the drop is held until the wearer turns far enough to see
+  floor, by themselves. A platform edge (the ground below past the ToF's 4 m) is said only
+  when the front camera sees its edge: in the dark, or with the picture blurred, it is
+  never said. A drop is first said ~2.2 m out, not 3.5: until then the ground past it is out
+  of the ToF's reach too, and the camera's edge must confirm it.
 - **Heading is dead reckoning and unvalidated on real walks.** The scan matcher
   is accurate on synthetic corridors (0.02° per scan) but has not yet been
   checked against a measured walk. It degrades where a scan carries little

@@ -1214,6 +1214,13 @@ class _Vehicles:
                     vy = out_across * _QUAD_W * m_per_px  # metres a second, + right
                     tau = min(1.0 / g_h, _VEHICLE_PREDICT_S)
                     width = SIMPLE_VEHICLE_WIDTH_M.get(tr["cls"], 1.8)
+                    # Going across far enough to clear the wearer's side of the line before it
+                    # gets there (its whole width in the time left): then the step is behind
+                    # it, the way it came. Barely across, it passes alongside, and the step is
+                    # away from where it is (2026-11-20, walk_sim): a car head-on, the wearer
+                    # stepped 1.5 m right, its box's 5 % jitter near read 0.6 m/s toward the
+                    # line, "Vehicle approaching, move left" 0.9 s before it passed: back into it.
+                    tr["crosses"] = abs(vy) * tau >= width
                     o = (bx[outer] - mid) * m_per_px  # its nearest outer corner, + right
                     crosses_ahead = False
                     if (o > 0 and vy < 0) or (o < 0 and vy > 0):
@@ -1297,8 +1304,9 @@ class _Vehicles:
             seen = {
                 "approaching": approach,
                 "side": side,
-                # The side to step away from: where it is going across, else where it is.
-                "away": tr.get("heading") or side,
+                # The side to step away from: where it is going, when it goes across the line
+                # (tr["crosses"]), else where it is.
+                "away": (tr.get("heading") if tr.get("crosses") else None) or side,
                 "heading": tr.get("heading"),
                 "vy_mps": None if vy is None else round(vy, 2),
                 "own_range_m": round(own_range_m, 2),
@@ -1783,6 +1791,8 @@ def _ground_brief(ground: Optional[Dict[str, Any]], now: float) -> Optional[Dict
     return {
         "ok": bool(ground.get("ok")),
         "why": ground.get("why") or "",
+        # A drop or stairs down said "..., stop", kept while no ground is found (ground_hazards).
+        "held": bool(ground.get("held")),
         "age_s": round(now - t, 2) if isinstance(t, (int, float)) else None,
         "hazards": [
             {

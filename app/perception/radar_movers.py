@@ -52,6 +52,19 @@ def lidar_sees(blobs, bearing: float, range_m: float) -> bool:
     )
 
 
+def edge_slide(bearing: float) -> float:
+    """How much faster than the walk a still surface can close on this board: a surface
+    squarely across the way, seen through the board's beam edge nearest ahead, that edge
+    `e` deg off the walking line, closes at walk / cos e (the point the edge ray meets slides
+    along the surface toward the wearer). A side board (e = 57.5 deg): 1.9 times; a front
+    board, whose beam takes in straight ahead: 1; a back board, behind which things recede: 1.
+    Until 2026-11-20 every board was allowed the walk: walking up to a pane across open
+    floor, the right board's echo off it closed at 2.2 m/s, "Something approaching from
+    right, stop", and the wearer, told to stop and not to turn, walked into the pane."""
+    e = max(0.0, abs(_signed(bearing)) - RADAR_BEAM_H_DEG / 2.0)
+    return 1.0 / math.cos(math.radians(e)) if e < 80.0 else 1.0
+
+
 def laser_sees(lidar_state: Optional[Dict[str, Any]], bearing: float, range_m: float) -> bool:
     """Does the laser have a return at this distance inside this board's beam: a surface the
     LiDAR sees but lidar_movers does not follow (a wall, a car's side: over 2 m wide)? Then the
@@ -108,8 +121,8 @@ class RadarMoverTracker:
 
         A board ranges the nearest point of a wall inside its beam, and that point slides
         along the wall: walking, a still wall can close at up to the user's whole walking
-        speed on ANY board, so an echo must close faster than that. (Faster still where that
-        point lies at the beam's edge, on a surface facing the walk: laser_sees.) `ego` is lidar_movers'
+        speed on ANY board, so an echo must close faster than that — and faster still where
+        that point lies at the beam's edge, on a surface facing the walk (edge_slide). `ego` is lidar_movers'
         estimate of the walk; without it, any walk up to LIDAR_MOVERS_WALK_MAX_MPS. A turn
         sweeps the beams across walls, so nothing is judged until it is out of the fit."""
         ego = ego or {}
@@ -235,7 +248,7 @@ class RadarMoverTracker:
             return
         tr["rate"] = rate
         tr["range"] = float(np.median(arr[:, 1] - rate * (arr[:, 0] - h[-1][0])))
-        tr["own_closing"] = -rate - walk
+        tr["own_closing"] = -rate - walk * edge_slide(tr["bearing"])
         closing = rate < 0.0 and tr["own_closing"] >= RADAR_MOVERS_MIN_CLOSING_MPS
         tr["closing_frames"] = tr["closing_frames"] + 1 if closing else 0
         if tr["closing_frames"] < RADAR_MOVERS_CONFIRM_FRAMES:

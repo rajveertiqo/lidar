@@ -37,12 +37,8 @@ CAM_HEIGHT_M = 1.45  # the camera above the ground
 RNG = np.random.default_rng(7)
 
 # The "true" rig: lenses with distortion and off-centre, the ToF a little off the design.
-TRUE_TOF = df.Lens(
-    214.0, 213.2, 121.3, 88.6, 240, 180, (-0.12, 0.03, 0.001, -0.0005, 0.0)
-)
-TRUE_CAM = df.Lens(
-    896.0, 895.1, 583.4, 438.2, 1164, 874, (0.05, -0.08, 0.0004, 0.0002, 0.0)
-)
+TRUE_TOF = df.Lens(214.0, 213.2, 121.3, 88.6, 240, 180, (-0.12, 0.03, 0.001, -0.0005, 0.0))
+TRUE_CAM = df.Lens(896.0, 895.1, 583.4, 438.2, 1164, 874, (0.05, -0.08, 0.0004, 0.0002, 0.0))
 CW, CH = TRUE_CAM.width, TRUE_CAM.height  # the front picture: 1164 x 874, 66 deg (2026-11-02)
 
 
@@ -168,9 +164,7 @@ def test_design_numbers():
 
 def test_geometry():
     print("each depth pixel lands where its true point is in the camera picture")
-    depth, conf, pts = render(
-        [box(0.2, 0.9, 0.75, 0.70, 1.3, 1.9)], wall_z=3.5, noise=0.0
-    )
+    depth, conf, pts = render([box(0.2, 0.9, 0.75, 0.70, 1.3, 1.9)], wall_z=3.5, noise=0.0)
     proj = df.DepthProjector(TRUE)
     flat = depth.reshape(-1)
     idx = RNG.choice(
@@ -273,9 +267,7 @@ def test_wrong_ways():
     P = dp.rays[ok] * (depth.reshape(-1)[ok, None] / 1000.0)
     du, dv = design.cam.project(P @ design.R.T + design.t)
     design_err = np.hypot(du - u, dv - v)[inside]
-    print(
-        f"     stretched depth picture: median {np.median(stretch):.0f} px off (of {CW})"
-    )
+    print(f"     stretched depth picture: median {np.median(stretch):.0f} px off (of {CW})")
     print(
         f"     angles only: {np.median(angles[near_k]):.1f} px off within 1.6 m, "
         f"{np.median(angles[far_k]):.1f} px past 3 m"
@@ -309,17 +301,13 @@ def _board_views(kind: str, n: int):
             @ _rot("z", RNG.uniform(-15, 15))
         )
         if kind == "tof":  # spread over the ToF's picture
-            pt0 = np.array(
-                [RNG.uniform(-0.4, 0.4), RNG.uniform(-0.3, 0.3), RNG.uniform(0.6, 1.0)]
-            )
+            pt0 = np.array([RNG.uniform(-0.4, 0.4), RNG.uniform(-0.3, 0.3), RNG.uniform(0.6, 1.0)])
             centre = TRUE.R @ pt0 + TRUE.t
         else:
             centre = np.array(
                 [
                     RNG.uniform(-0.45, 0.45),
-                    RNG.uniform(0.1, 0.5)
-                    if kind == "both"
-                    else RNG.uniform(-0.35, 0.35),
+                    RNG.uniform(0.1, 0.5) if kind == "both" else RNG.uniform(-0.35, 0.35),
                     RNG.uniform(0.6, 1.3),
                 ]
             )
@@ -347,9 +335,7 @@ def _board_views(kind: str, n: int):
             .astype(np.float32)
             .reshape(-1, 1, 2)
         )
-        views.append(
-            (tc.board_points(7, 5, 40.0), t if in_tof else None, c if in_cam else None)
-        )
+        views.append((tc.board_points(7, 5, 40.0), t if in_tof else None, c if in_cam else None))
     return views
 
 
@@ -357,9 +343,7 @@ def placement_error(calib: df.Calibration, truth: df.Calibration = TRUE):
     """Median and 95th-percentile px between where `calib` places a street's depth dots and where they truly are."""
     scene = [box(0.2, 0.9, 0.75, 0.70, 1.3, 1.9), box(0.05, 0.55, 1.70, 0.0, 2.3, 2.6)]
     depth, conf, pts = render(scene, wall_z=3.5, noise=0.0, calib=truth)
-    ok = (depth.reshape(-1) >= config.TOF_MIN_MM) & (
-        depth.reshape(-1) <= config.TOF_MAX_MM
-    )
+    ok = (depth.reshape(-1) >= config.TOF_MIN_MM) & (depth.reshape(-1) <= config.TOF_MAX_MM)
     u, v = cam_pixel(pts[ok], truth.cam)
     P = df.DepthProjector(calib).rays[ok] * (depth.reshape(-1)[ok, None] / 1000.0)
     pu, pv = calib.cam.project(P @ calib.R.T + calib.t)
@@ -377,9 +361,7 @@ def test_calibration():
     R = np.array(res["R"])
     t = np.array(res["t_m"])
     ang = math.degrees(math.acos(min(1.0, (np.trace(R.T @ TRUE.R) - 1.0) / 2.0)))
-    ang0 = math.degrees(
-        math.acos(min(1.0, (np.trace(np.array(res0["R"]).T @ TRUE.R) - 1.0) / 2.0))
-    )
+    ang0 = math.degrees(math.acos(min(1.0, (np.trace(np.array(res0["R"]).T @ TRUE.R) - 1.0) / 2.0)))
     terr = np.linalg.norm(t - TRUE.t) * 1000.0
     # The aim alone is a poor yardstick (a little aim error is traded against the lens's
     # centre); where the dots land, below, is the one that counts.
@@ -518,12 +500,8 @@ def test_pictures():
                 continue
             n += 1
             stem = os.path.join(tmp, f"{n:03d}")
-            cv2.imwrite(
-                stem + "_cam.png", _render_board(tex, first, Rb, tb_c, truth.cam)
-            )
-            cv2.imwrite(
-                stem + "_tof.png", _render_board(tex, first, Rt, tb_t, truth.tof, 4)
-            )
+            cv2.imwrite(stem + "_cam.png", _render_board(tex, first, Rb, tb_c, truth.cam))
+            cv2.imwrite(stem + "_tof.png", _render_board(tex, first, Rt, tb_t, truth.tof, 4))
         out = os.path.join(tmp, "cal.json")
         import contextlib
         import io
@@ -615,15 +593,11 @@ def test_wiring():
         r_on, cut = sg._box_range(dets[0], "person", tuple(bb))
         check(
             "TOF_USE_DISTANCE on: the ToF's distance everywhere",
-            src == "tof"
-            and abs(r_on - dets[0]["depth"]["distance_m"]) < 1e-9
-            and not cut,
+            src == "tof" and abs(r_on - dets[0]["depth"]["distance_m"]) < 1e-9 and not cut,
             f"dashboard {ft} ft; guidance {r_on:.2f} m (box size said {r_off:.2f} m)",
         )
     finally:
-        df.TOF_ENABLED, df._projector, config.TOF_USE_DISTANCE, sg.TOF_USE_DISTANCE = (
-            old
-        )
+        df.TOF_ENABLED, df._projector, config.TOF_USE_DISTANCE, sg.TOF_USE_DISTANCE = old
         with tof_camera._lock:
             tof_camera._frames.clear()
 
@@ -652,9 +626,7 @@ def test_aligned():
     ty1 = max(y1 + 0.1 * (y2 - y1), top_seen + 2 * cell)
     region = rng[int(ty1 // cell) : int(ty2 // cell), int(tx1 // cell) : int(tx2 // cell)]
     on_person = np.isfinite(region)
-    p_rng = np.linalg.norm(
-        (LEVEL.T @ np.array([0.30, CAM_HEIGHT_M - 0.9, 1.85])), axis=0
-    )
+    p_rng = np.linalg.norm((LEVEL.T @ np.array([0.30, CAM_HEIGHT_M - 0.9, 1.85])), axis=0)
     check(
         "inside the person's box: every block has a distance, the person's, not the wall's",
         on_person.mean() > 0.99 and np.nanmax(region) < 2.6,
@@ -665,7 +637,19 @@ def test_aligned():
     bd = fr.box_depth(detection_box(*person))
     check(
         "its ground distance agrees with the box's",
-        bd is not None and abs(float(np.nanmedian(gr[np.isfinite(region).nonzero()[0] + int(ty1 // cell), np.isfinite(region).nonzero()[1] + int(tx1 // cell)])) - bd["distance_m"]) < 0.05,
+        bd is not None
+        and abs(
+            float(
+                np.nanmedian(
+                    gr[
+                        np.isfinite(region).nonzero()[0] + int(ty1 // cell),
+                        np.isfinite(region).nonzero()[1] + int(tx1 // cell),
+                    ]
+                )
+            )
+            - bd["distance_m"]
+        )
+        < 0.05,
         f"box {bd and bd['distance_m']} m",
     )
     top_rows = int(float(np.min(v)) // cell) - 1  # above the highest depth point anywhere
@@ -710,8 +694,7 @@ def test_aligned():
     tinted = (out != 90).any(axis=2)
     check(
         "the RGB-D picture: depth laid over the camera's, boxes labelled",
-        out.shape == pic.shape and tinted[int(ty2) - 5, int((tx1 + tx2) / 2)]
-        and not tinted[2, 2],
+        out.shape == pic.shape and tinted[int(ty2) - 5, int((tx1 + tx2) / 2)] and not tinted[2, 2],
         f"{tinted.mean() * 100:.0f} % of the picture changed",
     )
     out2 = df.draw_rgbd(pic[::2, ::2].copy(), fr, [])
@@ -750,9 +733,7 @@ def test_cost():
         fr.box_depth(bb)
     per_box = (time.perf_counter() - t) / 200 * 1000.0
     print(f"     placing one 240 x 180 frame: {per:.1f} ms; one box: {per_box:.2f} ms")
-    check(
-        "under 25 ms a frame (only frames a detection pass uses are placed)", per < 25.0
-    )
+    check("under 25 ms a frame (only frames a detection pass uses are placed)", per < 25.0)
 
 
 def main() -> int:

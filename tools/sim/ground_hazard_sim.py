@@ -321,8 +321,12 @@ def sway(pitch_deg=0.0, roll_deg=0.0) -> np.ndarray:
     return _rot("x", -pitch_deg) @ _rot("z", roll_deg)
 
 
-def render_tof(boxes, pitch=0.0, roll=0.0, noise=0.01, dropout=0.02, rng=None, calib=CAL):
-    """(depth mm, confidence) as the ToF would read the scene."""
+def render_tof(
+    boxes, pitch=0.0, roll=0.0, noise=0.01, dropout=0.02, rng=None, calib=CAL, pose=None
+):
+    """(depth mm, confidence) as the ToF would read the scene. `pose`: (x right, z ahead, m;
+    heading, deg, + right) of the wearer in the scene's frame, the scene staying where it is
+    (walk_sim walks through it); None: at the origin, facing z."""
     rng = rng or np.random.default_rng(0)
     tof = calib.tof
     vv, uu = np.mgrid[0 : tof.height, 0 : tof.width].astype(np.float64)
@@ -332,6 +336,7 @@ def render_tof(boxes, pitch=0.0, roll=0.0, noise=0.01, dropout=0.02, rng=None, c
     S = sway(pitch, roll)
     D = unit @ (S @ LEVEL @ calib.R).T
     O = S @ LEVEL @ calib.t
+    D, O = _posed(D, O, pose)
     s, _, _ = _hit(O, D, boxes)
     reading = s if config.TOF_DEPTH_IS_RADIAL else s * unit[:, 2]
     depth = reading * 1000.0 * (1.0 + noise * rng.standard_normal(len(s)))
@@ -341,17 +346,28 @@ def render_tof(boxes, pitch=0.0, roll=0.0, noise=0.01, dropout=0.02, rng=None, c
     return depth.reshape(tof.height, tof.width), conf.reshape(tof.height, tof.width)
 
 
-def render_picture(boxes, pitch=0.0, roll=0.0, calib=CAL, rng=None) -> np.ndarray:
+def _posed(D, O, pose):
+    """Rays (D, from O) turned by the pose's heading about the vertical (y, down) and moved
+    to its (x, z): see render_tof."""
+    if pose is None:
+        return D, O
+    px, pz, hdg = pose
+    c, sn = math.cos(math.radians(hdg)), math.sin(math.radians(hdg))
+    turn = np.array([[c, 0.0, sn], [0.0, 1.0, 0.0], [-sn, 0.0, c]])
+    return D @ turn.T, turn @ O + np.array([px, 0.0, pz])
+
+
+def render_picture(boxes, pitch=0.0, roll=0.0, calib=CAL, rng=None, pose=None) -> np.ndarray:
     """The front camera's picture of the scene (BGR), flat-shaded: each box its own shade,
-    tops lighter than fronts, the sky light."""
+    tops lighter than fronts, the sky light. `pose`: as render_tof's."""
     rng = rng or np.random.default_rng(1)
     cam = calib.cam
     vv, uu = np.mgrid[0 : cam.height, 0 : cam.width].astype(np.float64)
     xn, yn = cam.normalised(uu.ravel(), vv.ravel())
     unit = np.stack([xn, yn, np.ones_like(xn)], axis=1)
     unit /= np.linalg.norm(unit, axis=1, keepdims=True)
-    D = unit @ (sway(pitch, roll) @ LEVEL).T
-    s, which, face = _hit(np.zeros(3), D, boxes)
+    D, O = _posed(unit @ (sway(pitch, roll) @ LEVEL).T, np.zeros(3), pose)
+    s, which, face = _hit(O, D, boxes)
     # Each box its own shade (the golden-ratio sequence: no two alike nearby — a repeat
     # every 4 gave a floor and the landing below a flight the same shade, no edge).
     albedo = np.array([1.0 - 0.3 * ((b * 0.618034) % 1.0) for b in range(len(boxes))] + [1.0])

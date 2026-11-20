@@ -37,16 +37,13 @@ def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument(
-        "--sectors", default="front", help="comma list: front,right,left,back"
-    )
+    ap.add_argument("--sectors", default="front", help="comma list: front,right,left,back")
     ap.add_argument("--every", type=float, default=2.0, help="seconds between pictures")
     ap.add_argument(
         "--change",
         type=float,
         default=8.0,
-        help="how different (mean grey "
-        "level, 0-255) a picture must be from the last one kept",
+        help="how different (mean grey level, 0-255) a picture must be from the last one kept",
     )
     ap.add_argument("--base", default="http://127.0.0.1:8000")
     ap.add_argument("--out", default=str(ROOT / "logs" / "training_frames"))

@@ -4,6 +4,7 @@ run with venv/bin/python -m unittest tests.test_logic_regressions."""
 import contextlib
 import math
 import os
+import threading
 import time
 import unittest
 import unittest.mock
@@ -1340,8 +1341,12 @@ class ConsoleRoomTests(unittest.TestCase):
     def test_a_block_shows_the_room_each_way(self):
         from app.guidance import test_console as tc
 
-        raw = {"blocked": True, "front_ft": 1.0, "turn_room": {"left": 13.1, "right": 1.4},
-               "turn_floor": 2.0}
+        raw = {
+            "blocked": True,
+            "front_ft": 1.0,
+            "turn_room": {"left": 13.1, "right": 1.4},
+            "turn_floor": 2.0,
+        }
         self.assertIn("room L 13.1 R 1.4 ft (needs 2.0)", tc._evidence(raw))
         raw["turn_room"] = {"left": float("-inf"), "right": 1.4}  # no data that way
         self.assertIn("room L ? R 1.4 ft", tc._evidence(raw))
@@ -1523,6 +1528,85 @@ class CameraExposureCapTests(unittest.TestCase):
         self.assertIn("AeExposureMode", ctrls)
         with unittest.mock.patch.object(pc, "CAMERA_SHUTTER_CAP_MS", None):
             self.assertEqual(pc._short_exposure(), (None, {}))  # off: the sensor's own
+
+
+class StuckCameraStopTests(unittest.TestCase):
+    """2026-11-20, on the device: the picture stream stalled; its reopen hung in stop(),
+    abandoned after CAMERA_STOP_TIMEOUT_S, and libcamera still held that camera, so every
+    reopen after it failed ("Camera in Running state trying acquire()"), every 10 s, until the
+    app restarted. The captures still waiting on a camera are cancelled before it is stopped
+    (Picamera2's cancel_all_and_flush, its own advice for a camera that stopped answering);
+    and while a stop is still stuck, a reopen is tried every CAMERA_STUCK_RETRY_S, saying why."""
+
+    class Cam:
+        def __init__(self, hang=None):
+            self.calls, self.hang = [], hang
+
+        def cancel_all_and_flush(self):
+            self.calls.append("cancel")
+
+        def stop(self):
+            self.calls.append("stop")
+            if self.hang is not None:
+                self.hang.wait(5.0)
+
+        def close(self):
+            self.calls.append("close")
+
+    def test_a_close_cancels_the_waiting_captures_first(self):
+        from app.sensors import pi_camera_utils as pc
+
+        cam = self.Cam()
+        self.assertTrue(pc._close_camera(cam))
+        self.assertEqual(cam.calls, ["cancel", "stop", "close"])
+        self.assertFalse(pc._stuck_close.is_set())
+
+    def test_a_stop_that_hangs_is_marked_stuck_until_it_lets_go(self):
+        from app.sensors import pi_camera_utils as pc
+
+        hang = threading.Event()
+        cam = self.Cam(hang)
+        with unittest.mock.patch.object(pc, "CAMERA_STOP_TIMEOUT_S", 0.2):
+            self.assertFalse(pc._close_camera(cam))
+        self.assertTrue(pc._stuck_close.is_set())
+        hang.set()  # it lets go, late
+        for _ in range(50):
+            if not pc._stuck_close.is_set():
+                break
+            time.sleep(0.02)
+        self.assertFalse(pc._stuck_close.is_set())
+        self.assertEqual(cam.calls, ["cancel", "stop", "close"])
+
+    def test_while_stuck_a_reopen_waits_long_and_says_why(self):
+        try:
+            import picamera2  # noqa: F401
+        except ImportError:
+            self.skipTest("picamera2 not installed (not a Pi)")
+        from app.sensors import pi_camera_utils as pc
+
+        def refuse(*a, **kw):
+            raise RuntimeError("Camera __init__ sequence did not complete.")
+
+        pc._stuck_close.set()
+        try:
+            with (
+                unittest.mock.patch("picamera2.Picamera2", refuse),
+                unittest.mock.patch.object(pc, "_set_board_mode", lambda: True),
+                unittest.mock.patch.object(pc, "_short_exposure", lambda: (None, {})),
+                unittest.mock.patch.object(pc, "running", True),
+                self.assertLogs(pc._log, level="WARNING") as logs,
+            ):
+                opener = threading.Thread(target=pc._open_camera, daemon=True)
+                opener.start()
+                time.sleep(0.5)
+                pc.running = False  # stopped: the wait ends within 0.25 s
+                opener.join(2.0)
+            self.assertFalse(opener.is_alive())
+            said = " ".join(logs.output)
+            self.assertIn("libcamera still holds it", said)
+            self.assertIn(f"retrying in {pc.CAMERA_STUCK_RETRY_S:g}s", said)
+        finally:
+            pc._stuck_close.clear()
 
 
 class SpokenOnlyOnTheDashboardTests(unittest.TestCase):
@@ -1777,8 +1861,9 @@ class PaneAheadNotBesideOnAMissedFrameTests(unittest.TestCase):
 
         name = "glass across a 3 m hall"
         i = list(ws.SCENES).index(name)  # as the command line runs it
-        ticks = ws.walk(ws.SCENES[name], noise_mm=10, seed=2, ghosts=0.5, drop=0.2,
-                        t0=1000.0 + 100.0 * i)
+        ticks = ws.walk(
+            ws.SCENES[name], noise_mm=10, seed=2, ghosts=0.5, drop=0.2, t0=1000.0 + 100.0 * i
+        )
         self.assertEqual(ws.judge(name, ws.SCENES[name], ticks, False), [])  # was no block
 
 
@@ -1795,8 +1880,9 @@ class CorridorWallsNotAGlassDoorTests(unittest.TestCase):
 
         name = "dead end, 1.0 m corridor"
         i = list(ws.ROOMS).index(name)  # as the command line runs it
-        ticks = ws.follow(ws.ROOMS[name], noise_mm=10, seed=1, ghosts=0.5, drop=0.2,
-                          t0=1000.0 + 100.0 * i)
+        ticks = ws.follow(
+            ws.ROOMS[name], noise_mm=10, seed=1, ghosts=0.5, drop=0.2, t0=1000.0 + 100.0 * i
+        )
         self.assertEqual(ws.judge_follow(ws.ROOMS[name], ticks), [])
         said = {text for *_r, text, spoken, _c in ticks if spoken}
         self.assertFalse(said & set(sg.BLOCKED_GLASS_ANY + (sg.GLASS_AHEAD,)), said)
@@ -1826,8 +1912,11 @@ class PeopleComingWalkedTests(unittest.TestCase):
         return ws.judge_follow(ws.ROOMS[name], ticks, shadows), ticks
 
     def test_past_someone_coming_with_the_warnings_on(self):
-        for name in ("someone coming head-on, open floor", "someone crossing from the left",
-                     "someone coming head-on, 2.4 m corridor"):
+        for name in (
+            "someone coming head-on, open floor",
+            "someone crossing from the left",
+            "someone coming head-on, 2.4 m corridor",
+        ):
             with self.subTest(name):
                 self.assertEqual(self._walk(name)[0], [])
 
@@ -1854,9 +1943,11 @@ class CarsWalkedTests(unittest.TestCase):
         return ws.judge_follow(ws.ROOMS[name], ticks, shadows), said
 
     def test_warned_in_time_and_sent_behind_the_car(self):
-        for name, way in (("car coming head-on", None),
-                          ("car coming in from ahead-left", sg.VEHICLE_FROM_RIGHT),
-                          ("car coming in from ahead-right", sg.VEHICLE_FROM_LEFT)):
+        for name, way in (
+            ("car coming head-on", None),
+            ("car coming in from ahead-left", sg.VEHICLE_FROM_RIGHT),
+            ("car coming in from ahead-right", sg.VEHICLE_FROM_LEFT),
+        ):
             with self.subTest(name):
                 bad, said = self._walk(name)
                 self.assertEqual(bad, [])
@@ -1865,8 +1956,12 @@ class CarsWalkedTests(unittest.TestCase):
                     self.assertEqual(warned[0], way)
 
     def test_no_warning_for_a_car_not_coming(self):
-        for name in ("car passing in the next lane", "car driving off ahead",
-                     "car parked in the way", "car parked beside the way"):
+        for name in (
+            "car passing in the next lane",
+            "car driving off ahead",
+            "car parked in the way",
+            "car parked beside the way",
+        ):
             with self.subTest(name):
                 bad, said = self._walk(name)
                 self.assertEqual(bad, [])
@@ -1876,12 +1971,16 @@ class CarsWalkedTests(unittest.TestCase):
         from tools.sim import walk_sim as ws
 
         head_on = ws.Room(movers=[(30000, 0, -5000, 0, 900, "car")])
-        self.assertAlmostEqual(ws._vehicle_lead(head_on, (0.0, 0.0, 0.0, 0.0)),
-                               (30000 - 2250 - ws.BODY_MM) / 6200.0, delta=0.06)
+        self.assertAlmostEqual(
+            ws._vehicle_lead(head_on, (0.0, 0.0, 0.0, 0.0)),
+            (30000 - 2250 - ws.BODY_MM) / 6200.0,
+            delta=0.06,
+        )
         next_lane = ws.Room(movers=[(30000, 4000, -5000, 0, 900, "car")])
         self.assertIsNone(ws._vehicle_lead(next_lane, (0.0, 0.0, 0.0, 0.0)))
-        self.assertAlmostEqual(ws._vehicle_passes(next_lane, (0.0, 0.0, 0.0, 0.0))[0][1],
-                               3100.0, delta=1.0)
+        self.assertAlmostEqual(
+            ws._vehicle_passes(next_lane, (0.0, 0.0, 0.0, 0.0))[0][1], 3100.0, delta=1.0
+        )
 
     def test_a_person_the_camera_names_is_steered_past(self):
         bad, said = self._walk("someone standing ahead, seen")
@@ -1889,35 +1988,249 @@ class CarsWalkedTests(unittest.TestCase):
         self.assertIn(sg.STEER_PAST[("Person", "ahead", "right")], said)
 
 
-class RadarEchoTheLaserSeesTests(unittest.TestCase):
-    """2026-11-20 (walk_sim, a car parked on the right): a side board's nearest point on a
-    surface facing the walk lies at its beam's edge and slides along it, closing at 1.9 times
-    the walk; the LiDAR saw the car, but over 2 m wide it is no lidar_movers blob, and the echo
-    was "Something approaching from right, stop" (a "would say"). An echo at a range the laser
-    has a return at inside that board's beam is the LiDAR's (radar_movers.laser_sees)."""
+class CrossingCarsTests(unittest.TestCase):
+    """2026-11-20, walk_sim: a car crossing toward the walking line at 14 km/h was warned of
+    0.7 s before it would reach the wearer from the left, never from the right (the LiDAR's
+    mover warnings, not yet spoken; the front camera does not see it until it is in front).
+    Its front is what the LiDAR sees, past LIDAR_MOVERS_MAX_RANGE_MM until ~2 s out: blobs out
+    to LIDAR_MOVERS_VEHICLE_MAX_RANGE_MM now reach the Kalman tracker, moving there only at a
+    vehicle's speed. From the right its front came joined to its side seen edge-on, one run
+    over 2 m: a too-wide run bent at a corner is two faces. The simulator's "nothing there",
+    a return at 12 m, joined it into one ring round the wearer: a return at the LiDAR's reach
+    is none. Alone on the road it was every return, dropped as a room's outline: only a run
+    that closes round is. And the Kalman's "steady heading" held the filter's first guesses
+    at its velocity 1.2 s: it is judged over the last MOTION_VEHICLE_STEADY_S of sightings.
+    Now ~1.6 s ahead either way, the wearer stopped short of it. And with range noise, a car
+    head-on that the wearer had stepped away from flipped the camera's spoken side ("move
+    left" after "move right": back into it, 3 seeds in 6): the step is behind a car only when
+    it goes across the line, its whole width in the time left."""
 
     @staticmethod
-    def _threat(laser):
+    def _seg(points):
+        from app.perception.lidar_movers import segment
+
+        return segment(points)
+
+    @staticmethod
+    def _arc(x, y, half_w, step=0.7):
+        """A face across the line of sight at (x, y) m, half_w wide: (deg, mm) returns."""
+        out = []
+        for k in range(-40, 41):
+            yy = y + half_w * k / 40.0
+            out.append((math.degrees(math.atan2(yy, x)) % 360.0, math.hypot(x, yy) * 1000.0))
+        return out
+
+    def test_a_car_alone_on_the_road_is_a_blob(self):
+        blobs = self._seg(self._arc(6.0, 1.0, 0.9))
+        self.assertEqual(len(blobs), 1)
+        self.assertTrue(blobs[0]["clean"])
+        self.assertFalse(blobs[0]["far"])
+
+    def test_the_reach_ring_is_no_surface(self):
+        ring = [(k * 360.0 / 520, 12000.0) for k in range(520)]
+        car = self._arc(9.0, 3.0, 0.9)
+        lo, hi = min(a for a, _d in car), max(a for a, _d in car)
+        blobs = self._seg(car + [p for p in ring if not lo - 1.0 <= p[0] <= hi + 1.0])
+        self.assertEqual(len(blobs), 1)
+        self.assertTrue(blobs[0]["far"])  # 9.5 m: past the people's range
+
+    def test_a_front_and_its_side_edge_on_are_two_faces(self):
+        # walk_sim's scan of the car crossing from the right, 2.5 s in: its front 10.2-10.8 m
+        # off, then its side running off nearly edge-on to 11.7 m.
+        car = [
+            (63.7, 10780),
+            (64.4, 10716),
+            (65.1, 10655),
+            (65.8, 10597),
+            (66.5, 10540),
+            (67.2, 10486),
+            (67.8, 10433),
+            (68.5, 10383),
+            (69.2, 10335),
+            (69.9, 10288),
+            (70.6, 10244),
+            (71.3, 10201),
+            (72.0, 10160),
+            (72.7, 10332),
+            (73.4, 10750),
+            (74.1, 11204),
+            (74.8, 11701),
+        ]
+        blobs = self._seg(car)
+        self.assertTrue(any(abs(b["width"] - 1.6) < 0.3 and b["far"] for b in blobs), blobs)
+
+    def test_a_rooms_outline_is_still_dropped(self):
+        room = [(k * 360.0 / 520, 3000.0) for k in range(520)]
+        self.assertEqual(self._seg(room), [])
+
+    def test_crossing_cars_warned_and_stopped_short(self):
+        from tools.field.walk_replay import turned_on
+        from tools.sim import walk_sim as ws
+
+        for name in ("car crossing from the left", "car crossing from the right"):
+            with self.subTest(name), turned_on(["movers"]):
+                ticks = ws.follow(ws.ROOMS[name], t0=3000.0)
+                warned = [
+                    k
+                    for k, (*_r, text, sp, _c) in enumerate(ticks)
+                    if sp and text in sg._MOVER_INFO
+                ]
+                self.assertTrue(warned)
+                self.assertGreaterEqual(ws._vehicle_lead(ws.ROOMS[name], ticks[warned[0]]), 1.2)
+                self.assertGreaterEqual(ticks[-1][-1], ws.BODY_MM)  # not walked into
+
+    def test_a_car_head_on_with_range_noise(self):
+        from tools.sim import walk_sim as ws
+
+        room = ws.ROOMS["car coming head-on"]
+        for seed in (2, 3):
+            with self.subTest(seed=seed):
+                ticks = ws.follow(room, noise_mm=10.0, seed=seed, t0=2600.0)
+                self.assertEqual(ws.judge_follow(room, ticks), [])
+
+
+class GroundHazardsWalkedTests(unittest.TestCase):
+    """2026-11-20, walk_sim --follow with the ToF's hazards on the ground (TOF_HAZARDS_SPEAK, not
+    yet spoken), rendered from the walking wearer with the body's sway and the front camera's
+    picture: (1) "Drop in front, stop" came in time, then "Walk straight" a metre from the edge,
+    and the wearer walked off it: nearer than ~1.1 m the ToF sees only the lower ground (or
+    past 4 m nothing) and finds no floor; a drop or stairs down said "..., stop" is now held
+    while no ground is found. (2) A platform edge was "Drop ahead" at 2.2 m, then silent: the
+    camera's confirmation was undone by "no evidence" as the edge slid off the bottom of its
+    picture. (3) A kerb at the ToF's far end was "Low obstacle ahead", and its airtime held
+    "Step up ahead" to 1.4 m before it; stairs up waited the settle after "Step up ahead"."""
+
+    @staticmethod
+    def _frames(boxes, poses, hz=None):
+        import numpy as np
+
+        from app.perception import depth_fusion as df
+        from app.perception import ground_hazards as gh
+        from tools.sim import ground_hazard_sim as ghs
+
+        hz = hz or gh.GroundHazards(df.DepthProjector(ghs.CAL))
+        rng, snaps = np.random.default_rng(0), []
+        for i, pose in enumerate(poses):
+            depth, conf = ghs.render_tof(boxes, rng=rng, pose=pose)
+            snaps.append(hz.step(depth, conf, 1000.0 + i * 0.1, None))
+        return hz, snaps
+
+    def test_a_drop_said_stop_is_held_until_the_floor_is_seen_again(self):
+        from tools.sim import ground_hazard_sim as ghs
+
+        boxes = ghs.drop(z0=4.0, depth=1.0)
+        walk = [(0.0, 0.12 * i, 0.0) for i in range(25)]  # up to 1.1 m short of the edge
+        hz, snaps = self._frames(boxes, walk + [(0.0, 2.9, 0.0)] * 10)
+        self.assertFalse(snaps[-1]["plane"])  # no floor in view: only the ground below
+        self.assertEqual((snaps[-1]["top"] or {}).get("kind"), "drop")
+        self.assertTrue(snaps[-1]["held"])
+        _hz, turned = self._frames(boxes, [(0.0, 2.9, 90.0)] * 6, hz)  # turned away
+        self.assertIsNone(turned[-1]["top"])
+        self.assertFalse(turned[-1]["held"])
+
+    def test_the_cameras_confirmation_kept_walking_up_to_it(self):
+        from app.perception.ground_hazards import _Tracker
+
+        def status(confirmed_at, then_at):
+            """The camera's word on the drop after `confirmed_at` (confirmed) and `then_at`
+            ("no evidence", five frames: no confirmation left in the tracker's window)."""
+            tr, i, out = _Tracker(), 0, None
+            for ahead, cam in [(a, "confirmed") for a in confirmed_at] + [
+                (a, "no_evidence") for a in then_at
+            ]:
+                hz = {"kind": "drop", "ahead_m": ahead, "in_path": True, "camera": {"status": cam}}
+                out, i = tr.update([hz], 1000.0 + 0.1 * i), i + 1
+            return out[0]["camera"]["status"]
+
+        # Walking up to it: off the bottom of the picture, "no evidence" is no evidence.
+        self.assertEqual(status((2.45, 2.35, 2.25), (2.15, 2.05, 1.95, 1.85, 1.75)), "confirmed")
+        # Farther off than where it was confirmed: the camera's word stands.
+        self.assertEqual(status((2.0, 2.0, 2.0), (2.1, 2.2, 2.3, 2.4, 2.5)), "no_evidence")
+
+    def test_a_kerb_at_the_far_end_is_not_a_low_obstacle(self):
+        from tools.sim import ground_hazard_sim as ghs
+
+        _hz, snaps = self._frames(ghs.kerb_up(z0=3.6), [(0.0, 0.0, 0.0)] * 5)
+        self.assertNotIn("low_obstacle", [h["kind"] for s in snaps for h in s["seen"]])
+        _hz, snaps = self._frames(ghs.low_box(z=2.0), [(0.0, 0.0, 0.0)] * 5)
+        self.assertIn("low_obstacle", [h["kind"] for h in snaps[-1]["seen"]])
+
+    def test_walked(self):
+        from tools.field.walk_replay import turned_on
+        from tools.sim import walk_sim as ws
+
+        for name in ("drop 1 m deep, 6 m out", "platform edge, 6 m out", "kerb up, 6 m out"):
+            with self.subTest(name), turned_on(["tof-hazards"]):
+                room = ws.ROOMS[name]
+                ticks = ws.follow(room, t0=4000.0)
+                self.assertEqual(ws.judge_follow(room, ticks), [])
+
+
+class RadarEchoTheLaserSeesTests(unittest.TestCase):
+    """2026-11-20 (walk_sim): a board's nearest point on a surface facing the walk lies at its
+    beam's edge and slides along it, closing faster than the walk: walking up to the back of
+    a parked car, and to a pane across open floor, "Something approaching from right, stop"
+    (a "would say"; at the pane the wearer, told to stop and not to turn, walked into it). A
+    still surface may close at walk / cos(the beam edge's angle off the way) on a board
+    (radar_movers.edge_slide), and an echo at a range the laser has a return at inside the
+    board's beam is the LiDAR's (laser_sees): the car's side, over 2 m wide, is no blob."""
+
+    WALKING = {"valid": True, "fwd_mps": 1.2, "right_mps": 0.0, "rms_mps": 0.05}
+
+    @staticmethod
+    def _threat(board, closing_mps, laser=False, ego=None, start_mm=3900.0):
         from app.perception.radar_movers import RadarMoverTracker
 
         tracker, threat = RadarMoverTracker(), None
-        for i in range(9):  # 6 frames a second, closing at 2.3 m/s from 3.6 m to 0.5 m
-            t, r_mm = 100.0 + i / 6.0, 3600.0 - 2300.0 * i / 6.0
-            radar = {"sectors": {"deg090": {"online": True, "degraded": False, "stale": False,
-                                            "last_update": t, "peaks_mm": [r_mm]}}}
-            lidar = {"points": {"angles": [0.0, 58.0, 180.0],
-                                "distances": [9000.0, r_mm, 9000.0]}} if laser else None
-            tracker.update(radar, [], None, turn_dps=0.0, lidar_state=lidar)
+        bearing = float(board[3:])
+        for i in range(10):  # 6 frames a second, while the echo is inside the boards' reach
+            t, r_mm = 100.0 + i / 6.0, start_mm - closing_mps * 1000.0 * i / 6.0
+            if r_mm < 300.0:
+                break
+            radar = {
+                "sectors": {
+                    board: {
+                        "online": True,
+                        "degraded": False,
+                        "stale": False,
+                        "last_update": t,
+                        "peaks_mm": [r_mm],
+                    }
+                }
+            }
+            lidar = (
+                {"points": {"angles": [0.0, bearing, 180.0], "distances": [9000.0, r_mm, 9000.0]}}
+                if laser
+                else None
+            )
+            tracker.update(radar, [], ego, turn_dps=0.0, lidar_state=lidar)
             threat = threat or tracker.snapshot()["threat"]
         return threat
 
     def test_an_echo_off_a_surface_the_laser_sees_is_not_something_coming(self):
-        self.assertIsNotNone(self._threat(False))  # what it was
-        self.assertIsNone(self._threat(True))
+        self.assertIsNotNone(self._threat("deg030", 2.3))  # faster than any walk: coming
+        self.assertIsNone(self._threat("deg030", 2.3, laser=True))
 
-    def test_the_parked_car_walked_past(self):
+    def test_a_side_board_allows_the_beam_edge_slide(self):
+        from app.perception import radar_movers
+
+        self.assertAlmostEqual(radar_movers.edge_slide(90.0), 1.0 / math.cos(math.radians(57.5)))
+        self.assertEqual(radar_movers.edge_slide(30.0), 1.0)
+        self.assertEqual(radar_movers.edge_slide(210.0), 1.0)
+        slide = 1.2 / math.cos(math.radians(57.5))  # walking 1.2 m/s at a facing surface
+        self.assertIsNone(self._threat("deg090", slide, ego=self.WALKING))
+        self.assertIsNotNone(self._threat("deg090", 3.6, ego=self.WALKING))  # really coming
+        with unittest.mock.patch.object(radar_movers, "edge_slide", lambda b: 1.0):
+            self.assertIsNotNone(self._threat("deg090", slide, ego=self.WALKING))  # what it was
+
+    def test_walked_past_a_parked_car_and_up_to_a_pane(self):
+        from tools.field.walk_replay import turned_on
+
         bad, _said = CarsWalkedTests._walk("car parked beside the way", t0=3500.0)
-        self.assertEqual(bad, [])  # was "someone standing still called moving: 'Something ..."
+        self.assertEqual(bad, [])  # was "... standing still called moving: 'Something ..."
+        with turned_on(["movers"]):
+            bad, _said = CarsWalkedTests._walk("pane across open floor", t0=1800.0)
+        self.assertEqual(bad, [])  # was "Something approaching from right", walked into it
 
     def test_a_return_elsewhere_does_not_hide_it(self):
         from app.perception.radar_movers import laser_sees
@@ -1957,10 +2270,11 @@ class CorridorMiddleNoPingPongTests(unittest.TestCase):
         self.assertEqual(said, sg.NEAR_RIGHT)
 
     def test_near_and_heading_into_it_is_the_turn(self):
-        self.assertEqual(sg._sentence(False, False, False, False, None, drift="left",
-                                      close="left"), sg.DRIFT_LEFT)
-        self.assertEqual(sg._sentence(False, False, False, False, None, close="left"),
-                         sg.NEAR_LEFT)
+        self.assertEqual(
+            sg._sentence(False, False, False, False, None, drift="left", close="left"),
+            sg.DRIFT_LEFT,
+        )
+        self.assertEqual(sg._sentence(False, False, False, False, None, close="left"), sg.NEAR_LEFT)
 
     def test_near_then_heading_into_it_is_said_at_once(self):
         # Near the right wall, said; seconds later heading into it: the turn away is news,
@@ -1977,14 +2291,18 @@ class CorridorMiddleNoPingPongTests(unittest.TestCase):
 
         gate = sg._Gate()
         self.assertTrue(gate.admit(sg.DRIFT_RIGHT, 100.0, episode=1)[0])
-        said = [t for t in (100.0 + 0.1 * k for k in range(1, 80))
-                if gate.admit(sg.DRIFT_RIGHT, t, episode=1)[0]]
+        said = [
+            t
+            for t in (100.0 + 0.1 * k for k in range(1, 80))
+            if gate.admit(sg.DRIFT_RIGHT, t, episode=1)[0]
+        ]
         self.assertTrue(said)
         self.assertGreaterEqual(said[0], 100.0 + cfg.SIMPLE_DRIFT_REPEAT_S - 1e-6)
         gate = sg._Gate()
         self.assertTrue(gate.admit(sg.NEAR_RIGHT, 100.0, episode=1)[0])
-        self.assertFalse(any(gate.admit(sg.NEAR_RIGHT, 100.0 + 0.1 * k, episode=1)[0]
-                             for k in range(1, 80)))
+        self.assertFalse(
+            any(gate.admit(sg.NEAR_RIGHT, 100.0 + 0.1 * k, episode=1)[0] for k in range(1, 80))
+        )
 
     def test_veering_4_deg_s_down_a_3_m_corridor(self):
         from tools.sim import walk_sim as ws
@@ -2110,8 +2428,10 @@ class NewWayOutOffAHoldTests(unittest.TestCase):
         gate = sg._Gate()
         right, left = sg.BLOCKED_WALL_TURN["right"], sg.BLOCKED_WALL_TURN["left"]
         self.assertTrue(gate.admit(right, 100.0, episode=1)[0])
-        said = [gate.admit(left, 100.0 + 0.1 * k, episode=1, closed=True, evidence=False)
-                for k in range(1, 11)]
+        said = [
+            gate.admit(left, 100.0 + 0.1 * k, episode=1, closed=True, evidence=False)
+            for k in range(1, 11)
+        ]
         self.assertTrue(any(ok for ok, _seq, _why in said), said)
 
     def test_a_renamed_block_is_said_while_measured_only(self):
@@ -2119,8 +2439,9 @@ class NewWayOutOffAHoldTests(unittest.TestCase):
         wall, glass = sg.BLOCKED_WALL_TURN["right"], sg.BLOCKED_GLASS_TURN["right"]
         gate = sg._Gate()
         self.assertTrue(gate.admit(wall, 100.0, episode=1)[0])
-        said = [gate.admit(glass, 100.0 + 0.1 * k, episode=1, evidence=False)[0]
-                for k in range(1, 41)]
+        said = [
+            gate.admit(glass, 100.0 + 0.1 * k, episode=1, evidence=False)[0] for k in range(1, 41)
+        ]
         self.assertFalse(any(said))
         gate = sg._Gate()
         self.assertTrue(gate.admit(wall, 100.0, episode=1)[0])
@@ -2134,8 +2455,10 @@ class NewWayOutOffAHoldTests(unittest.TestCase):
         gate = sg._Gate()
         mover = sg.MOVER_CROSSING[("Person", "right")]
         self.assertTrue(gate.admit(mover, 100.0, episode=1)[0])
-        said = [gate.admit(sg.STOP_NO_WAY, 100.0 + 0.1 * k, episode=1, evidence=False)[0]
-                for k in range(1, 60)]
+        said = [
+            gate.admit(sg.STOP_NO_WAY, 100.0 + 0.1 * k, episode=1, evidence=False)[0]
+            for k in range(1, 60)
+        ]
         self.assertFalse(any(said))
 
     def test_said_while_measured(self):
@@ -2257,11 +2580,21 @@ class LiveCheckTests(unittest.TestCase):
         from tools.device import live_check as lc
 
         def snap(t, peaks):
-            return {"sectors": {"deg030": {"last_update": t, "online": True, "peaks_mm": peaks},
-                                "front": {"last_update": t, "peaks_mm": peaks}}}
+            return {
+                "sectors": {
+                    "deg030": {"last_update": t, "online": True, "peaks_mm": peaks},
+                    "front": {"last_update": t, "peaks_mm": peaks},
+                }
+            }
 
-        samples = [snap(1.0, [1000.0]), snap(1.0, [1000.0]), snap(1.17, []),
-                   snap(1.33, [1010.0, 2005.0]), snap(1.5, [1004.0]), snap(1.67, [998.0])]
+        samples = [
+            snap(1.0, [1000.0]),
+            snap(1.0, [1000.0]),
+            snap(1.17, []),
+            snap(1.33, [1010.0, 2005.0]),
+            snap(1.5, [1004.0]),
+            snap(1.67, [998.0]),
+        ]
         frames = lc.board_frames(samples)
         self.assertEqual(list(frames), ["deg030"])  # boards only, not the cardinals
         st = lc.board_stats(frames["deg030"])
@@ -2292,9 +2625,12 @@ class WalkReportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "walk.jsonl.gz")
             self._record("dead end, 1.8 m corridor", path)
-            same = [rec["out"]["instruction"] == got["instruction"]
-                    and bool(rec["out"].get("speak")) == bool(got.get("speak"))
-                    for rec, got in replay_ticks(path) if got is not None]
+            same = [
+                rec["out"]["instruction"] == got["instruction"]
+                and bool(rec["out"].get("speak")) == bool(got.get("speak"))
+                for rec, got in replay_ticks(path)
+                if got is not None
+            ]
         self.assertTrue(same)
         self.assertTrue(all(same))
 
@@ -2312,12 +2648,14 @@ class WalkReportTests(unittest.TestCase):
     def test_the_checks(self):
         from tools.field import walk_report as wr
 
-        rows = [(0.0, sg.WALK_STRAIGHT, 3.0, True, "clear"),  # something 3 ft ahead, measured
-                (1.0, sg.BLOCKED_WALL_TURN["left"], 3.5, True, "blocked"),
-                (3.0, sg.BLOCKED_WALL_TURN["right"], 3.5, True, "blocked"),  # flipped in 2 s
-                (10.0, sg.NEAR_LEFT, None, False, "near_wall"),
-                (12.0, sg.NEAR_RIGHT, None, False, "near_wall"),  # ping-pong
-                (13.0, sg.NEAR_RIGHT, None, False, "near_wall")]  # again in 1 s
+        rows = [
+            (0.0, sg.WALK_STRAIGHT, 3.0, True, "clear"),  # something 3 ft ahead, measured
+            (1.0, sg.BLOCKED_WALL_TURN["left"], 3.5, True, "blocked"),
+            (3.0, sg.BLOCKED_WALL_TURN["right"], 3.5, True, "blocked"),  # flipped in 2 s
+            (10.0, sg.NEAR_LEFT, None, False, "near_wall"),
+            (12.0, sg.NEAR_RIGHT, None, False, "near_wall"),  # ping-pong
+            (13.0, sg.NEAR_RIGHT, None, False, "near_wall"),
+        ]  # again in 1 s
         hits = [len(h) for _rule, h in wr.check_lines(rows, 0.0)]
         self.assertEqual(hits, [1, 1, 1, 1])
 

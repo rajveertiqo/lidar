@@ -950,10 +950,20 @@ class SentenceTimingTests(unittest.TestCase):
 
         speech_log.reset()
         t = time.time()
-        speech_log.say("startup", STARTING, level="advisory", now=t,
-                       timing={"scan_age_ms": 0, "decide_ms": 1400.0})
-        speech_log.say("test", "Wall ahead", level="advisory", now=t + 5,
-                       timing={"scan_age_ms": 40, "decide_ms": 4.0})
+        speech_log.say(
+            "startup",
+            STARTING,
+            level="advisory",
+            now=t,
+            timing={"scan_age_ms": 0, "decide_ms": 1400.0},
+        )
+        speech_log.say(
+            "test",
+            "Wall ahead",
+            level="advisory",
+            now=t + 5,
+            timing={"scan_age_ms": 40, "decide_ms": 4.0},
+        )
         out = speech_log.latency_summary()
         self.assertEqual(out["all"]["decide_ms"]["worst"], 4.0)
         self.assertEqual(out["startup"]["sentences"], 1)

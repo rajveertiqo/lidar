@@ -249,7 +249,9 @@ def report(rows, replay=True, turn_on=()):
         return f"{k:3d} ({100.0 * k / n:3.0f}%)" if n else "   —     "
 
     print(f"\n{len(rows)} labels\n")
-    print(f"  {'really there':<13} {'n':>4}   {'right then':<11}" + ("  right now" if replay else ""))
+    print(
+        f"  {'really there':<13} {'n':>4}   {'right then':<11}" + ("  right now" if replay else "")
+    )
     for label in MARK_LABELS:
         rs = by.get(label, [])
         then_ok = sum(r["then"]["class"] == label for r in rs)
@@ -298,7 +300,9 @@ def report(rows, replay=True, turn_on=()):
                 if replay and r["then"]["instruction"] != r[side]["instruction"]
                 else ""
             )
-            print(f"    {r['file']}  really {r['label']}, named {r[side]['class']}: “{said}”{extra}")
+            print(
+                f"    {r['file']}  really {r['label']}, named {r[side]['class']}: “{said}”{extra}"
+            )
 
     if (
         any(r["label"] in _GROUND.values() for r in rows)
@@ -429,9 +433,7 @@ def main():
         help="clips, recordings or folders of them (default: logs/walks)",
     )
     ap.add_argument("--export", metavar="FILE", help="write the labels as JSON lines here")
-    ap.add_argument(
-        "--recorded", action="store_true", help="no replay: what was said then only"
-    )
+    ap.add_argument("--recorded", action="store_true", help="no replay: what was said then only")
     ap.add_argument(
         "--turn-on",
         default="",
@@ -453,7 +455,9 @@ def main():
     )
     args = ap.parse_args()
     if args.decide and (args.turn_on or args.recorded or args.export):
-        ap.error("--decide replays each feature on and off itself: no --turn-on, --recorded or --export")
+        ap.error(
+            "--decide replays each feature on and off itself: no --turn-on, --recorded or --export"
+        )
     try:  # without it the replay quietly falls back, and scores labels wrong
         import numpy  # noqa: F401
     except ImportError:

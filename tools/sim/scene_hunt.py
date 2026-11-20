@@ -55,15 +55,21 @@ def random_scene(rnd):
         "left": rnd.choice([None, rnd.uniform(200, 3000)]),
         "right": rnd.choice([None, rnd.uniform(200, 3000)]),
         "ahead": rnd.choice([None, None, rnd.uniform(400, 5000)]),
-        "posts": [(rnd.uniform(300, 4000), rnd.uniform(-1500, 1500), rnd.uniform(40, 300))
-                  for _ in range(rnd.randint(0, 3))],
+        "posts": [
+            (rnd.uniform(300, 4000), rnd.uniform(-1500, 1500), rnd.uniform(40, 300))
+            for _ in range(rnd.randint(0, 3))
+        ],
         "glass": rnd.choice([None, None, None, rnd.uniform(400, 3500)]),
     }
 
 
 def mirror(scene):
-    return {**scene, "left": scene["right"], "right": scene["left"],
-            "posts": [(x, -y, r) for x, y, r in scene["posts"]]}
+    return {
+        **scene,
+        "left": scene["right"],
+        "right": scene["left"],
+        "posts": [(x, -y, r) for x, y, r in scene["posts"]],
+    }
 
 
 def surfaces_along(scene, bearing, laser=True):
@@ -84,7 +90,12 @@ def surfaces_along(scene, bearing, laser=True):
         d2 = px * px + py * py - proj * proj
         if proj > 0 and d2 < r * r:
             out.append((f"post{k}", proj - math.sqrt(r * r - d2)))
-    if not laser and scene["glass"] and dx > 1e-9 and abs(scene["glass"] / dx * dy) <= GLASS_HALF_MM:
+    if (
+        not laser
+        and scene["glass"]
+        and dx > 1e-9
+        and abs(scene["glass"] / dx * dy) <= GLASS_HALF_MM
+    ):
         out.append(("glass", scene["glass"] / dx))
     return out
 
@@ -120,19 +131,38 @@ def publish(scene, blind, ghosts=0.0, rnd=None):
     points = [(lu.correct_angle(a), d) for _q, a, d in scan]
     update_lidar_state(
         {"angles": [round(a, 1) for a, _ in points], "distances": [int(d) for _, d in points]},
-        lu.analyze_sectors(points), 900.0, 1, lu._mark_unswept(lu.analyze_cones(points), swept),
-        captured_at=time.time(), valid_fraction=lu._valid_fraction(points, swept))
+        lu.analyze_sectors(points),
+        900.0,
+        1,
+        lu._mark_unswept(lu.analyze_cones(points), swept),
+        captured_at=time.time(),
+        valid_fraction=lu._valid_fraction(points, swept),
+    )
     for board in c.RADAR_BEARINGS.values():
         peaks = board_echoes(scene, board, ghosts, rnd)
-        ru._publish(c.radar_board_key(board), {
-            "min_dist": peaks[0] if peaks else None, "peaks_mm": peaks, "online": True,
-            "degraded": False, "lag_s": 0.0, "phase": "streaming", "error": None})
+        ru._publish(
+            c.radar_board_key(board),
+            {
+                "min_dist": peaks[0] if peaks else None,
+                "peaks_mm": peaks,
+                "online": True,
+                "degraded": False,
+                "lag_s": 0.0,
+                "phase": "streaming",
+                "error": None,
+            },
+        )
 
 
 def clear_cameras():
     """Both side cameras: a fresh, real picture in which nothing is named."""
-    shot = {"detections": [], "num_objects": 0, "frame_time": time.time(), "simulated": False,
-            "view": {"dark": False, "blurred": False}}
+    shot = {
+        "detections": [],
+        "num_objects": 0,
+        "frame_time": time.time(),
+        "simulated": False,
+        "view": {"dark": False, "blurred": False},
+    }
     return {"left": dict(shot), "right": dict(shot)}
 
 
@@ -160,8 +190,10 @@ def truth(scene):
             # in the strip were scored as 3.8 ft, "no block warning").
             dy = max(0.0, abs(py) - strip)
             line = min(line, px - math.sqrt(max(0.0, r * r - dy * dy)))
-    room = {s: min(laser_range(scene, b + o) for o in range(-5, 6))
-            for s, b in (("right", 90.0), ("left", 270.0))}
+    room = {
+        s: min(laser_range(scene, b + o) for o in range(-5, 6))
+        for s, b in (("right", 90.0), ("left", 270.0))
+    }
     return line, room
 
 
@@ -171,8 +203,10 @@ def _flip(text):
 
 def _describe(scene):
     r = lambda v: v and round(v)  # noqa: E731
-    return (f"left {r(scene['left'])} right {r(scene['right'])} ahead {r(scene['ahead'])} "
-            f"glass {r(scene['glass'])} posts {[(round(x), round(y), round(q)) for x, y, q in scene['posts']]}")
+    return (
+        f"left {r(scene['left'])} right {r(scene['right'])} ahead {r(scene['ahead'])} "
+        f"glass {r(scene['glass'])} posts {[(round(x), round(y), round(q)) for x, y, q in scene['posts']]}"
+    )
 
 
 def _tie(walk):
@@ -183,8 +217,9 @@ def _tie(walk):
     if not all(s in views for s in ("left", "right", "front")):
         return False
     obstacle = wp._front_obstacle_deg(get_lidar_state(), views["front"])
-    return (abs(wp._room_ft(views["left"]) - wp._room_ft(views["right"])) < 0.05
-            and (obstacle is None or abs(obstacle) < c.WALK_TURN_AWAY_MIN_DEG))
+    return abs(wp._room_ft(views["left"]) - wp._room_ft(views["right"])) < 0.05 and (
+        obstacle is None or abs(obstacle) < c.WALK_TURN_AWAY_MIN_DEG
+    )
 
 
 def run_mirror(n, seed):
@@ -206,8 +241,10 @@ def run_mirror(n, seed):
             ties += 1
             continue
         bad.append((i, a, b, scene))
-    print(f"{n} scenes, {len(bad)} not mirrored"
-          + (f" ({ties} ties: the sides alike, the same turn either way)" if ties else ""))
+    print(
+        f"{n} scenes, {len(bad)} not mirrored"
+        + (f" ({ties} ties: the sides alike, the same turn either way)" if ties else "")
+    )
     for i, a, b, scene in bad[:20]:
         print(f"  #{i:4d} {a!r:40s} | mirror: {b!r}\n         {_describe(scene)}")
     return len(bad)
@@ -235,11 +272,15 @@ def run_rules(n, seed, ghosts, camera=None):
         if not scene["glass"] and text in GLASS_WORDS:
             bad["no glass, a glass sentence (false alarm)"].append((i, text, scene))
         for side, turn in (("left", sg.TURN_LEFT), ("right", sg.TURN_RIGHT)):
-            if (text == turn or sg._WAY_OUT.get(text) == side) and room[side] < c.WALK_MIN_TURN_FT * FT - m:
+            if (text == turn or sg._WAY_OUT.get(text) == side) and room[
+                side
+            ] < c.WALK_MIN_TURN_FT * FT - m:
                 bad[f"'{text}' with < 2 ft of room that way"].append((i, text, scene))
-    print(f"{n} scenes{f', radar ghosts {ghosts:.0%}' if ghosts else ''}"
-          f"{', side cameras clear' if camera else ''}. Said: "
-          + ", ".join(f"{t!r} {k}" for t, k in said.most_common(6)))
+    print(
+        f"{n} scenes{f', radar ghosts {ghosts:.0%}' if ghosts else ''}"
+        f"{', side cameras clear' if camera else ''}. Said: "
+        + ", ".join(f"{t!r} {k}" for t, k in said.most_common(6))
+    )
     print("  no rule broken" if not bad else "")
     for rule, cases in bad.items():
         print(f"  {rule}: {len(cases)}")
@@ -253,14 +294,21 @@ def main():
     ap.add_argument("check", choices=("mirror", "rules"))
     ap.add_argument("-n", type=int, default=400)
     ap.add_argument("--seed", type=int, default=1)
-    ap.add_argument("--ghosts", type=float, default=0.0, help="chance of a double-bounce ghost per wall echo")
-    ap.add_argument("--side-camera-clear", action="store_true",
-                    help="the side cameras see no one, whatever is there (rules only)")
+    ap.add_argument(
+        "--ghosts", type=float, default=0.0, help="chance of a double-bounce ghost per wall echo"
+    )
+    ap.add_argument(
+        "--side-camera-clear",
+        action="store_true",
+        help="the side cameras see no one, whatever is there (rules only)",
+    )
     args = ap.parse_args()
     if args.check == "mirror":
         found = run_mirror(args.n, args.seed)
     else:
-        found = run_rules(args.n, args.seed, args.ghosts, "clear" if args.side_camera_clear else None)
+        found = run_rules(
+            args.n, args.seed, args.ghosts, "clear" if args.side_camera_clear else None
+        )
     return 1 if found else 0
 
 

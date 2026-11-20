@@ -91,7 +91,7 @@ def camera_overlays(model):
             if line.startswith("[") and line.endswith("]"):
                 section = line[1:-1].strip().lower()
             elif section in sections and line.startswith("dtoverlay="):
-                name, *params = line[len("dtoverlay="):].split(",")
+                name, *params = line[len("dtoverlay=") :].split(",")
                 if name.startswith(CAMERA_OVERLAY_PREFIXES):
                     # Pi 5 camera overlays default to CAM/DISP 1.
                     found.append((line, name, "cam0" if "cam0" in params else "cam1"))
@@ -119,7 +119,7 @@ def check_config(model):
     if path is None:
         say("WARN", "no config.txt found - can't check the overlay")
         return False
-    listed = ", ".join(f"{line[len('dtoverlay='):]} ({p})" for line, _, p in overlays)
+    listed = ", ".join(f"{line[len('dtoverlay=') :]} ({p})" for line, _, p in overlays)
     print(f"  camera overlays in {path}: {listed or 'none'}")
     tof_ports = {p for _, name, p in overlays if name == DRIVER}
     if not tof_ports:
@@ -138,7 +138,7 @@ def check_config(model):
             say("WARN", f"{port} also has {', '.join(clash)} - one camera per port, the")
             hint("two drivers fight over the connector (and I2C address 0x0c for imx519)")
             there = answered_on(port)
-            other = [c for c in clash if c[len("dtoverlay="):].split(",")[0] in there]
+            other = [c for c in clash if c[len("dtoverlay=") :].split(",")[0] in there]
             if DRIVER in there:
                 drop = clash
             elif other:
@@ -162,8 +162,11 @@ def edited_since_boot(path):
 
 # --- 2. kernel driver ----------------------------------------------------
 def i2c_names(pattern):
-    return sorted(os.path.basename(p) for p in glob.glob(pattern)
-                  if re.fullmatch(r"\d+-[0-9a-f]{4}", os.path.basename(p)))
+    return sorted(
+        os.path.basename(p)
+        for p in glob.glob(pattern)
+        if re.fullmatch(r"\d+-[0-9a-f]{4}", os.path.basename(p))
+    )
 
 
 def driver_log():
@@ -203,8 +206,11 @@ def answered_on(port):
 def check_driver(cfg_ok):
     bound = i2c_names(f"/sys/bus/i2c/drivers/{DRIVER}/*")
     # The overlay creates the I2C device; the driver binds only if the camera answers.
-    declared = sorted(os.path.basename(os.path.dirname(p))
-                      for p in glob.glob("/sys/bus/i2c/devices/*/name") if read(p) == DRIVER)
+    declared = sorted(
+        os.path.basename(os.path.dirname(p))
+        for p in glob.glob("/sys/bus/i2c/devices/*/name")
+        if read(p) == DRIVER
+    )
     if bound:
         say("PASS", f"{DRIVER} driver bound to the camera at {', '.join(map(where, bound))}")
         for name in declared:
@@ -240,9 +246,11 @@ def find_node(args):
             index = node_via_media_ctl()
         except (FileNotFoundError, subprocess.TimeoutExpired):
             # No media-ctl: fine if there's only one CSI node to choose from.
-            nodes = sorted(int(re.search(r"video(\d+)", p).group(1))
-                           for p in glob.glob("/sys/class/video4linux/video*/name")
-                           if read(p) in CSI_NODE_NAMES)
+            nodes = sorted(
+                int(re.search(r"video(\d+)", p).group(1))
+                for p in glob.glob("/sys/class/video4linux/video*/name")
+                if read(p) in CSI_NODE_NAMES
+            )
             index = nodes[0] if len(nodes) == 1 else None
             if len(nodes) > 1:
                 say("FAIL", f"CSI nodes {nodes} and no media-ctl to tell which is the ToF")
@@ -305,7 +313,7 @@ def read_frame(ac, cam, timeout_ms):
     finally:
         cam.releaseFrame(frame)
     if conf.shape != depth.shape:
-        conf = np.full_like(depth, np.inf)    # no confidence plane: trust every pixel
+        conf = np.full_like(depth, np.inf)  # no confidence plane: trust every pixel
     return depth, conf
 
 
@@ -326,14 +334,20 @@ def write_png(path, img):
     raw = b"".join(b"\x00" + img[y].tobytes() for y in range(h))
 
     def chunk(tag, data):
-        return (struct.pack(">I", len(data)) + tag + data
-                + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
+        return (
+            struct.pack(">I", len(data))
+            + tag
+            + data
+            + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+        )
 
     with open(path, "wb") as f:
-        f.write(b"\x89PNG\r\n\x1a\n"
-                + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2 if img.ndim == 3 else 0, 0, 0, 0))
-                + chunk(b"IDAT", zlib.compress(raw))
-                + chunk(b"IEND", b""))
+        f.write(
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2 if img.ndim == 3 else 0, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw))
+            + chunk(b"IEND", b"")
+        )
 
 
 def upscale(img, width=720):
@@ -358,8 +372,10 @@ def save_frame(out_dir, depth, conf, rng, min_conf):
     write_png(os.path.join(out_dir, "depth.png"), colorize(depth, valid, rng))
     finite = np.where(np.isfinite(conf), conf, 0)
     top = finite.max()
-    write_png(os.path.join(out_dir, "confidence.png"),
-              upscale((finite / top * 255 if top > 0 else finite).astype(np.uint8)))
+    write_png(
+        os.path.join(out_dir, "confidence.png"),
+        upscale((finite / top * 255 if top > 0 else finite).astype(np.uint8)),
+    )
     say("INFO", f"last frame saved to {out_dir}/ (depth.png, confidence.png, *.npy)")
 
 
@@ -385,9 +401,11 @@ def check_frames(ac, cam, args, rng):
         say("FAIL", f"no frames in {args.frames} requests ({args.timeout} ms timeout each)")
         hint("the sensor is detected but not streaming - reseat the ribbon, check dmesg")
         return False
-    say("WARN" if misses > args.frames // 10 else "PASS",
+    say(
+        "WARN" if misses > args.frames // 10 else "PASS",
         f"{len(depths)}/{args.frames} frames, {len(depths) / elapsed:.1f} fps"
-        + (f", {misses} timed out" if misses else ""))
+        + (f", {misses} timed out" if misses else ""),
+    )
 
     ok = True
     if all(d.max() <= 0 for d in depths):
@@ -400,13 +418,18 @@ def check_frames(ac, cam, args, rng):
 
     valid = float(np.median(valid_pct))
     if valid < 5:
-        say("WARN", f"only {valid:.0f}% of pixels have a confident reading (>= {args.confidence:g})")
+        say(
+            "WARN", f"only {valid:.0f}% of pixels have a confident reading (>= {args.confidence:g})"
+        )
         hint("point it at a wall or desk 0.3-2 m away, out of direct sunlight")
     else:
         say("PASS", f"{valid:.0f}% of pixels have a confident reading")
     if centres:
-        say("INFO", f"centre distance {np.median(centres) / 1000:.3f} m, "
-                    f"frame-to-frame spread {np.std(centres):.0f} mm")
+        say(
+            "INFO",
+            f"centre distance {np.median(centres) / 1000:.3f} m, "
+            f"frame-to-frame spread {np.std(centres):.0f} mm",
+        )
     else:
         say("WARN", "no confident reading at the centre of the view")
 
@@ -427,8 +450,12 @@ def live(ac, cam, args, rng):
             n += 1
             valid, centre = frame_stats(*got, rng, args.confidence)
             dist = f"{centre / 1000:5.2f} m" if centre is not None else "   -- m"
-            print(f"\r  centre {dist}   valid {100 * valid.mean():3.0f}%   "
-                  f"{n / (time.monotonic() - t0):4.1f} fps   ", end="", flush=True)
+            print(
+                f"\r  centre {dist}   valid {100 * valid.mean():3.0f}%   "
+                f"{n / (time.monotonic() - t0):4.1f} fps   ",
+                end="",
+                flush=True,
+            )
     except KeyboardInterrupt:
         print()
 
@@ -475,24 +502,44 @@ def pi_model():
 
 def main():
     ap = argparse.ArgumentParser(description="Arducam ToF camera hardware test")
-    ap.add_argument("--frames", type=int, default=30,
-                    help="frames to grab for the stream test (default 30)")
-    ap.add_argument("--range", type=int, default=TOF_RANGE_MM, choices=[2000, 4000],
-                    help=f"max distance in mm: 4000 or 2000 (finer) (default {TOF_RANGE_MM}, "
-                         "config TOF_RANGE_MM)")
-    ap.add_argument("--confidence", type=float, default=TOF_MIN_CONFIDENCE,
-                    help="min confidence for a pixel to count as valid "
-                         f"(default {TOF_MIN_CONFIDENCE:g}, config TOF_MIN_CONFIDENCE)")
+    ap.add_argument(
+        "--frames", type=int, default=30, help="frames to grab for the stream test (default 30)"
+    )
+    ap.add_argument(
+        "--range",
+        type=int,
+        default=TOF_RANGE_MM,
+        choices=[2000, 4000],
+        help=f"max distance in mm: 4000 or 2000 (finer) (default {TOF_RANGE_MM}, "
+        "config TOF_RANGE_MM)",
+    )
+    ap.add_argument(
+        "--confidence",
+        type=float,
+        default=TOF_MIN_CONFIDENCE,
+        help="min confidence for a pixel to count as valid "
+        f"(default {TOF_MIN_CONFIDENCE:g}, config TOF_MIN_CONFIDENCE)",
+    )
     ap.add_argument("--timeout", type=int, default=2000, help="per-frame timeout, ms")
-    ap.add_argument("--index", type=int, default=TOF_VIDEO_INDEX,
-                    help="/dev/videoN to open (default: config TOF_VIDEO_INDEX, else "
-                         "found via media-ctl)")
-    ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-                        os.path.abspath(__file__)))), "logs", "tof_check"),
-                    help="where depth.png etc. are saved (default logs/tof_check)")
+    ap.add_argument(
+        "--index",
+        type=int,
+        default=TOF_VIDEO_INDEX,
+        help="/dev/videoN to open (default: config TOF_VIDEO_INDEX, else found via media-ctl)",
+    )
+    ap.add_argument(
+        "--out",
+        default=os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "logs",
+            "tof_check",
+        ),
+        help="where depth.png etc. are saved (default logs/tof_check)",
+    )
     ap.add_argument("--no-save", action="store_true", dest="no_save")
-    ap.add_argument("--live", action="store_true",
-                    help="after the test, print the centre distance until Ctrl+C")
+    ap.add_argument(
+        "--live", action="store_true", help="after the test, print the centre distance until Ctrl+C"
+    )
     args = ap.parse_args()
 
     model = pi_model()

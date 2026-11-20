@@ -38,6 +38,7 @@ from app.config import (
     LIDAR_MOVERS_MISS_M,
     LIDAR_MOVERS_NOISE_PER_M,
     LIDAR_MOVERS_PERSON_MAX_WIDTH_M,
+    LIDAR_MOVERS_MAX_RANGE_MM,
     LIDAR_MOVERS_VEHICLE_SPEED_MPS,
     LIDAR_STALE_S,
     MOTION_ACCEL_ACROSS,
@@ -356,6 +357,7 @@ class MotionTracker:
             "word": None,
             "cls": None,
             "src": "lidar",
+            "far": bool(b.get("far")),
         }
 
     def _camera_dets(
@@ -518,7 +520,7 @@ class MotionTracker:
                 self._tracks.append(self._start(d, t))
 
     def _start(self, d: Dict[str, Any], t: float) -> Dict[str, Any]:
-        v0 = 5.0 if d["word"] == VEHICLE else 2.0
+        v0 = 5.0 if d["word"] == VEHICLE or d.get("far") else 2.0
         p = np.zeros((4, 4))
         p[:2, :2] = d["R"]
         p[2, 2] = p[3, 3] = v0 * v0
@@ -581,7 +583,7 @@ class MotionTracker:
         tr["speed"], tr["vel_sd_dir"] = speed, vel_sd_dir
         tr["trail"].append((t, float(s[0]), float(s[1])))
         tr["trail"] = [e for e in tr["trail"] if t - e[0] <= 1.0]
-        if speed > 1.0:
+        if speed > 1.0 and tr["seen"] == t:  # seen on this scan: coasting is no evidence
             tr["hdg"].append((t, math.atan2(s[3], s[2])))
         tr["hdg"] = [e for e in tr["hdg"] if t - e[0] <= MOTION_VEHICLE_STEADY_S + 0.4]
         if (
@@ -607,13 +609,20 @@ class MotionTracker:
         if tr["word"] == VEHICLE:
             h = tr["hdg"]
             last = h[-1][1] if h else 0.0
+            # Held over the last STEADY_S of sightings, not the whole kept window: the filter's
+            # first guesses at a car's velocity swing as it settles (-39, -70, -77 deg for one
+            # crossing at -90), and kept 1.2 s they held it "not steady" that long, the warning
+            # 1.2 s before contact. Sightings only (above), and spanning STEADY_S: a track
+            # coasted on its prediction holds its heading by itself, and a piece of a passing
+            # car seen six times was "approaching" once coasted 0.4 s (walk_sim, 2026-11-20).
             steady = (
                 len(h) > 2
-                and t - h[0][0] >= MOTION_VEHICLE_STEADY_S - 1e-6
+                and h[-1][0] - h[0][0] >= MOTION_VEHICLE_STEADY_S - 1e-6
                 and all(
                     abs((a - last + math.pi) % (2 * math.pi) - math.pi)
                     <= math.radians(MOTION_VEHICLE_STEADY_DEG)
-                    for _, a in h
+                    for ts, a in h
+                    if h[-1][0] - ts <= MOTION_VEHICLE_STEADY_S + 1e-6
                 )
             )
             o = tr["trail"][0]
@@ -624,8 +633,16 @@ class MotionTracker:
                 >= max(MOTION_VEHICLE_MIN_TRAVEL_M, 0.5 * speed)
             )
         tr["steady"] = steady
+        # Past the people's range (LIDAR_MOVERS_MAX_RANGE_MM): only a vehicle's speed, unless a
+        # camera named it (2026-11-20).
+        far_ok = (
+            r <= LIDAR_MOVERS_MAX_RANGE_MM / 1000.0
+            or tr["word_src"] == "camera"
+            or speed >= LIDAR_MOVERS_VEHICLE_SPEED_MPS
+        )
         tr["moving"] = bool(
-            tr["hits"] >= MOTION_CONFIRM_HITS
+            far_ok
+            and tr["hits"] >= MOTION_CONFIRM_HITS
             and t - tr["born"] >= MOTION_CONFIRM_S - 1e-6
             and speed >= need
             and speed >= MOTION_SIGNIFICANCE * vel_sd_dir
@@ -697,8 +714,11 @@ class MotionTracker:
             head_on = -pv / (math.sqrt(vv) * max(r, 1e-6))
             if head_on >= math.cos(math.radians(LIDAR_MOVERS_HEAD_ON_DEG)):
                 mode, side = "toward", "left" if bearing < 0 else "right"
-            else:  # crossing: from the side it moves away from
+            elif abs(v["vy"]) >= LIDAR_MOVERS_MIN_SPEED_MPS:
+                # crossing: from the side it moves away from
                 mode, side = "crossing", "left" if v["vy"] > 0 else "right"
+            else:  # hardly across at all, passing alongside: where it is (2026-11-20)
+                mode, side = "crossing", "left" if bearing < 0 else "right"
         else:
             mode, side = "crossing", "left" if bearing < 0 else "right"
         return {

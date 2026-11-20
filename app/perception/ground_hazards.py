@@ -111,11 +111,17 @@ KINDS = (
     "obstacle",
 )
 FALLS = ("drop", "stairs_down", "hole", "step_down")
+_HELD_FALLS = ("drop", "stairs_down")  # "..., stop" within TOF_HAZARD_STOP_M: held (_hold)
 _FROM_PROFILE = ("drop", "stairs_down", "hole", "step_down", "stairs_up", "step_up")
 _SEVERITY = {k: i for i, k in enumerate(KINDS)}
 _NAMES = {str(c).lower(): w for c, w in SIMPLE_NAMED_OBJECTS.items()}
 
 _Z0 = 0.5  # the profile and the cells start this far ahead (the ToF sees ground from ~1.1 m)
+# A low thing this wide, no taller, running on out of the far end of the view: not named yet
+# (_obstacles). A kerb or a stair's first riser looks so before its top is in view.
+_RISE_MAX_M = 0.25
+_RISE_MIN_WIDTH_M = 1.0
+_FAR_END_M = 0.25
 _CELL = 0.05  # obstacle cells, m
 _X_SPAN = 1.5  # obstacles are looked for this far either side
 _GROUND_H = 0.05  # a surface this near the ground's height is the ground
@@ -575,6 +581,7 @@ class GroundAnalyser:
             return []
         which = lab[cz, cx]
         order = np.argsort(which, kind="stable")
+        z_far = float(np.percentile(z, 99.5)) if z.size else 0.0  # the view's far end
         cut = np.cumsum(np.bincount(which, minlength=n + 1))
         out = []
         for k in range(1, n + 1):
@@ -600,6 +607,17 @@ class GroundAnalyser:
             ):
                 kind = "pole"
             elif h_hi <= TOF_LOW_MAX_H_M and not top_cut:
+                if (
+                    h_hi <= _RISE_MAX_M
+                    and width >= _RISE_MIN_WIDTH_M
+                    and near + depth >= z_far - _FAR_END_M
+                ):
+                    # Low, wide and running on out of the view's far end: a kerb or a
+                    # stair's first riser, its top not yet in view, or a low thing whose far
+                    # side will be in a frame or two. Not named until then: a kerb 3.5 m out
+                    # was "Low obstacle ahead", and that sentence's airtime held back "Step
+                    # up ahead" to 1.4 m before it (walk_sim, 2026-11-20).
+                    continue
                 kind = "low_obstacle"
             else:
                 kind = "obstacle"
@@ -1103,7 +1121,8 @@ class _Tracker:
     def __init__(self, need: int = TOF_HAZARD_CONFIRM[0], window: int = TOF_HAZARD_CONFIRM[1]):
         self.need = int(need)
         self.hist: collections.deque = collections.deque(maxlen=int(window))
-        self.memory: Dict[str, Tuple[float, Dict[str, Any]]] = {}  # kind -> (t, verdict)
+        # kind -> (t, verdict, how far ahead it was then)
+        self.memory: Dict[str, Tuple[float, Dict[str, Any], float]] = {}
 
     def update(self, hazards: List[Dict[str, Any]], t: float = 0.0) -> List[Dict[str, Any]]:
         by_kind: Dict[str, Dict[str, Any]] = {}
@@ -1125,8 +1144,20 @@ class _Tracker:
             if latest is None:
                 continue
             cam = latest.get("camera") or {}
-            if cam.get("status") in ("confirmed", "no_evidence"):
-                self.memory[kind] = (float(t), cam)
+            kept = self.memory.get(kind)
+            # Walking up to an edge the camera confirmed, it slides off the bottom of the
+            # picture, and the level-edge search there finds "no evidence": that is not the
+            # camera seeing nothing, and must not undo the confirmation. A platform edge was
+            # "Drop ahead" at 2.2 m, then silent (walk_sim, 2026-11-20).
+            approaching = bool(
+                kept
+                and kept[1].get("status") == "confirmed"
+                and cam.get("status") == "no_evidence"
+                and 0.0 <= float(t) - kept[0] <= _CAMERA_MEMORY_S
+                and latest["ahead_m"] < kept[2]
+            )
+            if cam.get("status") in ("confirmed", "no_evidence") and not approaching:
+                self.memory[kind] = (float(t), cam, float(latest["ahead_m"]))
             if len(seen) < self.need:
                 continue
             ahead = [s["ahead_m"] for s in seen]
@@ -1134,8 +1165,8 @@ class _Tracker:
                 continue  # not one thing being approached: something else each time
             cams = [s.get("camera") or {} for s in seen]
             said = next((c for c in reversed(cams) if c.get("status") == "confirmed"), None)
-            if said is None and cam.get("status") == "unseen" and kind in self.memory:
-                mt, verdict = self.memory[kind]
+            if said is None and (cam.get("status") == "unseen" or approaching) and kind in self.memory:
+                mt, verdict, _ahead = self.memory[kind]
                 if 0.0 <= float(t) - mt <= _CAMERA_MEMORY_S:
                     said = {
                         **verdict,
@@ -1203,6 +1234,7 @@ class GroundHazards:
         self.tracker = _Tracker()
         # The nearest tall thing on the path, as a surface, for the last few frames.
         self._surfaces: collections.deque = collections.deque(maxlen=int(TOF_WALL_CONFIRM[1]))
+        self._held: Optional[Dict[str, Any]] = None  # a fall in front, its ground gone (_hold)
         self._lock = threading.Lock()
         self._snap: Dict[str, Any] = {
             "ok": False,
@@ -1245,15 +1277,18 @@ class GroundHazards:
         confirmed = [_public(h) for h in self.tracker.update(res["hazards"] if res["ok"] else [], t)]
         for h in confirmed:
             h["speak"], h["why"] = speak_rule(h)
+        top = choose_top(confirmed)
+        held = self._hold(res, top)
         snap = {
             "t": float(t),
             "analysed_at": time.time(),
-            "ok": bool(res["ok"]),
-            "why": res.get("why", ""),
+            "ok": bool(res["ok"]) or held is not None,
+            "why": res.get("why", "") if held is None else held["why"],
             "plane": res.get("plane"),
-            "hazards": confirmed,
+            "hazards": confirmed if held is None else [held],
             "seen": seen,
-            "top": choose_top(confirmed),
+            "top": top if held is None else held,
+            "held": held is not None,
             "ms": res.get("ms"),
             "calibration": calib.source,
             "speak_enabled": _speak_enabled(),
@@ -1269,6 +1304,32 @@ class GroundHazards:
             self._snap = snap
         return snap
 
+    def _hold(
+        self, res: Dict[str, Any], top: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        """A drop or stairs down said "..., stop" (within TOF_HAZARD_STOP_M), and then no
+        ground at all: still there. Walking up to it, the ToF sees the ground only from ~1.1 m
+        ahead; nearer than that it sees the lower ground alone, or past 4 m nothing, and finds
+        no floor at the mount's height: the guidance said "Walk straight" a metre from a 1 m
+        drop, and the wearer walked off it (walk_sim, 2026-11-20). Facing the void IS the drop.
+        Held until an analysis finds the floor again (the wearer turned away)."""
+        if res["ok"]:
+            self._held = None
+        elif self._held is None:
+            # This frame's (the tracker still has it for a frame or two), else the last one's.
+            last = top or self._snap.get("top")
+            if (
+                last
+                and last.get("kind") in _HELD_FALLS
+                and float(last.get("ahead_m") or 99.0) <= TOF_HAZARD_STOP_M
+            ):
+                self._held = {
+                    **last,
+                    "held": True,
+                    "why": f"held: no ground past it to see ({res.get('why', '')})",
+                }
+        return self._held
+
     def snapshot(self) -> Dict[str, Any]:
         with self._lock:
             return dict(self._snap)
@@ -1276,6 +1337,7 @@ class GroundHazards:
     def reset(self) -> None:
         self.tracker.reset()
         self._surfaces.clear()
+        self._held = None
 
 
 def _speak_enabled() -> bool:

@@ -7,6 +7,16 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
 ## [Unreleased]
 
 ### Added
+- **Stairs, kerbs and drops in the walking simulator** (design note 40): `walk_sim --follow`
+  rooms with a hazard on the ground, rendered through the ToF and the front camera from the
+  walking wearer (`ground_hazard_sim.render_tof` / `render_picture` take a `pose`). With
+  `--turn-on tof-hazards`: stopped short of a drop, a platform edge and stairs down; a kerb,
+  stairs up and a pothole named 1.5 m or more before them.
+- **Crossing cars, through the LiDAR's mover warnings** (not yet spoken, design note 39): blobs
+  out to 12 m reach the Kalman tracker (moving there only at a vehicle's speed), a car's front
+  joined to its side edge-on is split at the corner, a lone car is no longer dropped as a
+  room's outline, and a vehicle's steady heading is judged on recent sightings. At 14 km/h,
+  warned ~1.6 s ahead from either side (was 0.7 s from the left, never from the right).
 - **Cars in the walking simulator** (design note 38). `walk_sim --follow` rooms take cars
   (4.5 x 1.8 m boxes) seen by a synthetic front camera, so the spoken vehicle warnings are walked
   with the wearer acting on them: head-on and from 20 deg off at 18 km/h, warned ~3.4 s ahead
@@ -94,6 +104,26 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   Nothing said changes.
 
 ### Fixed
+- **The camera never came back after a stall** (on the device, 2026-11-20): the picture stream
+  stopped, its reopen hung in `stop()` and was abandoned, and libcamera still held the camera,
+  so every reopen failed ("Camera in Running state trying acquire()") every 10 s until the app
+  restarted. Captures still waiting are now cancelled before a stop (Picamera2's
+  `cancel_all_and_flush`), and while a stop is still stuck the reopen is tried every
+  `CAMERA_STUCK_RETRY_S` (60 s) with a message saying an app restart brings it back.
+- **Walked off a drop after "Drop in front, stop"** (the ToF's hazards, not yet spoken): a metre
+  from the edge the ToF sees no floor and the drop was forgotten, "Walk straight". A drop or
+  stairs down said "..., stop" is held while no ground is found. A platform edge's camera
+  confirmation is no longer undone as the edge leaves the bottom of the picture.
+- **A kerb or stairs up first called "Low obstacle ahead"**, and the right name held back to under
+  a metre before it: a low, wide thing running out of the ToF's view is not named until its far
+  side is seen, and a better name for the same thing is said at once.
+- **"Vehicle approaching, move left" back into a car** (spoken). With range noise, a car
+  head-on that the wearer had stepped away from flipped the camera's side 0.9 s before it passed
+  (3 seeds in 6): the box's jitter near read it heading toward the line. The step is behind a
+  car only when it goes across the line (its whole width in the time left); else away from it.
+- **Radar movers off a pane** (a "would say"): a side board's echo off a pane across the way
+  slid along it at the beam's edge, faster than the walk; each board now allows that
+  (`radar_movers.edge_slide`).
 - **"Something approaching" off a parked car** (a "would say", `radar_movers`): walking up to the
   back of one, the side board's echo slid along it at the beam's edge, closing faster than the
   walk, and the LiDAR's car side, over 2 m wide, did not count as the LiDAR seeing it. A laser
@@ -284,6 +314,8 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   (the LiDAR's blind side) is unchanged.
 
 ### Changed
+- **`TOF_MIN_CONFIDENCE` 30 -> 0** (the tester's call, 2026-11-20): every ToF pixel with a distance
+  counts, so whole things are seen, at the cost of the noisier ones.
 - **A block's console line shows the room each way** ("room L 13.1 R 1.4 ft (needs 2.0)"): the
   walk policy's own, which the way out was chosen by. On the desk, "Blocked by wall, turn
   left" was said with the laser's left wall 1.5 ft off, and nothing showed why the left had

@@ -904,3 +904,65 @@ Kept because each one explains why the code is the way it is.
     `movers_sim`'s radar scenes (someone in the blind arc, something low under the laser) still
     warn. The real car may differ: a shoulder-high laser can pass over a low car's roof or
     through its windows, and the sim's car is solid to it.
+39. **Crossing cars, through the LiDAR; and a camera warning that flipped (2026-11-20).** Note
+    38's crossing car: the LiDAR's mover warnings (not yet spoken) had it 0.7 s ahead from the
+    left, never from the right. The width limit was not why: crossing toward the walking line a
+    car shows its front (1.8 m). (1) Its front is past `LIDAR_MOVERS_MAX_RANGE_MM` (8 m) until
+    ~2 s out at 14 km/h: blobs out to `LIDAR_MOVERS_VEHICLE_MAX_RANGE_MM` (12 m, the LiDAR's
+    reach) now reach the Kalman tracker, which judges them moving there only at a vehicle's
+    speed (3 m/s); `lidar_movers`' own tracks and still-things fit keep to 8 m. (2) From the
+    right, its side came joined to the front, seen nearly edge-on (from the left the rig's
+    blind arc hid it): one run over 2 m, dropped as a wall. A too-wide run bent off its chord
+    by 0.3 m or more is split at the bend into two faces, each judged alone. (3) The
+    simulators give "nothing there" as a return at 12 m; the side running off into that ring
+    made one run round the wearer: a return at `LIDAR_MAX_DISTANCE` or past it is no surface.
+    (4) Alone on the road the car was then every return, which the guard for a room's outline
+    dropped: only a run that closes round now is. (5) The Kalman's vehicle "steady heading"
+    held the filter's first guesses at the car's velocity (-39, -70, -77 deg for a crossing at
+    -90) for its 1.2 s window: it is judged over the last 0.8 s of sightings, the sightings
+    spanning 0.8 s (a track coasted on its prediction holds its heading by itself; a piece of a
+    passing car seen six times was "approaching" once coasted). Now ~1.6 s ahead from either
+    side, 1.1-1.4 with range noise; at 14 km/h the 12 m reach allows ~2.2 s from first sight,
+    so 2 s is out of reach. A widened width limit (6 m) was tried first: it added a false
+    warning from a passing car's side, and was taken out. With the trackers run in every room
+    (`--turn-on movers`), a pane across open floor was "Something approaching from right, stop"
+    (radar movers): the side board's nearest point on a surface facing the walk lies at its
+    beam's edge, closing at walk / cos 57.5; each board now allows that (`edge_slide`). And a
+    "crossing" thing ahead hardly crossing at all (a car passing alongside) took its side from
+    the noise in its sideways speed: under `LIDAR_MOVERS_MIN_SPEED_MPS` it is where it is.
+    Spoken: with range noise (`--noise 10`), a car head-on that the wearer had stepped right
+    from was "Vehicle approaching, move left" 0.9 s before it passed, 3 seeds in 6: walked back
+    into it. Near, the box's 5 % height jitter read ~0.6 m/s toward the line, the threshold for
+    the car's heading to choose the side (note of 2026-11-09: behind a crossing car). That is
+    right for a car going across; one barely across passes alongside, and stepping "behind"
+    it is stepping into it. The heading now chooses only when the car would move its whole
+    width across in the time left; else away from where it is. 21 walks of 21 (7 seeds, three
+    car rooms), and the angled cars still sent behind.
+40. **Stairs, kerbs and drops, walked (2026-11-20).** The ToF's hazards (not yet spoken) had only
+    been checked from a standing rig (`ground_hazard_sim`). walk_sim's rooms take one hazard
+    across the way (`Room(ground=_ground(...))`, ground_hazard_sim's boxes), rendered through the
+    ToF from the walking wearer's pose (`render_tof(pose=...)`), with the body's sway, ten
+    analyses a second, and the front camera's picture drawn when the analysis asks for it
+    (`render_picture(pose=...)`, at most every 0.3 s); the snapshot goes to the guidance as
+    `ground`. The wearer stops on "..., stop" and walks on, the cane out, on the rest. Judged:
+    nobody walks past a drop's or stairs-down edge (the leading foot 15 cm ahead); kerbs,
+    stairs up and potholes are named, and rightly, 1.5 m or more before them. Found and
+    fixed: (1) A 1 m drop: "Drop in front, stop" at 1.5 m, then "Walk straight" a metre from
+    the edge, and the wearer walked off it. Nearer than ~1.1 m the ToF sees only the lower
+    ground (or, at a platform edge, nothing within 4 m) and finds no floor at the mount's
+    height: the analysis failed and the drop was forgotten. A drop or stairs down said
+    "..., stop" is now held while no ground is found, and let go by the first analysis that
+    finds the floor (the wearer turned away). (2) A platform edge: the ground below never
+    measured, it is said only with the camera's edge; the camera confirmed it at 2.25 m, then
+    as the edge slid off the bottom of its picture the level-edge search found "no evidence",
+    which undid the confirmation: "Drop ahead", then silence, then the edge. A confirmation is
+    no longer undone by "no evidence" for the same hazard nearer than where it was confirmed
+    (within `_CAMERA_MEMORY_S`). (3) A kerb up and stairs up at the ToF's far end: low and
+    wide before the top is in view, "Low obstacle ahead"; then the gate held "Step up ahead"
+    the settle, and its airtime, to 0.8 m before the kerb. A low thing at least 1 m wide and
+    under 25 cm, running on out of the view's far end, is not named until its far side is in
+    view; and the gate says a better name for the same thing at once (from "Low obstacle" or
+    "Obstacle ahead" to stairs, a step or a drop; from a step to a flight the same way), not
+    back and not between those. Now all seven rooms (a 1 m drop, a platform edge, stairs down,
+    a kerb down and up, stairs up, a pothole) on four noise seeds: stopped 0.9 m short of the
+    falls, everything else named 1.5-3.2 m before it. `ground_hazard_sim`: 18/18, walls 57/57.

@@ -70,7 +70,8 @@ def board_stats(frames):
     heard = [bool(p) for _t, p in frames]
     missed = sum(1 for i in range(1, n - 1) if not heard[i] and heard[i - 1] and heard[i + 1])
     ghosts = sum(
-        1 for _t, p in frames
+        1
+        for _t, p in frames
         if any(abs(e - 2.0 * x) <= GHOST_TOL_MM for e in p for x in p if x < e)
     )
     nearest = [p[0] for _t, p in frames if p]
@@ -107,17 +108,21 @@ def main():
         time.sleep(1.0 / args.hz)
 
     print("\nradar, per board (its own frames)")
-    print(f"  {'board':8} {'frames':>6} {'per s':>6} {'silent':>7} {'missed':>7} {'ghosts':>7} "
-          f"{'jitter':>7} {'nearest':>8}")
+    print(
+        f"  {'board':8} {'frames':>6} {'per s':>6} {'silent':>7} {'missed':>7} {'ghosts':>7} "
+        f"{'jitter':>7} {'nearest':>8}"
+    )
     for key, frames in sorted(board_frames(samples).items()):
         st = board_stats(frames)
         if st["frames"] < 2:
             print(f"  {key:8} {st['frames']:>6}  (too few frames)")
             continue
         pct = lambda v: f"{100 * v:6.1f}%"  # noqa: E731
-        print(f"  {key:8} {st['frames']:>6} {st['frames_per_s'] or 0:>6.1f} {pct(st['silent'])} "
-              f"{pct(st['missed'])} {pct(st['ghosts'])} {st['jitter_mm'] or 0:>5.0f}mm "
-              f"{st['nearest_mm'] or 0:>6.0f}mm")
+        print(
+            f"  {key:8} {st['frames']:>6} {st['frames_per_s'] or 0:>6.1f} {pct(st['silent'])} "
+            f"{pct(st['missed'])} {pct(st['ghosts'])} {st['jitter_mm'] or 0:>5.0f}mm "
+            f"{st['nearest_mm'] or 0:>6.0f}mm"
+        )
 
     stats, err = fetch(base, "/camera/stats")
     pipe = (stats or {}).get("pipeline") or {}
@@ -125,9 +130,11 @@ def main():
     if err or not pipe:
         print(f"  not available: {err or 'no pipeline timings yet'}")
     else:
-        print(f"  sensor {pipe.get('sensor_fps')} pictures/s, the app had each "
-              f"{pipe.get('lag_ms')} ms after the sensor read it out (worst {pipe.get('lag_ms_worst')}), "
-              f"{100 * (pipe.get('held') or 0):.0f}% handed over already finished")
+        print(
+            f"  sensor {pipe.get('sensor_fps')} pictures/s, the app had each "
+            f"{pipe.get('lag_ms')} ms after the sensor read it out (worst {pipe.get('lag_ms_worst')}), "
+            f"{100 * (pipe.get('held') or 0):.0f}% handed over already finished"
+        )
 
     reader, err = fetch(base, "/lidar/reader")
     print("\nlidar reader")

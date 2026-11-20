@@ -53,9 +53,7 @@ def camera(user, psi, things, t, rng):
             continue
         rng_m = math.hypot(fwd, right)
         height = sg._object_height_m(m["cls"])
-        hp = (
-            focal * height / rng_m * (1.0 + rng.gauss(0.0, 0.05))
-        )  # box height, 5 % jitter
+        hp = focal * height / rng_m * (1.0 + rng.gauss(0.0, 0.05))  # box height, 5 % jitter
         if hp >= h - 6.0:
             continue
         cx = w / 2.0 + focal * math.tan(brg) + rng.gauss(0.0, 2.0)
@@ -100,16 +98,12 @@ def track_scene(
     next_cam = 0.0
     for i in range(int(seconds * ms.HZ)):
         t = i / ms.HZ
-        heading = {
-            "scan_yaw_deg": (ms.YAW_BIAS_DEG + random.gauss(0.0, 0.05)) if i else None
-        }
+        heading = {"scan_yaw_deg": (ms.YAW_BIAS_DEG + random.gauss(0.0, 0.05)) if i else None}
         if odometry and i:
             heading["scan_fwd_mm"] = walk / ms.HZ * 1000.0 + random.gauss(0.0, 8.0)
             heading["scan_right_mm"] = random.gauss(0.0, 8.0)
         else:
-            heading.update(
-                {"speed_mps": config.HEADING_NOMINAL_SPEED_MPS, "moving": walk > 0}
-            )
+            heading.update({"speed_mps": config.HEADING_NOMINAL_SPEED_MPS, "moving": walk > 0})
         pts = ms.scan(user, psi, phase, ms_list, walls, still, ms.BLIND)
         lidar_movers.update(pts, t0 + t, heading)
         cam = None
@@ -124,9 +118,7 @@ def track_scene(
             ego=lidar_movers.snapshot().get("ego"),
         )
         snap = tracker.snapshot()
-        truth = [
-            (m["x"] - user[0], m["y"] - user[1], m["vx"], m["vy"]) for m in ms_list
-        ]
+        truth = [(m["x"] - user[0], m["y"] - user[1], m["vx"], m["vy"]) for m in ms_list]
         truth += [(c["x"] - user[0], c["y"] - user[1], c["vx"], c["vy"]) for c in cams]
         for tr in snap["tracks"]:
             near = min(
@@ -462,20 +454,12 @@ def run_planner(verbose=False):
             said, route = raw["instruction"], raw.get("route") or {}
             ok = bool(route.get("ok"))
             if "said" in expect:
-                want = (
-                    expect["said"]
-                    if isinstance(expect["said"], tuple)
-                    else (expect["said"],)
-                )
+                want = expect["said"] if isinstance(expect["said"], tuple) else (expect["said"],)
                 ok = ok and said in want
             if "blocked_side" in expect:
                 ok = ok and raw["blocked"] and raw["side"] == expect["blocked_side"]
             if "mover" in expect:
-                want = (
-                    expect["mover"]
-                    if isinstance(expect["mover"], tuple)
-                    else (expect["mover"],)
-                )
+                want = expect["mover"] if isinstance(expect["mover"], tuple) else (expect["mover"],)
                 ok = ok and raw.get("mover_text") in want
             if expect.get("no_mover"):
                 ok = ok and not raw.get("mover_text")

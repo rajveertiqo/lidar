@@ -55,17 +55,13 @@ def board_points(cols: int, rows: int, square_mm: float) -> np.ndarray:
     return grid
 
 
-def find_corners(
-    gray: np.ndarray, cols: int, rows: int, upscale: int = 1
-) -> Optional[np.ndarray]:
+def find_corners(gray: np.ndarray, cols: int, rows: int, upscale: int = 1) -> Optional[np.ndarray]:
     """The board's inner corners in a grey picture (N, 1, 2), or None."""
     import cv2
 
     img = gray
     if upscale > 1:
-        img = cv2.resize(
-            gray, None, fx=upscale, fy=upscale, interpolation=cv2.INTER_CUBIC
-        )
+        img = cv2.resize(gray, None, fx=upscale, fy=upscale, interpolation=cv2.INTER_CUBIC)
         img = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(img)
     found, corners = False, None
     if hasattr(cv2, "findChessboardCornersSB"):
@@ -184,9 +180,7 @@ def calibrate(
 
 
 def _pairs(folder: str) -> List[str]:
-    return sorted(
-        p[: -len("_cam.png")] for p in glob.glob(os.path.join(folder, "*_cam.png"))
-    )
+    return sorted(p[: -len("_cam.png")] for p in glob.glob(os.path.join(folder, "*_cam.png")))
 
 
 def solve(args) -> int:
@@ -291,9 +285,7 @@ def check(args) -> int:
     return 0
 
 
-def wall_fit(
-    depth_mm: np.ndarray, lens: df.Lens, middle: float = 0.6
-) -> Dict[str, float]:
+def wall_fit(depth_mm: np.ndarray, lens: df.Lens, middle: float = 0.6) -> Dict[str, float]:
     """How flat a wall comes out (RMS mm off the best plane) read each way, from the
     middle of the picture (the floor or ceiling may be at its edges)."""
     out = {}
@@ -305,9 +297,7 @@ def wall_fit(
         & (np.abs(vv - (h - 1) / 2.0) <= middle * h / 2.0)
     ).reshape(-1)
     for radial in (True, False):
-        p = df.DepthProjector(
-            df.Calibration(lens, lens, np.eye(3), np.zeros(3)), radial
-        )
+        p = df.DepthProjector(df.Calibration(lens, lens, np.eye(3), np.zeros(3)), radial)
         d = depth.reshape(-1)
         ok = centre & np.isfinite(d) & (d > config.TOF_MIN_MM) & (d < config.TOF_MAX_MM)
         pts = p.rays[ok] * d[ok, None]
@@ -325,10 +315,7 @@ def wall(args) -> int:
         f"off a flat plane: read along each ray {fit['radial']:.1f} mm, along the lens "
         f"axis {fit['axis']:.1f} mm"
     )
-    print(
-        f"-> TOF_DEPTH_IS_RADIAL = {best == 'radial'} "
-        f"(config now {config.TOF_DEPTH_IS_RADIAL})"
-    )
+    print(f"-> TOF_DEPTH_IS_RADIAL = {best == 'radial'} (config now {config.TOF_DEPTH_IS_RADIAL})")
     return 0
 
 

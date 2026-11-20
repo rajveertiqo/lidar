@@ -50,6 +50,10 @@ CAMERA_FRAME_TIMEOUT_S = 5.0
 CAMERA_STOP_TIMEOUT_S = 5.0
 
 CAMERA_RETRY_BACKOFF_S = (2.0, 5.0, 10.0)
+# A camera whose stop never finished (abandoned after CAMERA_STOP_TIMEOUT_S) is still held inside
+# libcamera, and no new one opens in this process until it lets go: tried this seldom meanwhile
+# (2026-11-20: a stalled stream's stop hung, then every reopen, every 10 s, failed alike).
+CAMERA_STUCK_RETRY_S = 60.0
 
 # The camera board (CamArray HAT): register 0x24 of controller 0x24 on I2C bus 11, set to
 # 0x00 (all four cameras in the 2x2 picture) at every camera start — it forgets it on a
@@ -652,6 +656,12 @@ LIDAR_MOVERS_BREAK_PER_M = 0.06
 LIDAR_MOVERS_MAX_GAP_DEG = 3.0  # an angular gap wider than this also splits
 LIDAR_MOVERS_MIN_POINTS = 3
 LIDAR_MOVERS_MAX_WIDTH_M = 2.0  # wider is a wall: not followed
+# Past MAX_RANGE, out to VEHICLE_MAX_RANGE, blobs are followed by the Kalman tracker
+# (motion_tracker) alone, and moving only at LIDAR_MOVERS_VEHICLE_SPEED_MPS or more (2026-11-20):
+# a car crossing toward the walking line shows its front, and at 14 km/h it is 8 m off ~2 s
+# before it would reach the wearer. People are judged within MAX_RANGE as before.
+# VEHICLE_MAX_RANGE = MAX_RANGE turns it off.
+LIDAR_MOVERS_VEHICLE_MAX_RANGE_MM = 12000
 LIDAR_MOVERS_PERSON_MAX_WIDTH_M = 0.9  # wider, or faster than VEHICLE_SPEED: "Vehicle"
 LIDAR_MOVERS_VEHICLE_SPEED_MPS = 3.0
 LIDAR_MOVERS_GATE_M = 0.5  # a blob this far from where a track was heading is another
@@ -774,7 +784,11 @@ TOF_VIDEO_INDEX = None
 TOF_RANGE_MM = 4000  # the SDK's range setting (2000 or 4000: beyond 2 m that one wraps to near)
 TOF_FRAME_TIMEOUT_MS = 500
 TOF_RETRY_BACKOFF_S = (2.0, 5.0, 10.0)
-TOF_MIN_CONFIDENCE = 30.0  # depth pixels the sensor is less sure of than this are dropped
+# Depth pixels the sensor is less sure of than this are dropped. 0 (the tester's call,
+# 2026-11-20; was 30): every pixel with a distance counts, so whole things are seen, at the
+# cost of the noisier ones (edges, dark or far surfaces). Pixels with no distance (0) are
+# still dropped by TOF_MIN_MM.
+TOF_MIN_CONFIDENCE = 0.0
 TOF_MIN_MM = 150.0
 TOF_MAX_MM = 4000.0
 # Is the SDK's distance along each pixel's ray (True) or along the lens axis? Bench check:

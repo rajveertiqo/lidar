@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 from app.config import (
+    LIDAR_MAX_DISTANCE,
     LIDAR_MOVERS_BREAK_MM,
     LIDAR_MOVERS_BREAK_PER_M,
     LIDAR_MOVERS_CONFIRM_SCANS,
@@ -28,6 +29,7 @@ from app.config import (
     LIDAR_MOVERS_MISS_M,
     LIDAR_MOVERS_NOISE_PER_M,
     LIDAR_MOVERS_PERSON_MAX_WIDTH_M,
+    LIDAR_MOVERS_VEHICLE_MAX_RANGE_MM,
     LIDAR_MOVERS_VEHICLE_SPEED_MPS,
     LIDAR_MOVERS_WALK_MAX_MPS,
     LIDAR_MOVERS_WINDOW_S,
@@ -39,17 +41,23 @@ _OCCLUDER_M = 0.2  # a neighbour this much nearer hides that end of a blob
 _EGO_MAX_FWD_MPS = 2.5  # a fitted user motion faster than a walk is a bad fit
 _EGO_MAX_SIDE_MPS = 1.5
 _EGO_MIN_SPREAD_M = 1.0  # still things this far apart pin down a turn
+_CORNER_BEND_M = 0.3  # a run too wide to follow, bent this far off its chord: two faces
 
 
 def segment(points) -> List[Dict[str, Any]]:
     """Blobs in one scan, in metres (x ahead, y to the right).
 
     `clean` is False when something nearer hides either end: the blob's visible part
-    then changes with the view, not with its own motion, so it is not followed."""
+    then changes with the view, not with its own motion, so it is not followed. A return at
+    the LiDAR's reach (LIDAR_MAX_DISTANCE) or past it is none: the simulators give "nothing
+    there" as a return at 12 m, and a car's side running off into it joined that ring, one run
+    round the wearer, dropped (walk_sim, 2026-11-20). `far`: past
+    LIDAR_MOVERS_MAX_RANGE_MM, out to LIDAR_MOVERS_VEHICLE_MAX_RANGE_MM, for the Kalman
+    tracker alone (a vehicle coming)."""
     pts = sorted(
         (float(a) % 360.0, float(d) / 1000.0)
         for a, d in points
-        if isinstance(d, (int, float)) and d > 0
+        if isinstance(d, (int, float)) and 0 < d < LIDAR_MAX_DISTANCE
     )
     n = len(pts)
     if n < LIDAR_MOVERS_MIN_POINTS:
@@ -85,9 +93,39 @@ def segment(points) -> List[Dict[str, Any]]:
             gap <= LIDAR_MOVERS_MAX_GAP_DEG and rng[neighbour] < rng[end] - _OCCLUDER_M
         )
 
+    def faces(run: List[int]) -> List[List[int]]:
+        """A run too wide to follow, split where it bends most off its chord, when it does by
+        _CORNER_BEND_M: its two faces, each judged alone; else the run. A car crossing toward
+        the walking line showed its 1.8 m front and, joined to it, its side nearly edge-on:
+        one run over 2 m, dropped as a wall (walk_sim, 2026-11-20)."""
+        first, last = run[0], run[-1]
+        ex, ey = xs[last] - xs[first], ys[last] - ys[first]
+        length = math.hypot(ex, ey)
+        if length <= LIDAR_MOVERS_MAX_WIDTH_M:
+            return [run]
+        k, off = max(
+            (
+                (j, abs((xs[i] - xs[first]) * ey - (ys[i] - ys[first]) * ex) / length)
+                for j, i in enumerate(run)
+            ),
+            key=lambda p: p[1],
+        )
+        return [run[: k + 1], run[k:]] if off >= _CORNER_BEND_M else [run]
+
+    def closed(run: List[int]) -> bool:
+        """All the way round the wearer (a room's outline): every return, and its ends joined.
+        A car alone on an open road is every return too (2026-11-20)."""
+        return len(run) >= n and gap_deg(run[-1], run[0]) <= LIDAR_MOVERS_MAX_GAP_DEG
+
+    pieces = [
+        face
+        for run in runs
+        if len(run) >= LIDAR_MOVERS_MIN_POINTS and not closed(run)
+        for face in faces(run)
+    ]
     out = []
-    for run in runs:
-        if len(run) < LIDAR_MOVERS_MIN_POINTS or len(run) >= n:
+    for run in pieces:
+        if len(run) < LIDAR_MOVERS_MIN_POINTS:
             continue
         first, last = run[0], run[-1]
         before, after = (first - 1) % n, (last + 1) % n
@@ -97,10 +135,9 @@ def segment(points) -> List[Dict[str, Any]]:
         near = min(rng[i] for i in run)
         if width > LIDAR_MOVERS_MAX_WIDTH_M:
             continue
-        if not (
-            LIDAR_MOVERS_MIN_RANGE_MM / 1000.0 <= near
-            and math.hypot(cx, cy) <= LIDAR_MOVERS_MAX_RANGE_MM / 1000.0
-        ):
+        dist = math.hypot(cx, cy)
+        reach = max(LIDAR_MOVERS_MAX_RANGE_MM, LIDAR_MOVERS_VEHICLE_MAX_RANGE_MM)
+        if not (LIDAR_MOVERS_MIN_RANGE_MM / 1000.0 <= near and dist <= reach / 1000.0):
             continue
         clean = not (
             hides(before, gap_deg(before, first), first)
@@ -114,6 +151,7 @@ def segment(points) -> List[Dict[str, Any]]:
                 "points": len(run),
                 "near_m": near,
                 "clean": clean,
+                "far": dist > LIDAR_MOVERS_MAX_RANGE_MM / 1000.0,
             }
         )
     return out
@@ -180,7 +218,7 @@ class MoverTracker:
             self._turn(
                 math.radians(float(yaw)) if isinstance(yaw, (int, float)) else 0.0
             )
-            self._follow([b for b in blobs if b["clean"]], t)
+            self._follow([b for b in blobs if b["clean"] and not b["far"]], t)
             fitted = self._fit(t)
             ego = self._ego(fitted)
             for tr in fitted:
@@ -385,8 +423,11 @@ class MoverTracker:
             head_on = -pv / (math.sqrt(vv) * max(r, 1e-6))
             if head_on >= math.cos(math.radians(LIDAR_MOVERS_HEAD_ON_DEG)):
                 mode, side = "toward", "left" if bearing < 0 else "right"
-            else:  # crossing: from the side it moves away from
+            elif abs(own[1]) >= LIDAR_MOVERS_MIN_SPEED_MPS:
+                # crossing: from the side it moves away from
                 mode, side = "crossing", "left" if own[1] > 0 else "right"
+            else:  # hardly across at all, passing alongside: where it is (2026-11-20)
+                mode, side = "crossing", "left" if bearing < 0 else "right"
         else:
             mode, side = "crossing", "left" if bearing < 0 else "right"
         tr["alert"] = {

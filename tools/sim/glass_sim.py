@@ -26,9 +26,7 @@ from app.perception import walk_policy  # noqa: E402
 FT = 304.8
 LASER_STEP_DEG = 360.0 / 260.0  # the rig's density: ~260 returns a revolution
 LASER_MAX_MM = 12000.0
-BEAM_EDGE = 1.0 / math.sin(
-    math.radians(30.0 + 65.0 / 2.0)
-)  # a side wall at the beam's edge
+BEAM_EDGE = 1.0 / math.sin(math.radians(30.0 + 65.0 / 2.0))  # a side wall at the beam's edge
 DOOR_HALF_MM = 450.0  # a 0.9 m door
 BACK_WALL_MM = 6000.0  # the room behind the glass
 LASER_NOISE_MM = 15.0  # range noise on every laser return
@@ -39,11 +37,7 @@ LASER_NOISE_MM = 15.0  # range noise on every laser return
 
 def wall_across(x, half_gap=None, reach=4000.0, angle_deg=0.0):
     """A wall across the path at forward distance x, optionally with a gap on the walking line."""
-    pieces = (
-        [(-reach, reach)]
-        if half_gap is None
-        else [(-reach, -half_gap), (half_gap, reach)]
-    )
+    pieces = [(-reach, reach)] if half_gap is None else [(-reach, -half_gap), (half_gap, reach)]
     t = math.radians(angle_deg)
     out = []
     for y1, y2 in pieces:
@@ -114,9 +108,7 @@ def lidar_state(segments):
     sectors = {}
     for name, (lo, hi) in c.LIDAR_SECTORS.items():
         ds = [
-            d
-            for a, d in zip(angles, dists)
-            if (lo <= a < hi if lo < hi else (a >= lo or a < hi))
+            d for a, d in zip(angles, dists) if (lo <= a < hi if lo < hi else (a >= lo or a < hi))
         ]
         sectors[name] = {"min_dist": min(ds) if ds else None, "count": len(ds)}
     cones = {}
@@ -129,8 +121,7 @@ def lidar_state(segments):
                 name == "front"
                 and g < 90.0
                 and d <= c.GUIDANCE_CORRIDOR_MAX_MM
-                and abs(d * math.sin(math.radians(g)))
-                <= c.GUIDANCE_CORRIDOR_HALF_WIDTH_MM
+                and abs(d * math.sin(math.radians(g))) <= c.GUIDANCE_CORRIDOR_HALF_WIDTH_MM
             )
             if in_cone or in_corr:
                 best = d if best is None else min(best, d)
@@ -214,8 +205,11 @@ def door_scene(ft, angle=0.0, person=None):
     someone = []
     if person:
         along, in_front = person
-        someone = post(d - along * math.sin(t) - in_front * math.cos(t),
-                       along * math.cos(t) - in_front * math.sin(t), half=170.0)
+        someone = post(
+            d - along * math.sin(t) - in_front * math.cos(t),
+            along * math.cos(t) - in_front * math.sin(t),
+            half=170.0,
+        )
     echoes = {}
     for key, bearing in (("deg030", 30.0), ("deg330", -30.0)):
         hits = (heard(s, bearing) for s in (pane, wall, someone) if s)
@@ -226,8 +220,19 @@ def door_scene(ft, angle=0.0, person=None):
 # ---------------------------------------------------------------- walking (radar tracking)
 
 
-def walk_toward(lat_l, lat_r, pane_mm=None, pace=1.2, hz=10.0, seconds=4.0, extra=None,
-                measured_pace=True, noise_mm=0.0, drop=0.0, seed=0):
+def walk_toward(
+    lat_l,
+    lat_r,
+    pane_mm=None,
+    pace=1.2,
+    hz=10.0,
+    seconds=4.0,
+    extra=None,
+    measured_pace=True,
+    noise_mm=0.0,
+    drop=0.0,
+    seed=0,
+):
     """Walk down a passage (walls lat_l / lat_r mm to each side) at `pace` m/s, the radar at
     `hz` frames a second: (seconds walked, pane distance mm or None, the front read) per frame.
     `noise_mm`: range noise on every echo (1 sigma); `drop`: the chance a board hears nothing
@@ -263,9 +268,13 @@ def walk_toward(lat_l, lat_r, pane_mm=None, pace=1.2, hz=10.0, seconds=4.0, extr
         for row in radar["sectors"].values():
             row["last_update"] = stamp
         front = radar["sectors"]["front"]
-        front["peaks_mm"] = sorted(e for key in ("deg030", "deg330") for e in radar["sectors"][key]["peaks_mm"])
+        front["peaks_mm"] = sorted(
+            e for key in ("deg030", "deg330") for e in radar["sectors"][key]["peaks_mm"]
+        )
         lidar = lidar_state(segs)
-        with mock.patch.object(walk_policy, "_walking_pace", lambda: pace if measured_pace else None):
+        with mock.patch.object(
+            walk_policy, "_walking_pace", lambda: pace if measured_pace else None
+        ):
             read = walk_policy.read_direction(lidar, radar, "front")
         out.append((walked / 1000.0, pane, read))
     return out
@@ -340,7 +349,10 @@ def scenes():
             "clear",
             f"passage, walls {lat_l / FT:.1f} / {lat_r / FT:.1f} ft, no pane",
             side_wall("left", lat_l) + side_wall("right", lat_r) + back_wall(),
-            {"deg330": [lat_l - 50.0, lat_l * BEAM_EDGE], "deg030": [lat_r - 50.0, lat_r * BEAM_EDGE]},
+            {
+                "deg330": [lat_l - 50.0, lat_l * BEAM_EDGE],
+                "deg030": [lat_r - 50.0, lat_r * BEAM_EDGE],
+            },
         )
     for ft in (2.0, 4.0, 6.0, 9.5, 12.0):
         d = ft * FT
@@ -433,7 +445,9 @@ def _says(segments, echoes):
     walk_policy._near_frames.clear()
     walk_policy._remember_turn(None, 0.0)
     lidar, radar = lidar_state(segments), radar_state(echoes)
-    return sg.decide(walk_policy.decide(lidar, radar), lidar, now=time.time(), radar_state=radar)["instruction"]
+    return sg.decide(walk_policy.decide(lidar, radar), lidar, now=time.time(), radar_state=radar)[
+        "instruction"
+    ]
 
 
 def door_grids():
@@ -446,15 +460,34 @@ def door_grids():
     # and within the block distance it must be a block, glass or not.
     must = 0
     late = {False: [0, 0], True: [0, 0]}  # steep (50 deg)? -> [named glass, scenes]
-    for angle in (-50.0, -45.0, -40.0, -30.0, -25.0, -20.0, -15.0, -10.0,
-                  10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0, 50.0):
+    for angle in (
+        -50.0,
+        -45.0,
+        -40.0,
+        -30.0,
+        -25.0,
+        -20.0,
+        -15.0,
+        -10.0,
+        10.0,
+        15.0,
+        20.0,
+        25.0,
+        30.0,
+        35.0,
+        40.0,
+        45.0,
+        50.0,
+    ):
         for ft in (1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.5, 5.0, 6.0, 8.0, 11.0):
             said = _says(*door_scene(ft, angle))
             if abs(angle) <= 20.0 or (abs(angle) <= 45.0 and ft <= 5.0):
                 must += 1
                 if said not in GLASS_SAID:
                     failures += 1
-                    print(f"{'MISSED':<12} {f'glass door {ft} ft, met {angle:+.0f} deg off':<62} -> {said!r}")
+                    print(
+                        f"{'MISSED':<12} {f'glass door {ft} ft, met {angle:+.0f} deg off':<62} -> {said!r}"
+                    )
             else:
                 row = late[abs(angle) > 45.0]
                 row[0] += said in GLASS_SAID
@@ -462,12 +495,20 @@ def door_grids():
                 warned = said in GLASS_SAID or sg._LEVEL.get(said, -1) >= sg._BLOCKED
                 if abs(angle) > 45.0 and ft <= 4.0 and not warned:
                     failures += 1
-                    print(f"{'MISSED':<12} {f'glass door {ft} ft, met {angle:+.0f} deg off: no block':<62} -> {said!r}")
-    print(f"{'ok' if not failures else 'MISSED':<12} {f'glass doors met 10-45 deg off: {must} must be named':<62} "
-          f"-> {must - failures} named")
-    print(f"{'limit':<12} {'  25-45 deg off, 6-11 ft (named from 5 ft)':<62} -> {late[False][0]} of {late[False][1]} named")
-    print(f"{'limit':<12} {'  50 deg off, 1-11 ft, named glass (else a block within 4 ft)':<62} "
-          f"-> {late[True][0]} of {late[True][1]} named")
+                    print(
+                        f"{'MISSED':<12} {f'glass door {ft} ft, met {angle:+.0f} deg off: no block':<62} -> {said!r}"
+                    )
+    print(
+        f"{'ok' if not failures else 'MISSED':<12} {f'glass doors met 10-45 deg off: {must} must be named':<62} "
+        f"-> {must - failures} named"
+    )
+    print(
+        f"{'limit':<12} {'  25-45 deg off, 6-11 ft (named from 5 ft)':<62} -> {late[False][0]} of {late[False][1]} named"
+    )
+    print(
+        f"{'limit':<12} {'  50 deg off, 1-11 ft, named glass (else a block within 4 ft)':<62} "
+        f"-> {late[True][0]} of {late[True][1]} named"
+    )
     # Someone standing by the door, 0.5-0.8 m along the wall, up to 0.4 m in front of it.
     # Walking in, it must be named by WALK_BLOCK_FT (4 ft); single scans nearer can miss.
     before, single, single_missed = failures, 0, 0
@@ -482,13 +523,19 @@ def door_grids():
                 if not any(named[ft] for ft in (8.0, 6.0, 4.5, 4.0)):
                     failures += 1
                     who = f"{along / 1000:+.2f} m along, {in_front / 1000:.2f} m in front"
-                    print(f"{'MISSED':<12} {f'door, someone {who}, {angle:+.0f} deg: not by 4 ft':<62} "
-                          f"-> named at {[ft for ft, n in named.items() if n]}")
+                    print(
+                        f"{'MISSED':<12} {f'door, someone {who}, {angle:+.0f} deg: not by 4 ft':<62} "
+                        f"-> named at {[ft for ft, n in named.items() if n]}"
+                    )
     approaches = 5 * 4 * 4
-    print(f"{'ok' if failures == before else 'MISSED':<12} "
-          f"{f'glass door, someone by it: {approaches} walks in, named by 4 ft':<62} "
-          f"-> {approaches - (failures - before)} named")
-    print(f"{'limit':<12} {'  single scans 1.5-8 ft':<62} -> {single - single_missed} of {single} named")
+    print(
+        f"{'ok' if failures == before else 'MISSED':<12} "
+        f"{f'glass door, someone by it: {approaches} walks in, named by 4 ft':<62} "
+        f"-> {approaches - (failures - before)} named"
+    )
+    print(
+        f"{'limit':<12} {'  single scans 1.5-8 ft':<62} -> {single - single_missed} of {single} named"
+    )
     return failures
 
 
@@ -513,21 +560,19 @@ def run(verbose=False):
         front = wd["directions"]["front"]
         print(
             f"{verdict:<12} {name:<62} -> {said!r}"
-            + (
-                f"   [front {front['distance_ft']} ft, {front['fusion']}]"
-                if verbose
-                else ""
-            )
+            + (f"   [front {front['distance_ft']} ft, {front['fusion']}]" if verbose else "")
         )
     return failures
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument(
-        "-v", "--verbose", action="store_true", help="show the fused front reading"
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    p.add_argument("--no-grids", action="store_true", help="skip the door grids (design notes 24, 25)")
+    p.add_argument("-v", "--verbose", action="store_true", help="show the fused front reading")
+    p.add_argument(
+        "--no-grids", action="store_true", help="skip the door grids (design notes 24, 25)"
+    )
     args = p.parse_args()
     failures = run(args.verbose)
     if not args.no_grids:

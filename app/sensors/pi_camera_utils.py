@@ -60,6 +60,7 @@ from app.config import (
     CAMERA_FOCUS_CODE,
     CAMERA_LENS_DRIVER,
     CAMERA_RETRY_BACKOFF_S,
+    CAMERA_STUCK_RETRY_S,
     HAILO_RETRY_BACKOFF_S,
     HAILO_INFER_FAIL_RESET_S,
     HAILO_SEG_RUN_TIMEOUT_MS,
@@ -289,13 +290,41 @@ def stop_camera():
         _close_camera(cam)
 
 
-def _close_camera(cam):
-    """Stop and close a camera, bounded."""
+# Set while a camera's stop/close has been abandoned and has not yet finished: libcamera still
+# holds that camera, and opening it again fails ("Camera in Running state trying acquire()").
+_stuck_close = threading.Event()
+
+
+def _close_camera(cam) -> bool:
+    """Stop and close a camera, bounded: True when it finished in time. The captures still
+    waiting on it are cancelled first, Picamera2's own way of tidying up after a camera stopped
+    answering (cancel_all_and_flush): a capture left pending on a stalled stream can hold
+    stop() up (2026-11-20: a stall's reopen hung in stop, abandoned after 5 s, and every
+    reopen after it failed until the app restarted)."""
     try:
         atexit.unregister(cam.close)
     except Exception:
         pass
-    _bounded(lambda: (cam.stop(), cam.close()), CAMERA_STOP_TIMEOUT_S, "camera stop")
+
+    def close():
+        try:
+            try:
+                cam.cancel_all_and_flush()
+            except Exception:
+                pass  # an older Picamera2, or nothing to cancel
+            cam.stop()
+            cam.close()
+        finally:
+            _stuck_close.clear()  # let go, even if late
+
+    _stuck_close.set()
+    done = _bounded(close, CAMERA_STOP_TIMEOUT_S, "camera stop")
+    if not done:
+        _log.warning(
+            "[CAMERA] the camera's stop is still blocked inside libcamera: no camera "
+            "opens again until it lets go, or the app restarts"
+        )
+    return done
 
 
 def _bounded(fn, timeout_s: float, what: str) -> bool:
@@ -668,13 +697,23 @@ def _open_camera():
         except Exception as e:
             if cam is not None:
                 _close_camera(cam)  # half-opened: release the nodes
-            delay = CAMERA_RETRY_BACKOFF_S[
-                min(failures, len(CAMERA_RETRY_BACKOFF_S) - 1)
-            ]
+            stuck = _stuck_close.is_set()
+            delay = (
+                CAMERA_STUCK_RETRY_S
+                if stuck
+                else CAMERA_RETRY_BACKOFF_S[min(failures, len(CAMERA_RETRY_BACKOFF_S) - 1)]
+            )
             failures += 1
             _log.warning(
                 f"Camera would not open ({type(e).__name__}: {e}) — no frames "
-                f"(health reports the camera lost); retrying in {delay:g}s"
+                f"(health reports the camera lost); "
+                + (
+                    "the last camera's stop never finished, so libcamera still holds it: "
+                    "it opens again when that lets go, or after an app restart; "
+                    if stuck
+                    else ""
+                )
+                + f"retrying in {delay:g}s"
             )
             deadline = time.monotonic() + delay
             while running and time.monotonic() < deadline:

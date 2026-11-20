@@ -128,17 +128,12 @@ def checks(a, b, dt, guidance, radar, fused=None):
             (
                 OK,
                 "extraction",
-                f"{ms:.1f} ms, {age:.1f} s ago, "
-                f"{b.get('cells_occupied', 0)} cells occupied",
+                f"{ms:.1f} ms, {age:.1f} s ago, {b.get('cells_occupied', 0)} cells occupied",
             )
         )
 
     secs = (radar or {}).get("sectors") or {}
-    live = [
-        d
-        for d in ("front", "right", "back", "left")
-        if (secs.get(d) or {}).get("online")
-    ]
+    live = [d for d in ("front", "right", "back", "left") if (secs.get(d) or {}).get("online")]
     if not radar:
         out.append((WARN, "glass detection", "/radar/state unavailable"))
     elif not live:
@@ -156,8 +151,7 @@ def checks(a, b, dt, guidance, radar, fused=None):
             (
                 WARN,
                 "glass detection",
-                f"only {'/'.join(live)} online — glass is undetectable on "
-                f"the other arcs",
+                f"only {'/'.join(live)} online — glass is undetectable on the other arcs",
             )
         )
     else:
@@ -198,11 +192,7 @@ def checks(a, b, dt, guidance, radar, fused=None):
         out.append((NA, "shape -> hazards", "/guidance/walk unavailable"))
         return out
 
-    items = (
-        (fused or {}).get("hazards")
-        or (guidance.get("obstacles") or {}).get("items")
-        or []
-    )
+    items = (fused or {}).get("hazards") or (guidance.get("obstacles") or {}).get("items") or []
     shaped = [i for i in items if i.get("shape")]
     promotable = kinds.get("wall", 0) + kinds.get("pole", 0)
     if not items:
@@ -341,9 +331,7 @@ def main() -> int:
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--watch", action="store_true", help="redraw until Ctrl+C")
     ap.add_argument("--interval", type=float, default=2.0)
-    ap.add_argument(
-        "--checklist", action="store_true", help="print the physical tests and exit"
-    )
+    ap.add_argument("--checklist", action="store_true", help="print the physical tests and exit")
     args = ap.parse_args()
 
     if args.checklist:
@@ -366,10 +354,7 @@ def main() -> int:
                 out = render(a, b, dt, extra, base)
                 print("\033[2J\033[H" + out if args.watch else out)
             if not args.watch:
-                bad = any(
-                    s == FAIL
-                    for s, _, _ in checks(a, b, dt, *(extra or (None, None, None)))
-                )
+                bad = any(s == FAIL for s, _, _ in checks(a, b, dt, *(extra or (None, None, None))))
                 return 1 if bad else 0
             time.sleep(max(0.5, args.interval - 1.0))
     except KeyboardInterrupt:

@@ -112,9 +112,7 @@ def main():
     threading.Thread(target=_marker_reader, args=(marker_q,), daemon=True).start()
 
     print(f"[walk_logger] writing {path}")
-    print(
-        "[walk_logger] ENTER = drop a marker (type a note first if you like), Ctrl+C = stop\n"
-    )
+    print("[walk_logger] ENTER = drop a marker (type a note first if you like), Ctrl+C = stop\n")
 
     fps_cap, fps_det, fps_seg, temps = [], [], [], []
     actions = Counter()
@@ -187,9 +185,7 @@ def main():
                             "seg_fps": _round(s.get("seg_fps")),
                             "inference_ms": _round(s.get("inference_time"), 1),
                             "objects": s.get("total_objects", 0),
-                            **{
-                                f"clear_{c}_ft": _round(clear.get(c)) for c in CARDINALS
-                            },
+                            **{f"clear_{c}_ft": _round(clear.get(c)) for c in CARDINALS},
                             **{f"radar_{c}_ft": _radar_ft(rsec, c) for c in CARDINALS},
                             **{f"{k}_ft": sec.get(k) for k in SECTORS},
                         }
@@ -247,16 +243,12 @@ def main():
     print(f"capture_fps   min/avg: {mn(fps_cap)} / {av(fps_cap)}")
     print(f"detection_fps min/avg: {mn(fps_det)} / {av(fps_det)}")
     print(f"seg_fps       min/avg: {mn(fps_seg)} / {av(fps_seg)}")
-    print(
-        f"temp max: {max(temps) if temps else '?'}°C   poll failures (freezes): {freezes}"
-    )
+    print(f"temp max: {max(temps) if temps else '?'}°C   poll failures (freezes): {freezes}")
     print(
         f"blocked: {blocked_hits} ({pct(blocked_hits)})   "
         f"glass flagged: {glass_hits} ({pct(glass_hits)})"
     )
-    print(
-        f"radar degraded (<4 boards online): {radar_degraded} ({pct(radar_degraded)})"
-    )
+    print(f"radar degraded (<4 boards online): {radar_degraded} ({pct(radar_degraded)})")
     print(f"guidance actions: {dict(actions)}")
     secs = max(1e-6, time.time() - start)
     print(

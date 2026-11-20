@@ -1837,6 +1837,98 @@ class PeopleComingWalkedTests(unittest.TestCase):
                 self.assertEqual(self._walk("someone standing ahead", on)[0], [])
 
 
+class CarsWalkedTests(unittest.TestCase):
+    """2026-11-20, walk_sim --follow with cars (4.5 x 1.8 m boxes) seen by a synthetic front
+    camera, the wearer doing what is said: the camera's spoken vehicle warning comes 2 s or more
+    before a car on a collision course would reach them, head-on or from 20 deg off, and sends
+    them behind it (the way it is going, not where it is); a car passing 3 m off, driving away,
+    or parked is never called approaching; a person the camera names is steered past."""
+
+    @staticmethod
+    def _walk(name, t0=1000.0):
+        from tools.sim import walk_sim as ws
+
+        shadows = []
+        ticks = ws.follow(ws.ROOMS[name], shadows=shadows, t0=t0)
+        said = [text for *_r, text, sp, _c in ticks if sp]
+        return ws.judge_follow(ws.ROOMS[name], ticks, shadows), said
+
+    def test_warned_in_time_and_sent_behind_the_car(self):
+        for name, way in (("car coming head-on", None),
+                          ("car coming in from ahead-left", sg.VEHICLE_FROM_RIGHT),
+                          ("car coming in from ahead-right", sg.VEHICLE_FROM_LEFT)):
+            with self.subTest(name):
+                bad, said = self._walk(name)
+                self.assertEqual(bad, [])
+                warned = [t for t in said if t in sg._VEHICLE_APPROACH]
+                if way:  # coming from the left, going right: "move left", behind it
+                    self.assertEqual(warned[0], way)
+
+    def test_no_warning_for_a_car_not_coming(self):
+        for name in ("car passing in the next lane", "car driving off ahead",
+                     "car parked in the way", "car parked beside the way"):
+            with self.subTest(name):
+                bad, said = self._walk(name)
+                self.assertEqual(bad, [])
+                self.assertFalse(set(said) & set(sg._VEHICLE_APPROACH))
+
+    def test_the_judge_tells_a_collision_course(self):
+        from tools.sim import walk_sim as ws
+
+        head_on = ws.Room(movers=[(30000, 0, -5000, 0, 900, "car")])
+        self.assertAlmostEqual(ws._vehicle_lead(head_on, (0.0, 0.0, 0.0, 0.0)),
+                               (30000 - 2250 - ws.BODY_MM) / 6200.0, delta=0.06)
+        next_lane = ws.Room(movers=[(30000, 4000, -5000, 0, 900, "car")])
+        self.assertIsNone(ws._vehicle_lead(next_lane, (0.0, 0.0, 0.0, 0.0)))
+        self.assertAlmostEqual(ws._vehicle_passes(next_lane, (0.0, 0.0, 0.0, 0.0))[0][1],
+                               3100.0, delta=1.0)
+
+    def test_a_person_the_camera_names_is_steered_past(self):
+        bad, said = self._walk("someone standing ahead, seen")
+        self.assertEqual(bad, [])
+        self.assertIn(sg.STEER_PAST[("Person", "ahead", "right")], said)
+
+
+class RadarEchoTheLaserSeesTests(unittest.TestCase):
+    """2026-11-20 (walk_sim, a car parked on the right): a side board's nearest point on a
+    surface facing the walk lies at its beam's edge and slides along it, closing at 1.9 times
+    the walk; the LiDAR saw the car, but over 2 m wide it is no lidar_movers blob, and the echo
+    was "Something approaching from right, stop" (a "would say"). An echo at a range the laser
+    has a return at inside that board's beam is the LiDAR's (radar_movers.laser_sees)."""
+
+    @staticmethod
+    def _threat(laser):
+        from app.perception.radar_movers import RadarMoverTracker
+
+        tracker, threat = RadarMoverTracker(), None
+        for i in range(9):  # 6 frames a second, closing at 2.3 m/s from 3.6 m to 0.5 m
+            t, r_mm = 100.0 + i / 6.0, 3600.0 - 2300.0 * i / 6.0
+            radar = {"sectors": {"deg090": {"online": True, "degraded": False, "stale": False,
+                                            "last_update": t, "peaks_mm": [r_mm]}}}
+            lidar = {"points": {"angles": [0.0, 58.0, 180.0],
+                                "distances": [9000.0, r_mm, 9000.0]}} if laser else None
+            tracker.update(radar, [], None, turn_dps=0.0, lidar_state=lidar)
+            threat = threat or tracker.snapshot()["threat"]
+        return threat
+
+    def test_an_echo_off_a_surface_the_laser_sees_is_not_something_coming(self):
+        self.assertIsNotNone(self._threat(False))  # what it was
+        self.assertIsNone(self._threat(True))
+
+    def test_the_parked_car_walked_past(self):
+        bad, _said = CarsWalkedTests._walk("car parked beside the way", t0=3500.0)
+        self.assertEqual(bad, [])  # was "someone standing still called moving: 'Something ..."
+
+    def test_a_return_elsewhere_does_not_hide_it(self):
+        from app.perception.radar_movers import laser_sees
+
+        lidar = {"points": {"angles": [58.0, 180.0, None], "distances": [3000.0, 1500.0, 1.0]}}
+        self.assertTrue(laser_sees(lidar, 90.0, 3.0))
+        self.assertFalse(laser_sees(lidar, 90.0, 1.5))  # behind: another board's
+        self.assertFalse(laser_sees(lidar, 90.0, 2.0))  # nearer than the laser's surface
+        self.assertFalse(laser_sees(None, 90.0, 3.0))
+
+
 class CorridorMiddleNoPingPongTests(unittest.TestCase):
     """2026-11-19, walk_sim --follow --veer: down the middle of a 2.4 m corridor both walls lie
     at ~3.9 ft, inside SIMPLE_WALL_NEAR_FT; a few cm off made one "near", "Near left wall, move

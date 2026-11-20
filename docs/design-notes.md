@@ -880,3 +880,27 @@ Kept because each one explains why the code is the way it is.
     (`walk_sim --wait`) waited after every turn, "turn slightly" too, and veering never got to
     the end of a corridor: it now waits only after a quarter turn or more (no collision either
     way; the model, not the guidance).
+38. **Cars, walked (2026-11-20).** "Vehicle approaching, move left/right" is spoken and had
+    never been walked. walk_sim's rooms now take cars, 4.5 x 1.8 m boxes lying the way they
+    drive (parked: along x), to the laser, the radar and a synthetic front camera
+    (`Room(camera=True)`, `Room.camera_state`): each corner through the pinhole, the box's
+    height from the car's class height and its nearest range, 5 % jitter, cut off at the
+    picture's sides, ten frames a second. The wearer steps 1.5 m aside quickly (1 m/s) on the
+    warning and stands until "Walk straight"; stands on "Vehicle approaching"; walks on, the cane
+    out, on "Vehicle in front, be careful"; turns 20 deg on the camera's "Person ahead, turn
+    slightly right", 90 on "... in front, turn left". The judge: a car on a collision course is
+    warned of 2 s or more before it would reach the wearer (`VEHICLE_LEAD_S`, both going on as
+    they are); none for one passing over 3 m off, driving away, or parked. Found: at 18 km/h,
+    head-on and from 20 deg off, the warning comes ~3.4 s ahead (~21 m), and sends the wearer
+    behind the car, the way it is going (from the left: "move left"); stepping the other way
+    was contact. A car passing 3.1 m off is "Vehicle in front, be careful", not approaching; a
+    parked one in the way is "Car ahead, turn slightly right" and walked round. Not covered: a
+    car crossing from the side (Known limits). And walking up to the back of a parked car, the
+    right board's nearest point on it lay at its beam's edge and slid along it, closing at 1.9
+    times the walk (`v / cos 57.5`), past the allowance for the wearer's own walk: "Something
+    approaching from right, stop" (a "would say"). The LiDAR saw the car, but over 2 m wide it
+    is no `lidar_movers` blob, so the radar took it as its own. An echo at a range the laser
+    has a return at inside the board's beam is now the LiDAR's (`radar_movers.laser_sees`);
+    `movers_sim`'s radar scenes (someone in the blind arc, something low under the laser) still
+    warn. The real car may differ: a shoulder-high laser can pass over a low car's roof or
+    through its windows, and the sim's car is solid to it.

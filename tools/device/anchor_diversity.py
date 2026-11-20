@@ -155,7 +155,7 @@ def verdict(per_view, tolerance):
         out.append(
             f"  {rate:.0%} — the scan band usually identifies a fit. E2 is "
             f"worth running as specified; report metrics on the "
-            f"identifiable subset AND the rest, separately."
+            f"identifiable subset AND  the rest, separately."
         )
     elif rate >= 0.25:
         out.append(

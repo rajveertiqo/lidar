@@ -33,7 +33,10 @@ around" a half, "move left/right" a 0.3 m step, "turn slightly" 15-20 deg, "Stop
 with --wait, after a turn they wait for "Walk straight" (at most that long). Checked: nothing
 walked into, the way out of a dead end or a corner reached, no back-and-forth turning, no
 "Stop, no clear way" where there is a way. A room failing by a known limit says so (`limit`).
-(added 2026-11-18)"""
+(added 2026-11-18) Rooms with cars (`-k car`) have a front camera that sees them (Room.camera):
+a car on a collision course warned of VEHICLE_LEAD_S ahead, none called approaching that is not
+coming near; the wearer steps VEHICLE_STEP_MM aside on "Vehicle approaching, move ..." and
+stands until "Walk straight" (2026-11-20)."""
 
 import argparse
 import contextlib
@@ -41,6 +44,7 @@ import math
 import os
 import random
 import sys
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -282,7 +286,7 @@ def _tick(laser, echoes, k, now, t0, rnd, noise_mm, previous, cameras=None, drop
     previous = publish(laser, echoes, k + 1, now, radar, rnd, noise_mm, previous, drop, track,
                        faults)
     lidar, radar_state = get_lidar_state(), get_radar_state()
-    camera = sh.clear_cameras() if cameras == "clear" else {}
+    camera = cameras if isinstance(cameras, dict) else sh.clear_cameras() if cameras == "clear" else {}
     decision = wp.decide(lidar, radar_state, camera)
     motion = movers = None
     if track:
@@ -290,7 +294,8 @@ def _tick(laser, echoes, k, now, t0, rnd, noise_mm, previous, cameras=None, drop
         movers = {**get_movers().snapshot(), "kalman": get_motion_tracker().snapshot()}
         if c.RADAR_MOVERS_ENABLED:
             get_radar_movers().update(radar_state, movers.get("blobs"), movers.get("ego"),
-                                      turn_dps=(motion or {}).get("yaw_rate_dps"))
+                                      turn_dps=(motion or {}).get("yaw_rate_dps"),
+                                      lidar_state=lidar)
             movers["radar"] = get_radar_movers().snapshot()
     got = sg.guidance(decision, lidar, now=now, radar_state=radar_state, camera_state=camera,
                       motion=motion, movers=movers)
@@ -382,6 +387,12 @@ FOLLOW_S = 25.0
 STOOD_S = 5.0  # "Stop, no clear way" and nothing else said this long: given up
 HOLD_S = 6.0  # "..., stop" for something coming: stood until "Walk straight", this long at most
 MOVER_STEP_MM = c.ROUTE_STEP_ASIDE_M * 1000.0  # "..., move left": a step that far aside
+CAR_LENGTH_MM = 4500.0  # a car mover's length (its `radius`: half its width)
+VEHICLE_STEP_MM = 1500.0  # "Vehicle approaching, move left": a car wants more room than a person
+VEHICLE_STEP_MPS = 1.0  # ... taken quickly, then stood until "Walk straight" (HOLD_S at most)
+CAM_HZ = 10.0  # the front camera's detector frames, a second (route_sim's)
+VEHICLE_LEAD_S = 2.0  # a vehicle warning this long before the vehicle would reach the wearer
+VEHICLE_FAR_MM = 3000.0  # ... and none for a car whose side passes farther off than this
 FLIPS_MAX = 2  # left, right, left: the third change of side is back and forth
 
 
@@ -391,15 +402,20 @@ class Room:
     starts, y to the right of it, headings clockwise from x. `goal(x, y)`: out of the room's
     trouble (None: nothing to reach, only nothing to walk into). `limit`: why it is not, a
     known limit (docs/known-limits.md): reported, not counted as a failure. `movers`: people
-    walking straight on, (x, y, vx, vy, radius), mm and mm/s, where they are at `t` s.
+    walking straight on, (x, y, vx, vy, radius[, class]), mm and mm/s, where they are at `t` s;
+    the class "person" unless given. A "car" is a box CAR_LENGTH_MM long and twice `radius`
+    wide, lying along the way it drives (parked: along x), to the laser, radar and camera.
     `needs`: a feature not yet spoken (walk_replay.FEATURES) the room is about: off, the walk
-    is shown and not counted; on (--turn-on), judged."""
+    is shown and not counted; on (--turn-on), judged. `camera`: the front camera sees the
+    movers (camera_state), and the side cameras show nobody."""
 
     def __init__(self, walls=(), glass=(), posts=(), goal=None, limit=None, movers=(),
-                 needs=None):
+                 needs=None, camera=False):
         self.limit = limit
         self.needs = needs
-        self.movers = [(f"mover{i}", m) for i, m in enumerate(movers)]
+        self.camera = camera
+        self.movers = [(f"mover{i}", tuple(m) + (("person",) if len(m) == 5 else ()))
+                       for i, m in enumerate(movers)]
         self.t = 0.0
         self.segs = [(f"wall{i}", w, False) for i, w in enumerate(walls)]
         self.segs += [(f"glass{i}", g, True) for i, g in enumerate(glass)]
@@ -407,16 +423,86 @@ class Room:
         self.goal = goal
 
     def circles(self):
-        """The posts, and the movers where they are at `t`."""
+        """The posts, and the people where they are at `t`."""
         return self.posts + [(n, (x + vx * self.t, y + vy * self.t, r))
-                             for n, (x, y, vx, vy, r) in self.movers]
+                             for n, (x, y, vx, vy, r, cls) in self.movers if cls != "car"]
+
+    def car_corners(self, m):
+        """A car mover's four corners at `t`, round the box."""
+        x, y, vx, vy, r, _cls = m
+        cx, cy = x + vx * self.t, y + vy * self.t
+        a = math.atan2(vy, vx) if (vx or vy) else 0.0
+        ux, uy, hl = math.cos(a), math.sin(a), CAR_LENGTH_MM / 2.0
+        return [(cx + ux * sl * hl - uy * sw * r, cy + uy * sl * hl + ux * sw * r)
+                for sl, sw in ((1, 1), (1, -1), (-1, -1), (-1, 1))]
+
+    def segments(self):
+        """The walls and panes, and each car's sides where it is at `t` (named for the car)."""
+        out = list(self.segs)
+        for n, m in self.movers:
+            if m[5] == "car":
+                k = self.car_corners(m)
+                out += [(n, k[i] + k[(i + 1) % 4], False) for i in range(4)]
+        return out
+
+    def camera_state(self, x, y, heading, rnd):
+        """The cameras at `t`: the front one's detections of the movers, as boxes in its frame
+        (route_sim.camera: a box's height by the class's height and its range, 5 % jitter),
+        the side ones a fresh picture naming nobody (scene_hunt.clear_cameras)."""
+        w, h = sg._QUAD_W, sg._QUAD_H
+        focal = (w / 2.0) / math.tan(math.radians(sg.SIMPLE_CAMERA_HFOV_DEG) / 2.0)
+        r_h = math.radians(heading)
+        half = math.radians(sg.SIMPLE_CAMERA_HFOV_DEG) / 2.0
+
+        def seen(px, py):  # (ahead, right) of the camera, m
+            dx, dy = (px - x) / 1000.0, (py - y) / 1000.0
+            return (dx * math.cos(r_h) + dy * math.sin(r_h),
+                    -dx * math.sin(r_h) + dy * math.cos(r_h))
+
+        dets = []
+        for _n, (mx, my, vx, vy, _r, cls) in self.movers:
+            if cls == "car":  # the box round its corners, cut off at the picture's sides
+                pts = [seen(*p) for p in self.car_corners((mx, my, vx, vy, _r, cls))]
+                if min(f for f, _r2 in pts) < 0.5:
+                    continue
+                brgs = [math.atan2(r2, f) for f, r2 in pts]
+                lo, hi = max(min(brgs), -half), min(max(brgs), half)
+                if lo >= hi:
+                    continue
+                hp = (focal * sg._object_height_m(cls) / min(math.hypot(*p) for p in pts)
+                      * (1.0 + rnd.gauss(0.0, 0.05)))
+                if hp >= h - 6.0:
+                    continue
+                x1 = w / 2.0 + focal * math.tan(lo) + (rnd.gauss(0.0, 2.0) if lo > -half else 0.0)
+                x2 = w / 2.0 + focal * math.tan(hi) + (rnd.gauss(0.0, 2.0) if hi < half else 0.0)
+                dets.append({"class_name": cls, "confidence": 0.9,
+                             "bbox": [max(0.0, x1), h / 2 - hp / 2, min(w, x2), h / 2 + hp / 2]})
+                continue
+            fwd, right = seen(mx + vx * self.t, my + vy * self.t)
+            if fwd < 0.5:
+                continue
+            brg = math.atan2(right, fwd)
+            if abs(math.degrees(brg)) > sg.SIMPLE_CAMERA_HFOV_DEG / 2.0 - 2.0:
+                continue
+            hp = focal * sg._object_height_m(cls) / math.hypot(fwd, right) * (1.0 + rnd.gauss(0.0, 0.05))
+            if hp >= h - 6.0:
+                continue
+            cx = w / 2.0 + focal * math.tan(brg) + rnd.gauss(0.0, 2.0)
+            width = hp * 0.4
+            dets.append({"class_name": cls, "confidence": 0.9,
+                         "bbox": [cx - width / 2, h / 2 - hp / 2, cx + width / 2, h / 2 + hp / 2]})
+        now = time.time()
+        cams = sh.clear_cameras()
+        cams["front"] = {"detections": dets, "num_objects": len(dets), "frame_time": now,
+                         "simulated": False, "view": {"dark": False, "blurred": False}}
+        return cams
 
     def hits(self, x, y, angle_deg, laser):
         """(name, range mm) of every surface on the ray from (x, y) at `angle_deg`."""
         a = math.radians(angle_deg)
         dx, dy = math.cos(a), math.sin(a)
         out = []
-        for name, (x1, y1, x2, y2), glass in self.segs:
+        for name, (x1, y1, x2, y2), glass in self.segments():
             if glass and laser:
                 continue
             ex, ey = x2 - x1, y2 - y1
@@ -462,7 +548,7 @@ class Room:
     def clearance(self, x, y):
         """mm from (x, y) to the nearest surface, panes included."""
         best = 1e9
-        for _n, (x1, y1, x2, y2), _g in self.segs:
+        for _n, (x1, y1, x2, y2), _g in self.segments():
             ex, ey = x2 - x1, y2 - y1
             n2 = ex * ex + ey * ey
             u = 0.0 if n2 == 0 else max(0.0, min(1.0, ((x - x1) * ex + (y - y1) * ey) / n2))
@@ -529,6 +615,34 @@ ROOMS = {
     "someone walking slowly ahead": Room(movers=[(3000, 0, 500, 0, 220)]),
     "someone standing ahead": Room(
         movers=[(4000, 0, 0, 0, 220)], goal=lambda x, y: x > 5000 or abs(y) > 2500),
+    # Cars (CAR_LENGTH_MM boxes), seen by the front camera too: its vehicle warnings are
+    # spoken. The car never gives way. Coming in from 20 deg off the walking line on a
+    # collision course (it keeps that bearing), at 18 km/h: in the front camera's view all the
+    # way. Crossing from the side at 14 km/h, it stays at 73 deg until it is in front.
+    "car coming head-on": Room(movers=[(30000, 0, -5000, 0, 900, "car")], camera=True,
+                               goal=lambda x, y: x > 12000),
+    "car coming in from ahead-left": Room(movers=[(28700, -10400, -4540, 2090, 900, "car")],
+                                          camera=True, goal=lambda x, y: x > 12000),
+    "car coming in from ahead-right": Room(movers=[(28700, 10400, -4540, -2090, 900, "car")],
+                                           camera=True, goal=lambda x, y: x > 12000),
+    "car crossing from the left": Room(
+        movers=[(7000, -22000, 0, 4000, 900, "car")], camera=True, needs="movers",
+        goal=lambda x, y: x > 10000, limit="a car crossing from the side: outside the front camera until in front, and "
+                "the LiDAR's movers follow nothing over 2 m wide (its side: 4.5 m) or 8 m off"),
+    "car crossing from the right": Room(
+        movers=[(7000, 22000, 0, -4000, 900, "car")], camera=True, needs="movers",
+        goal=lambda x, y: x > 10000, limit="a car crossing from the side: outside the front camera until in front, and "
+                "the LiDAR's movers follow nothing over 2 m wide (its side: 4.5 m) or 8 m off"),
+    "car passing in the next lane": Room(movers=[(30000, 4000, -5000, 0, 900, "car")],
+                                         camera=True, goal=lambda x, y: x > 12000),
+    "car driving off ahead": Room(movers=[(8000, 0, 3000, 0, 900, "car")], camera=True,
+                                  goal=lambda x, y: x > 12000),
+    "car parked in the way": Room(movers=[(10000, 0, 0, 0, 900, "car")], camera=True,
+                                  goal=lambda x, y: x > 12000),
+    "car parked beside the way": Room(movers=[(9000, 2200, 0, 0, 900, "car")], camera=True,
+                                      goal=lambda x, y: x > 12000),
+    "someone standing ahead, seen": Room(movers=[(5000, 0, 0, 0, 220, "person")], camera=True,
+                                         goal=lambda x, y: x > 6000 or abs(y) > 2500),
     "0.9 m doorway straight ahead": Room(
         walls=[(4000, -8000, 4000, -450), (4000, 450, 4000, 8000)], goal=lambda x, y: x > 5500,
         limit="an open doorway reads as a glass door (its frames echo alike)"),
@@ -541,18 +655,33 @@ ROOMS = {
 
 def _action(text):
     """What the wearer does on hearing `text`: ("turn", deg, + right), ("step", mm, + right),
-    ("stop",), ("walk",) (walk on, ending a turn), or None (an approach: carry on)."""
+    ("step", mm, m/s, "hold") (quickly aside, then stood: a vehicle), ("hold", None) (stood
+    until "Walk straight"), ("stop",), ("walk",) (walk on, ending a turn), or None (an
+    approach: carry on)."""
     way = sg._WAY_OUT.get(text) or {sg.TURN_LEFT: "left", sg.TURN_RIGHT: "right",
                                      sg.TURN_AROUND: "around"}.get(text)
     if way:
         return ("turn", {"left": -90.0, "right": 90.0, "around": 180.0}[way])
     if text == sg.STOP_NO_WAY:
         return ("stop",)
+    if text in (sg.VEHICLE_FROM_LEFT, sg.VEHICLE_FROM_RIGHT):  # "..., move right" / "move left"
+        return ("step", VEHICLE_STEP_MM * (1.0 if text == sg.VEHICLE_FROM_LEFT else -1.0),
+                VEHICLE_STEP_MPS, "hold")
+    if text == sg.VEHICLE_APPROACHING or text in sg.OBJECT_IN_FRONT.values():
+        return ("hold", None)  # no room to step aside, or named in front with no way given
+    if text == sg.VEHICLE_AHEAD:  # "be careful": walked on, the cane out (an approach)
+        return None
     mover = sg._MOVER_INFO.get(text)
     if mover:  # "..., stop": until "Walk straight"; "..., move left": a step aside
         if mover["move"] is None:
             return ("hold", None)
         return ("step", MOVER_STEP_MM * (1.0 if mover["move"] == "right" else -1.0))
+    steer = sg._STEER_INFO.get(text)  # the camera's way past what it names, and the planner's
+    if steer and text not in (sg.TURN_SLIGHT_LEFT, sg.TURN_SLIGHT_RIGHT):
+        if steer["turn"] is None:  # "Walk straight between them"
+            return ("walk",)
+        deg = 90.0 if steer["where"] == "in front" else 20.0  # "in front, turn left": as a block's
+        return ("turn", deg if steer["turn"] == "right" else -deg)
     if text == sg.WALK_STRAIGHT:
         return ("walk",)
     step = {sg.NEAR_LEFT: 300.0, sg.NEAR_RIGHT: -300.0, sg.GLASS_LEFT: 300.0, sg.GLASS_RIGHT: -300.0}
@@ -579,6 +708,7 @@ def follow(room, pace=1.2, seconds=FOLLOW_S, noise_mm=0.0, seed=0, t0=1000.0, wa
     `record`: as walk's."""
     rnd = random.Random(seed)
     track = bool(room.movers)
+    cam, cam_frame = None, None  # room.camera: the cameras' last frame, CAM_HZ a second
     x = y = heading = 0.0
     doing, pending, stood_at = ("walk",), None, None
     out, k, previous = [], 0, None
@@ -595,9 +725,11 @@ def follow(room, pace=1.2, seconds=FOLLOW_S, noise_mm=0.0, seed=0, t0=1000.0, wa
         while clock["t"] - t0 <= seconds:
             now = clock["t"]
             room.t = now - t0
+            if room.camera and int((now - t0) * CAM_HZ) != cam_frame:
+                cam_frame, cam = int((now - t0) * CAM_HZ), room.camera_state(x, y, heading, rnd)
             text, spoken, previous, shadow = _tick(
                 room.laser(x, y, heading), room.echoes(x, y, heading, ghosts, rnd), k, now, t0,
-                rnd, noise_mm, previous, cameras, drop, track,
+                rnd, noise_mm, previous, cam if room.camera else cameras, drop, track,
                 {kind for kind, a, b in faults if a <= now - t0 < b}, record)
             if shadow and shadows is not None:
                 shadows.append((now - t0, shadow))
@@ -631,19 +763,73 @@ def follow(room, pace=1.2, seconds=FOLLOW_S, noise_mm=0.0, seed=0, t0=1000.0, wa
                 heading += d
                 doing = ("turn", doing[1] - d) if abs(doing[1] - d) > 1e-6 else after_turn(now)
             elif doing[0] == "step":
-                d = math.copysign(min(abs(doing[1]), STEP_MPS * 1000.0 * dt), doing[1])
+                mps = doing[2] if len(doing) > 2 else STEP_MPS
+                d = math.copysign(min(abs(doing[1]), mps * 1000.0 * dt), doing[1])
                 r = math.radians(heading + 90.0)
                 x, y = x + d * math.cos(r), y + d * math.sin(r)
-                doing = ("step", doing[1] - d) if abs(doing[1] - d) > 1e-6 else ("walk",)
+                doing = (("step", doing[1] - d) + doing[2:] if abs(doing[1] - d) > 1e-6
+                         else ("hold", now) if doing[3:] == ("hold",) else ("walk",))
             k += 1
             clock["t"] = now + dt
     return out
 
 
+def _vehicle_passes(room, tick, pace=1.2, ahead_s=10.0):
+    """[(seconds to its nearest, how near its box comes to the wearer's middle mm, seconds
+    until it is within BODY_MM of it or None)] of each moving car from `tick`, both going on as
+    they are (the wearer at `pace` m/s, facing as they face), over the next `ahead_s`."""
+    t, x, y, h, *_r = tick
+    wx, wy = pace * 1000.0 * math.cos(math.radians(h)), pace * 1000.0 * math.sin(math.radians(h))
+    out = []
+    for _n, (mx, my, vx, vy, r, cls) in room.movers:
+        if cls != "car" or (vx == 0 and vy == 0):
+            continue
+        a = math.atan2(vy, vx)
+        ux, uy = math.cos(a), math.sin(a)
+        best, contact = None, None
+        for i in range(int(ahead_s * 20) + 1):
+            tau = i / 20.0
+            dx = x + wx * tau - (mx + vx * (t + tau))
+            dy = y + wy * tau - (my + vy * (t + tau))
+            along, across = dx * ux + dy * uy, -dx * uy + dy * ux
+            d = math.hypot(max(abs(along) - CAR_LENGTH_MM / 2.0, 0.0), max(abs(across) - r, 0.0))
+            if best is None or d < best[1]:
+                best = (tau, d)
+            if contact is None and d < BODY_MM:
+                contact = tau
+        out.append(best + (contact,))
+    return out
+
+
+def _vehicle_lead(room, tick):
+    """Seconds from `tick` until the soonest car on a collision course would reach the
+    wearer, or None: none on one."""
+    leads = [c for _t, _miss, c in _vehicle_passes(room, tick) if c is not None]
+    return min(leads) if leads else None
+
+
 def judge_follow(room, ticks, shadows=()):
     """The rules broken doing what was said, as text. `shadows`: follow's "would say"s."""
     bad = []
-    if room.movers and all(vx == 0 and vy == 0 for _n, (_x, _y, vx, vy, _r) in room.movers):
+    cars = [m for _n, m in room.movers if m[5] == "car"]
+    if cars:
+        warned = [k for k, (*_r, text, sp, _c) in enumerate(ticks)
+                  if sp and (text in sg._VEHICLE_APPROACH or text in sg._MOVER_INFO)]
+        far = [k for k in warned
+               if all(miss > VEHICLE_FAR_MM for _t, miss, _c in _vehicle_passes(room, ticks[k]))]
+        if all(m[2] == 0 and m[3] == 0 for m in cars):
+            if warned:
+                bad.append(f"a parked car called approaching: {ticks[warned[0]][4]!r}")
+        elif far:
+            bad.append(f"a vehicle warning with no car coming near: {ticks[far[0]][4]!r}")
+        elif any(_vehicle_lead(room, tick) is not None for tick in ticks):
+            if not warned:
+                bad.append("a car on a collision course, no vehicle warning")
+            else:
+                lead = _vehicle_lead(room, ticks[warned[0]])
+                if lead is not None and lead < VEHICLE_LEAD_S:
+                    bad.append(f"the vehicle warning {lead:.1f} s before the car would reach them")
+    if room.movers and all(m[2] == 0 and m[3] == 0 for _n, m in room.movers):
         called = [text for *_r, text, sp, _c in ticks if sp and text in sg._MOVER_INFO]
         called += [text for _t, text in shadows if text in sg._MOVER_INFO]
         if called:

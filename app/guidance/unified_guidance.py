@@ -412,6 +412,7 @@ def get_unified_guidance() -> Dict[str, Any]:
                     (movers or {}).get("blobs"),
                     (movers or {}).get("ego"),
                     turn_dps=(motion or {}).get("yaw_rate_dps"),
+                    lidar_state=lidar,
                 )
                 movers = {**(movers or {}), "radar": radar_movers.snapshot()}
         except Exception as e:

@@ -85,6 +85,15 @@
   either way, and head-on in corridors 2.0-3.6 m wide (design note 36), on noise seeds and
   with the waiting wearer; nobody standing is called moving. They wait for a walk to check
   them.
+- **A car crossing from the side is not warned of in time** (in the simulator,
+  2026-11-20). On a collision course a car keeps its bearing; crossing at 90 deg to the walk it
+  sits ~73 deg off, outside the front camera's 66 deg, until it is in front. The side cameras
+  are detected only every ~1.3 s (`DETECTION_SIDE_MIN_INTERVAL_S`), too seldom to follow one.
+  The LiDAR's mover warnings (not yet spoken) follow nothing over 2 m wide
+  (`LIDAR_MOVERS_MAX_WIDTH_M`: a car's side is 4.5 m) or past 8 m: with them on, ~0.8 s ahead
+  or not at all (`walk_sim --follow -k "car crossing" --turn-on movers`). A car coming in from
+  up to ~25 deg off the walking line is warned of ~3.4 s ahead (design note 38). At a kerb or
+  a car park lane, the cane and hearing.
 - **A fast steady veer ends in a block** (in the simulator, 2026-11-20). Veering unawares at 3
   deg/s is walked in 1.8-3 m corridors, and at 4 deg/s in a 3 m one; at 4 deg/s in a 2.4 m
   corridor, and 6 deg/s in any, it is not: each "turn slightly" is ~15 deg, the sentence and the

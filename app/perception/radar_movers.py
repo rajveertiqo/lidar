@@ -52,6 +52,30 @@ def lidar_sees(blobs, bearing: float, range_m: float) -> bool:
     )
 
 
+def laser_sees(lidar_state: Optional[Dict[str, Any]], bearing: float, range_m: float) -> bool:
+    """Does the laser have a return at this distance inside this board's beam: a surface the
+    LiDAR sees but lidar_movers does not follow (a wall, a car's side: over 2 m wide)? Then the
+    echo is off it, not something only the radar hears. A board's nearest point on a surface
+    facing the walk lies at its beam's edge and slides along the surface, closing faster than
+    the walk: walking at 1.2 m/s toward the back of a parked car, the side board's echo closed
+    at 2.3 m/s, "Something approaching from right, stop" (walk_sim, 2026-11-20)."""
+    pts = (lidar_state or {}).get("points") or {}
+    half = RADAR_BEAM_H_DEG / 2.0 + GLASS_BOARD_VIEW_MARGIN_DEG
+    for a, d in zip(pts.get("angles") or [], pts.get("distances") or []):
+        if (
+            isinstance(a, (int, float))
+            and isinstance(d, (int, float))
+            and not isinstance(a, bool)
+            and not isinstance(d, bool)
+            and math.isfinite(a)
+            and math.isfinite(d)
+            and abs(d - range_m * 1000.0) <= RADAR_AGREE_MM
+            and abs(_signed(float(a) - bearing)) <= half
+        ):
+            return True
+    return False
+
+
 class RadarMoverTracker:
     """Each board's echoes followed in range; the ones closing in by themselves."""
 
@@ -76,12 +100,16 @@ class RadarMoverTracker:
         lidar_blobs=None,
         ego: Optional[Dict[str, Any]] = None,
         turn_dps: Optional[float] = None,
+        lidar_state: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Fold in each board's newest frame. `lidar_blobs` and `ego` are lidar_movers'.
+        """Fold in each board's newest frame. `lidar_blobs` and `ego` are lidar_movers'; an
+        echo the LiDAR sees, as one of its blobs or in `lidar_state`'s scan (laser_sees), is
+        the LiDAR's.
 
         A board ranges the nearest point of a wall inside its beam, and that point slides
         along the wall: walking, a still wall can close at up to the user's whole walking
-        speed on ANY board, so an echo must close faster than that. `ego` is lidar_movers'
+        speed on ANY board, so an echo must close faster than that. (Faster still where that
+        point lies at the beam's edge, on a surface facing the walk: laser_sees.) `ego` is lidar_movers'
         estimate of the walk; without it, any walk up to LIDAR_MOVERS_WALK_MAX_MPS. A turn
         sweeps the beams across walls, so nothing is judged until it is out of the fit."""
         ego = ego or {}
@@ -133,7 +161,7 @@ class RadarMoverTracker:
                     # Judged once per frame: a frame read again counted twice toward
                     # RADAR_MOVERS_CONFIRM_FRAMES, confirming on one (scan 2026-10-23).
                     if key in fresh:
-                        self._judge(tr, walk, lidar_blobs, turning)
+                        self._judge(tr, walk, lidar_blobs, turning, lidar_state)
                     if tr["closing_frames"]:
                         out.append(tr)
             self._snap = self._snapshot(out, live, turning)
@@ -184,7 +212,13 @@ class RadarMoverTracker:
         self._tracks[key] = kept
 
     @staticmethod
-    def _judge(tr: Dict[str, Any], walk: float, lidar_blobs, turning: bool) -> None:
+    def _judge(
+        tr: Dict[str, Any],
+        walk: float,
+        lidar_blobs,
+        turning: bool,
+        lidar_state: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """Closing in faster than the user's own walk can explain, where the LiDAR does not see it?"""
         h = tr["hist"]
         tr["alert"] = None
@@ -207,7 +241,9 @@ class RadarMoverTracker:
         if tr["closing_frames"] < RADAR_MOVERS_CONFIRM_FRAMES:
             return
         ttc = tr["range"] / -rate
-        tr["lidar_sees"] = lidar_sees(lidar_blobs, tr["bearing"], tr["range"])
+        tr["lidar_sees"] = lidar_sees(
+            lidar_blobs, tr["bearing"], tr["range"]
+        ) or laser_sees(lidar_state, tr["bearing"], tr["range"])
         if ttc > LIDAR_MOVERS_HORIZON_S or tr["lidar_sees"]:
             return
         b = _signed(tr["bearing"])

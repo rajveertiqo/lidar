@@ -7,6 +7,12 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
 ## [Unreleased]
 
 ### Added
+- **Cars in the walking simulator** (design note 38). `walk_sim --follow` rooms take cars
+  (4.5 x 1.8 m boxes) seen by a synthetic front camera, so the spoken vehicle warnings are walked
+  with the wearer acting on them: head-on and from 20 deg off at 18 km/h, warned ~3.4 s ahead
+  and sent behind the car; a car passing 3 m off, driving away, or parked is never called
+  approaching; the camera's "Person ahead, turn slightly right" is followed. A car crossing from
+  the side is not warned of in time (Known limits).
 - **`walk_sim --timing`**: each guidance stage's cost per call, as a table. On this Pi 5 a tick
   is ~8-9 ms (scan analysis ~1, `walk_policy.decide` ~4.4, `sg.guidance` ~3.4; p99 ~17, the worst
   20) of the ~43 ms a 23 Hz scan allows, and no slower than on 2026-11-17. **The battery walk**
@@ -88,6 +94,10 @@ What changed in each release of Shappe Guide. The version is `APP_VERSION` in `a
   Nothing said changes.
 
 ### Fixed
+- **"Something approaching" off a parked car** (a "would say", `radar_movers`): walking up to the
+  back of one, the side board's echo slid along it at the beam's edge, closing faster than the
+  walk, and the LiDAR's car side, over 2 m wide, did not count as the LiDAR seeing it. A laser
+  return at the echo's range inside the board's beam now does (`laser_sees`).
 - **"Drifting toward ... wall, turn slightly ..." is said again while the wearer drifts back
   into that wall** (design note 37). An advisory was said once an episode: the turn mended the
   heading, the veer brought it back, and nothing more was said until "Wall ahead" and a block,

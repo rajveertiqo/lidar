@@ -424,7 +424,16 @@ def run_radar_scene(
         if i % 3 == 0:  # the 5 Hz guidance tick
             snap = lidar.snapshot()
             radar.update(
-                rows, snap["blobs"], snap["ego"], turn_dps=turn_dps + YAW_BIAS_DEG * HZ
+                rows,
+                snap["blobs"],
+                snap["ego"],
+                turn_dps=turn_dps + YAW_BIAS_DEG * HZ,
+                lidar_state={
+                    "points": {
+                        "angles": [a for a, _d in pts],
+                        "distances": [d for _a, d in pts],
+                    }
+                },
             )
             th = radar.snapshot()["threat"]
             if th and first is None:
@@ -446,6 +455,17 @@ def run_radar_scene(
 
 
 GLASS_AHEAD = [(5.0, -1.0, 5.0, 1.0)]  # a pane across the path, 5 m ahead
+# A car parked on the right, its back 4.75 m ahead and 1.3 m off the walking line: the side
+# board's nearest point on that back slides along it at the beam's edge, closing at 1.9 times
+# the walk (radar_movers.laser_sees). The slide lasts ~1 s, about what a warning takes to
+# confirm: here it does not confirm even without laser_sees (walk_sim's "car parked beside the
+# way" did, and RadarEchoTheLaserSeesTests pins it).
+PARKED_CAR = [
+    (4.75, 1.3, 9.25, 1.3),
+    (9.25, 1.3, 9.25, 3.1),
+    (9.25, 3.1, 4.75, 3.1),
+    (4.75, 3.1, 4.75, 1.3),
+]
 
 RADAR_SCENES = [
     ("radar: standing still in a room", None, dict(seconds=8)),
@@ -459,6 +479,11 @@ RADAR_SCENES = [
         "radar: walking 1.0 m/s toward a glass pane",
         None,
         dict(seconds=4, walk=1.0, radar_only=[*GLASS_AHEAD]),
+    ),
+    (
+        "radar: walking 1.2 m/s past a car parked on the right",
+        None,
+        dict(seconds=7, walk=1.2, walls=PARKED_CAR, still=[]),
     ),
     (
         "radar: person from behind-left, in the LiDAR's blind arc",
